@@ -1,0 +1,32 @@
+- name: Create /etc/slurm directory
+  ansible.builtin.file:
+    path: /etc/slurm
+    state: directory
+    owner: "{{ slurm_user }}"
+    group: "{{ slurm_group }}"
+    mode: '0755'
+
+- name: Install slurmdbd.service
+  ansible.builtin.file:
+    src: /opt/slurm/etc/slurmdbd.service
+    dest: /etc/systemd/system/slurmdbd.service
+    owner: root
+    group: root
+    mode: '0644'
+    state: link
+
+- name: Create slurmdbd.service.d directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/slurmdbd.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install override.conf for slurmdbd.service
+  ansible.builtin.template:
+    src: override.conf
+    dest: /etc/systemd/system/slurmdbd.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'

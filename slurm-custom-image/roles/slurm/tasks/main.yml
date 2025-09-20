@@ -1,0 +1,71 @@
+- name: Install build dependencies
+  ansible.builtin.apt:
+    name: 
+      - bzip2
+      - gcc
+      - make
+      - libdbus-1-dev
+
+- name: Install slurmrestd dependencies
+  ansible.builtin.apt:
+    name: 
+      - libjson-c-dev 
+      - libhttp-parser-dev
+      - libjwt-dev
+
+- name: Install slurmdbd dependencies
+  ansible.builtin.apt:
+    name:
+      - libmysqlclient-dev
+
+- name: "Install pmix"
+  ansible.builtin.import_role:
+    name: pmix
+
+- name: "Rebuild ompi"
+  ansible.builtin.import_role:
+    name: ompi
+
+- name: "Create /opt/slurm/src directory"
+  file:
+    path: /opt/slurm/src
+    state: directory
+
+- name: "Download slurm-{{ slurm_version }}"
+  ansible.builtin.get_url:
+    url: "https://download.schedmd.com/slurm/slurm-{{ slurm_version }}.tar.bz2"
+    dest: "/opt/slurm/src/slurm-{{ slurm_version }}.tar.bz2"
+    checksum: "{{ slurm_checksum }}"
+
+- name: "Unarchive slurm-{{ slurm_version }}"
+  ansible.builtin.unarchive:
+    src: "/opt/slurm/src/slurm-{{ slurm_version }}.tar.bz2"
+    dest: "/opt/slurm/src"
+    remote_src: true
+
+- name: "Configure slurm-{{ slurm_version }}"
+  ansible.builtin.command: 
+    chdir: "/opt/slurm/src/slurm-{{ slurm_version }}"
+    cmd: >
+      ./configure
+      --with-pmix=/opt/pmix
+      --with-nvml=/usr/local/cuda
+      --with-jwt=/usr/
+      --with-http-parser=/usr/
+      --with-json=/usr/
+      --with-systemdsystemunitdir=/opt/slurm/etc
+      --prefix=/opt/slurm
+      --sysconfdir=/etc/slurm
+
+- name: "Install slurm-{{ slurm_version }}"
+  ansible.builtin.command: 
+    chdir: "/opt/slurm/src/slurm-{{ slurm_version }}"
+    cmd: "make -j install"
+
+- name: Install 99-slurm.sh
+  ansible.builtin.copy:
+    src: 99-slurm.sh
+    dest: /etc/profile.d/99-slurm.sh
+    owner: root
+    group: root
+    mode: '0755'

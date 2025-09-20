@@ -1,0 +1,99 @@
+- name: Set architecture for amd64
+  set_fact:
+    linux_arch: amd64
+  when: ansible_architecture == "x86_64"
+
+- name: Set architecture for arm64
+  set_fact:
+    linux_arch: arm64
+  when: ansible_architecture == "aarch64"
+
+- name: Create /etc/slurm directory
+  ansible.builtin.file:
+    path: /etc/slurm
+    state: directory
+    owner: "{{ slurm_user }}"
+    group: "{{ slurm_group }}"
+    mode: '0755'
+
+- name: Install slurmd.service
+  ansible.builtin.file:
+    src: /opt/slurm/etc/slurmd.service
+    dest: /etc/systemd/system/slurmd.service
+    owner: root
+    group: root
+    mode: '0644'
+    state: link
+
+- name: Create slurmd.service.d directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/slurmd.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install enroot
+  tags: enroot
+  ansible.builtin.import_role:
+    name: nvidia.enroot
+  vars:
+    enroot_version: "3.4.1"
+    enroot_deb_packages:
+          - "https://github.com/NVIDIA/enroot/releases/download/v3.4.1/enroot_3.4.1-1_{{ linux_arch }}.deb"
+
+- name: Install plugstack.conf
+  ansible.builtin.copy:
+    src: plugstack.conf
+    dest: /etc/slurm/plugstack.conf
+    owner: "{{ slurm_user }}"
+    group: "{{ slurm_group }}"
+    mode: '0644'
+
+- name: Create plugstack.conf.d directory
+  ansible.builtin.file:
+    path: /etc/slurm/plugstack.conf.d
+    state: directory
+    owner: "{{ slurm_user }}"
+    group: "{{ slurm_group }}"
+    mode: '0755'
+
+- name: Link pyxis config
+  ansible.builtin.file:
+    src: /opt/slurm/share/pyxis/pyxis.conf
+    dest: /etc/slurm/plugstack.conf.d/pyxis.conf
+    owner: root
+    group: root
+    state: link
+
+- name: Create prolog.d directory
+  ansible.builtin.file:
+    path: /etc/slurm/prolog.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy prolog/99-loginctl.sh
+  ansible.builtin.copy:
+    src: prolog/99-loginctl.sh
+    dest: /etc/slurm/prolog.d/99-loginctl.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create epilog.d directory
+  ansible.builtin.file:
+    path: /etc/slurm/epilog.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy epilog/99-loginctl.sh
+  ansible.builtin.copy:
+    src: epilog/99-loginctl.sh
+    dest: /etc/slurm/epilog.d/99-loginctl.sh
+    owner: root
+    group: root
+    mode: '0755'
