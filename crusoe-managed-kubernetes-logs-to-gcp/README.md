@@ -5,10 +5,8 @@ This is a solution that configures your Crusoe Managed Kubernetes (CMK) cluster 
 ## Prerequisites
 
 1. **GCP Service Account** configured with gcloud CLI.
-
-2. **Crusoe Managed Kubernetes** cluster with:
-   - Helm 3 installed
-   - Access to create namespaces and secrets
+2. **Helm** version 3 or later installed
+2. **Crusoe Managed Kubernetes** cluster with access via kubectl
 
 ## Installation
 
