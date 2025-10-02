@@ -26,8 +26,14 @@ Each solution README will also list its own specific prerequisites.
 
 ### Inference
 
+### Observability
+
+[Crusoe Managed Kubernetes logs to Google Cloud Logging](./crusoe-managed-kubernetes-logs-to-gcp/)
+
+For your applications running on Crusoe Managed Kubernetes cluster, you can collect, filter and ship logs using [Fluent Bit](https://fluentbit.io/) to send to a centralized location. This solution provides a set of Kubernetes manifest files needed to configure those logs to be sent to Google Cloud Logging using Fluent Bit.
+
 ### Identity & Security
 
 [Crusoe to Splunk HEC Log Forwarder](./crusoe-splunk-hec/README.md)
 
-Crusoe Cloud provides a 90-day history of  who did what in your cloud, when, where, and with what result - also called [Crusoe Audit Logs](https://docs.crusoecloud.com/identity-and-security/audit-logs/index.html). This solution provides a sample Python tool to fetch those logs and forward them to a Splunk HTTP Event Collector (HEC). 
+Crusoe Cloud provides a 90-day history of who did what in your cloud, when, where, and with what result - also called [Crusoe Audit Logs](https://docs.crusoecloud.com/identity-and-security/audit-logs/index.html). This solution provides a sample Python tool to fetch those logs and forward them to a Splunk HTTP Event Collector (HEC). 
