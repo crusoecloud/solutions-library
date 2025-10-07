@@ -1,0 +1,334 @@
+---
+# ============================================================================
+# Crusoe Telemetry Agent Installation Playbook
+# ============================================================================
+# This playbook automates the installation and configuration of the Crusoe
+# telemetry agent across a fleet of VMs.
+#
+# Requirements:
+#   - Ansible 2.9+
+#   - community.docker collection: ansible-galaxy collection install community.docker
+#   - SSH access to target VMs
+#   - Crusoe monitoring token
+#
+# Usage:
+#   ansible-playbook -i inventory.ini setup-metrics.yaml \
+#     -e 'crusoe_monitoring_token=YOUR_TOKEN'
+# ============================================================================
+
+- name: Install and Configure Crusoe Telemetry Agent
+  hosts: crusoe_vms
+  become: true
+  
+  vars:
+    # Monitoring token - can be passed via CLI or environment variable
+    crusoe_monitoring_token: "{{ lookup('env', 'CRUSOE_MONITORING_TOKEN') | default('') }}"
+    
+    # Script download settings
+    telemetry_agent_script_url: "https://raw.githubusercontent.com/crusoecloud/crusoe-telemetry-agent/refs/heads/main/setup_crusoe_telemetry_agent.sh"
+    telemetry_agent_script_path: "/tmp/setup_crusoe_telemetry_agent.sh"
+    
+    # Service configuration
+    telemetry_service_name: "crusoe-telemetry-agent"
+
+  # --------------------------------------------------------------------------
+  # Pre-flight Checks
+  # --------------------------------------------------------------------------
+  pre_tasks:
+    - name: Validate monitoring token is provided
+      fail:
+        msg: |
+          Crusoe monitoring token is required!
+          Provide it via: -e crusoe_monitoring_token=YOUR_TOKEN
+          Or set environment variable: export CRUSOE_MONITORING_TOKEN=YOUR_TOKEN
+      when: crusoe_monitoring_token == ''
+
+  # --------------------------------------------------------------------------
+  # Main Installation Tasks
+  # --------------------------------------------------------------------------
+  tasks:
+    # --- Download Setup Script ---
+    - name: Download Crusoe telemetry agent setup script
+      get_url:
+        url: "{{ telemetry_agent_script_url }}"
+        dest: "{{ telemetry_agent_script_path }}"
+        mode: '0755'
+        timeout: 30
+      register: download_result
+      retries: 3
+      delay: 5
+      until: download_result is succeeded
+
+    # --- Check Existing Installation ---
+    - name: Check if telemetry agent service is running
+      command: systemctl is-active "{{ telemetry_service_name }}"
+      register: service_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check if crusoe-vector container exists
+      command: docker ps -q --filter name=crusoe-vector
+      register: vector_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set installation status fact
+      set_fact:
+        agent_already_installed: "{{ service_check.stdout == 'active' and vector_check.stdout != '' }}"
+
+    - name: Display installation status
+      debug:
+        msg: "{{ 'Telemetry agent already installed and running. Skipping installation steps.' if agent_already_installed else 'Telemetry agent not found. Proceeding with installation.' }}"
+
+    # --- Prepare Automated Installation ---
+    - name: Ensure expect package is installed
+      package:
+        name: expect
+        state: present
+      when: not agent_already_installed
+
+    - name: Create expect script for automated installation
+      copy:
+        content: |
+          #!/usr/bin/expect -f
+          
+          # Enable detailed logging
+          log_file /tmp/expect_install.log
+          exp_internal 1
+          
+          set timeout 300
+          set token [lindex $argv 0]
+          
+          puts "=== Expect Script Started ==="
+          puts "Token length: [string length $token]"
+          puts "Token value: $token"
+          puts "============================\n"
+          
+          spawn sudo {{ telemetry_agent_script_path }}
+          
+          expect {
+            "Please enter the crusoe monitoring token:" {
+              puts "\n>>> Detected token prompt, sending token..."
+              send "$token\r"
+              exp_continue
+            }
+            "Setup finished successfully!" {
+              puts "\n>>> Installation successful!"
+              exit 0
+            }
+            "Error:*" {
+              puts "\n>>> Error detected in output"
+              exp_continue
+            }
+            timeout {
+              puts "\n>>> Installation timed out after 300 seconds"
+              exit 1
+            }
+            eof {
+              puts "\n>>> Process ended"
+              catch wait result
+              exit [lindex $result 3]
+            }
+          }
+        dest: /tmp/install_telemetry_agent.exp
+        mode: '0755'
+      when: not agent_already_installed
+
+    # --- Run Installation ---
+    - name: Run telemetry agent installation with monitoring token
+      command: "/tmp/install_telemetry_agent.exp {{ crusoe_monitoring_token }}"
+      register: installation_result
+      when: not agent_already_installed
+      changed_when: "'Setup finished successfully!' in installation_result.stdout"
+      failed_when: installation_result.rc != 0
+      ignore_errors: true
+
+    - name: Retrieve expect script logs on failure
+      slurp:
+        src: /tmp/expect_install.log
+      register: expect_logs
+      when: 
+        - not agent_already_installed
+        - installation_result is defined
+        - installation_result.rc != 0
+
+    - name: Display expect script logs
+      debug:
+        msg: "{{ expect_logs.content | b64decode }}"
+      when: 
+        - expect_logs is defined
+        - expect_logs.content is defined
+
+    - name: Fail if installation was unsuccessful
+      fail:
+        msg: |
+          Installation failed! Check the expect logs above.
+          Token length provided: {{ crusoe_monitoring_token | length }}
+          Expected token length: 82 characters
+      when:
+        - not agent_already_installed
+        - installation_result is defined
+        - installation_result.rc != 0
+
+    - name: Display installation output
+      debug:
+        var: installation_result.stdout_lines
+      when: 
+        - not agent_already_installed
+        - installation_result is defined
+
+    # --- Service Management ---
+    - name: Enable and start crusoe-telemetry-agent service
+      systemd:
+        name: "{{ telemetry_service_name }}"
+        enabled: true
+        state: started
+      register: service_result
+
+    - name: Restart service if installation just completed
+      systemd:
+        name: "{{ telemetry_service_name }}"
+        state: restarted
+      when: 
+        - not agent_already_installed
+        - installation_result is defined
+        - installation_result.rc == 0
+      register: service_restart
+
+    - name: Wait for Docker containers to initialize
+      pause:
+        seconds: 35
+        prompt: "Waiting for Docker containers to start..."
+      when: service_result.changed or (service_restart is defined and service_restart.changed)
+
+    - name: Verify crusoe-telemetry-agent service is active
+      systemd:
+        name: "{{ telemetry_service_name }}"
+      register: service_status
+      failed_when: service_status.status.ActiveState != 'active'
+
+    - name: Display service status
+      debug:
+        msg: "Service {{ telemetry_service_name }} is {{ service_status.status.ActiveState }}"
+
+    # --- Container Health Checks ---
+    - name: Detect if node has GPU
+      shell: lspci | grep -i nvidia
+      register: gpu_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set GPU node fact
+      set_fact:
+        is_gpu_node: "{{ gpu_check.rc == 0 }}"
+
+    - name: Display node type
+      debug:
+        msg: "Node type: {{ 'GPU' if is_gpu_node else 'CPU-only' }}"
+
+    - name: Check if crusoe-vector container exists
+      community.docker.docker_container_info:
+        name: crusoe-vector
+      register: vector_container
+      retries: 6
+      delay: 10
+      until: vector_container.exists
+      failed_when: false
+
+    - name: Verify crusoe-vector container is running
+      fail:
+        msg: |
+          crusoe-vector container is not running!
+          Status: {{ vector_container.container.State.Status if vector_container.exists else 'does not exist' }}
+          
+          Debug steps:
+          1. Check service status: sudo systemctl status crusoe-telemetry-agent
+          2. Check service logs: sudo journalctl -u crusoe-telemetry-agent -n 50
+          3. Check Docker: docker ps -a | grep crusoe
+      when: not vector_container.exists or vector_container.container.State.Status != 'running'
+
+    - name: Check if crusoe-dcgm-exporter container exists (GPU nodes only)
+      community.docker.docker_container_info:
+        name: crusoe-dcgm-exporter
+      register: dcgm_container
+      retries: 6
+      delay: 10
+      until: dcgm_container.exists
+      failed_when: false
+      when: is_gpu_node | bool
+
+    - name: Verify crusoe-dcgm-exporter container is running (GPU nodes only)
+      fail:
+        msg: |
+          crusoe-dcgm-exporter container is not running on GPU node!
+          Status: {{ dcgm_container.container.State.Status if dcgm_container.exists else 'does not exist' }}
+      when: 
+        - is_gpu_node | bool
+        - not dcgm_container.exists or dcgm_container.container.State.Status != 'running'
+
+    # --- Log Verification ---
+    - name: Retrieve crusoe-vector container logs
+      command: docker container logs crusoe-vector --tail 50
+      register: vector_logs
+      changed_when: false
+      failed_when: false
+      retries: 3
+      delay: 10
+      until: vector_logs.rc == 0
+
+    - name: Display crusoe-vector logs
+      debug:
+        msg: "{{ vector_logs.stdout_lines }}"
+      when: vector_logs.rc == 0
+
+    - name: Check for errors in vector logs
+      debug:
+        msg: "⚠️  WARNING: Errors detected in crusoe-vector logs"
+      when: 
+        - vector_logs.rc == 0
+        - "'ERROR' in vector_logs.stdout or 'Error' in vector_logs.stdout"
+
+    - name: Verify vector container is healthy
+      debug:
+        msg: "✅ crusoe-vector container is running and healthy"
+      when: 
+        - vector_logs.rc == 0
+        - "'Vector has started' in vector_logs.stdout"
+
+    - name: Fail if vector logs cannot be retrieved
+      fail:
+        msg: |
+          Unable to retrieve crusoe-vector logs after multiple attempts.
+          The container may not be running.
+          
+          Check manually with:
+            sudo systemctl status crusoe-telemetry-agent
+            sudo journalctl -u crusoe-telemetry-agent -n 50
+            docker ps -a
+      when: vector_logs.rc != 0
+
+  # --------------------------------------------------------------------------
+  # Cleanup and Summary
+  # --------------------------------------------------------------------------
+  post_tasks:
+    - name: Remove temporary installation files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ telemetry_agent_script_path }}"
+        - /tmp/install_telemetry_agent.exp
+        - /tmp/expect_install.log
+      ignore_errors: true
+
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "=========================================="
+          - "  Crusoe Telemetry Agent Deployment"
+          - "=========================================="
+          - "Status: ✅ Installation completed"
+          - "Service: {{ service_result.state }}"
+          - "Containers: crusoe-vector, crusoe-dcgm-exporter"
+          - "Metrics: Now pushing to Crusoe monitoring"
+          - "=========================================="
