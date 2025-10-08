@@ -73,7 +73,9 @@ sed -i 's/YOUR_CLUSTER_REGION/us-east-1/g' fluent-bit-values.yaml
 
 The file `examples/fluent-bit-values-example.yaml` shows an example file with all the values populated.
 
-### 5. Install Fluent Bit
+### 4. Install Fluent Bit
+
+We now add the helm repo and deploy Fluent Bit with our custom values. **Note:** Crusoe Managed Kubernetes ship with another Fluent Bit helm release which is used to gather logs on k8s networking. We use a different release name than `fluent-bit` to avoid running into an error.
 
 ```bash
 # Add Fluent Bit Helm repository
@@ -81,7 +83,7 @@ helm repo add fluent https://fluent.github.io/helm-charts
 helm repo update
 
 # Install Fluent Bit with custom values
-helm install fluent-bit fluent/fluent-bit \
+helm install fluent-bit-logs-to-gcp fluent/fluent-bit \
     -f fluent-bit-values.yaml \
     -n logging
 
@@ -195,7 +197,7 @@ Check if the log paths are correct for your container runtime:
 
 ```bash
 # Uninstall Fluent Bit
-helm uninstall fluent-bit -n logging
+helm uninstall fluent-bit-logs-to-gcp -n logging
 
 # Delete namespace and secrets
 kubectl delete namespace logging
