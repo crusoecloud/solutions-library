@@ -1,0 +1,20 @@
+- name: Remove the existing ompi installation.
+  ansible.builtin.file:
+    path: /opt/hpcx/ompi/
+    state: absent
+
+- name: Rebuild ompi
+  ansible.builtin.command:
+    cmd: |
+      /opt/hpcx/utils/hpcx_rebuild.sh 
+      --cuda 
+      --ompi-extra-config "
+        --with-platform=contrib/platform/mellanox/optimized
+        --with-slurm
+        --with-pmix=/opt/pmix
+        --with-libevent=/usr
+        --with-hwloc=/usr
+      "
+  environment:
+    CUDA_HOME: "/usr/local/cuda"
+    ompi_prefix: "/opt/hpcx/ompi"

@@ -1,0 +1,11 @@
+- name: Create GB200 Slurm Image
+  hosts: all
+  become: true
+  roles:
+    - munge
+    - slurm
+    - pyxis
+    - slurmd
+    - slurmctld
+    - slurmdbd
+    - slurmrestd
