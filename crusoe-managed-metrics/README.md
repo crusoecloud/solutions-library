@@ -16,7 +16,7 @@
 4. **Crusoe Monitoring Token**: Generate a monitoring token from Crusoe Cloud CLI
 
 ```
-crusoe monitoring token create 
+crusoe monitoring tokens create 
 ```
 
 ## File Structure
