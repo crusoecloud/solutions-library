@@ -1,0 +1,5 @@
+- name: Install Shared Volumes Driver
+  hosts: all
+  become: true
+  roles:
+    - driver-setup
