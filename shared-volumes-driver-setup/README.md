@@ -18,6 +18,10 @@ cd solutions-library/shared-volumes-driver-setup
 ```
 4. Run the `setup.yml` playbook
 ```
-ansible-playbook -i inventory/inventory.yml slurm.yml
+ansible-playbook -i inventory/inventory.yml setup.yml
 ```
-5. Once ansible runs you can successfully mount the shared volumes using NFS
+5. Once ansible runs you can successfully mount the shared volumes using NFS.  You can find the command in the `Storage` tab of your Crusoe Web Console. The command should look like this : 
+
+```
+sudo mount -o vers=3,nconnect=16,spread_reads,spread_writes,remoteports=100.64.0.2-100.64.0.17 100.64.0.2:/volumes/b0c261f6-9794-4c81-be4a-f505f30a7eef <path/to/mount>
+```
