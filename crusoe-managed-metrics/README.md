@@ -1,4 +1,5 @@
 # Crusoe Telemetry Agent Ansible Deployment Guide
+This ansible playbook will set up the Crusoe Telemetry Agent across all the VMs defined in your inventory. 
 
 ## Prerequisites
 
@@ -33,7 +34,7 @@ crusoe-telemetry-deployment/
 ### Method 1: Pass Token as Command-Line Variable (Recommended)
 
 ```bash
-ansible-playbook -i inventory.ini playbook.yml \
+ansible-playbook -i inventory.ini setup-metrics.yaml \
   -e 'crusoe_monitoring_token=YOUR_MONITORING_TOKEN_HERE'
 ```
 
@@ -41,26 +42,9 @@ ansible-playbook -i inventory.ini playbook.yml \
 
 ```bash
 export CRUSOE_MONITORING_TOKEN='YOUR_MONITORING_TOKEN_HERE'
-ansible-playbook -i inventory.ini playbook.yml
+ansible-playbook -i inventory.ini setup-metrics.yaml
 ```
 
-### Method 3: Use Ansible Vault (Most Secure)
-
-1. Create an encrypted variables file:
-   ```bash
-   ansible-vault create vars/secrets.yml
-   ```
-
-2. Add your token to the file:
-   ```yaml
-   crusoe_monitoring_token: "YOUR_MONITORING_TOKEN_HERE"
-   ```
-
-3. Run the playbook with vault:
-   ```bash
-   ansible-playbook -i inventory.ini playbook.yml \
-     -e @vars/secrets.yml --ask-vault-pass
-   ```
 
 ## Deployment Examples
 
