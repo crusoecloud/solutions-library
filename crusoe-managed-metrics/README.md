@@ -120,6 +120,17 @@ ansible crusoe_vms -i inventory.ini -m apt \
   -a "name=expect state=present" -b
 ```
 
+### Issue: Ansible playbook fails on some or all hosts, especially when another exporter service had previously been installed
+This issue has been noticed on compute hosts that are part of the standard SLURM solution and that have DCGM exporter already running for the standalone SLURM Prometheus/Grafana solution
+**Solution**: Manually apt upgrade all hosts; Stop and disable the crusoe telemetry agent and any existing dcgm exporter services, then retry. On each host that the playbook reports as 'failed':
+```bash
+sudo apt-get update
+sudo apt-get upgrade
+sudo systemctl stop crusoe-telemetry-agent && sudo systemctl disable crusoe-telemetry-agent
+sudo systemctl stop crusoe-dcgm-exporter && sudo systemctl disable crusoe-dcgm-exporter
+```
+When the above commands have been done for all failing hosts, re-run the Ansible playbook
+
 ## Advanced Configuration
 
 ### Custom Variables
