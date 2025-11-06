@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: registry-cache
-Version: 0.1.0
-Requires-Python: >=3.13
-Requires-Dist: kubernetes>=34.1.0
-Requires-Dist: pulumi<4.0.0,>=3.0.0
-Requires-Dist: pulumi-gcp<10.0.0,>=9.0.0
-Requires-Dist: pulumi-kubernetes<5.0.0,>=4.0.0

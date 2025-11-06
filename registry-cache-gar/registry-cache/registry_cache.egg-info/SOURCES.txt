@@ -1,7 +1,0 @@
-k8s_helpers.py
-pyproject.toml
-registry_cache.egg-info/PKG-INFO
-registry_cache.egg-info/SOURCES.txt
-registry_cache.egg-info/dependency_links.txt
-registry_cache.egg-info/requires.txt
-registry_cache.egg-info/top_level.txt
