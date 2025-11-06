@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cncf-gar-proxy
+  namespace: my-namespace
+  labels:
+    app: cncf-gar-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cncf-gar-proxy
+  template:
+    metadata:
+      labels:
+        app: cncf-gar-proxy
+    spec:
+      serviceAccountName: my-serviceaccount
+
+      volumes:
+      - name: google-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: token
+              audience: "//iam.googleapis.com/projects/219213881601/locations/global/workloadIdentityPools/my-dev-pool/providers/my-k8s-provider"
+              expirationSeconds: 3600
+      - name: gcp-wif
+        configMap:
+          name: gcp-wif
+
+      - name: htpasswd
+        secret:
+          secretName: nginx-basic-auth
+
+      - name: registry-config
+        configMap:
+          name: cncf-registry-config
+          items:
+            - key: config.yml
+              path: config.yml
+              mode: 0644
+
+      containers:
+      - name: registry
+        image: docker.io/bchess/registry-docker-credential-gcr:3.0
+        command: [ "registry", "serve", "/etc/docker/registry/config.yml" ]
+        ports:
+        - containerPort: 5000
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /etc/gcp/gcp-wif.json
+        volumeMounts:
+        - name: google-token
+          mountPath: /var/run/secrets/google
+          readOnly: true
+        - name: gcp-wif
+          mountPath: /etc/gcp
+          readOnly: true
+        - name: registry-config
+          mountPath: /etc/docker/registry
+          readOnly: true
+        - name: htpasswd
+          mountPath: /auth
+          readOnly: true

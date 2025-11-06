@@ -1,0 +1,14 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: cncf-gar-proxy
+  namespace: my-namespace
+spec:
+  selector:
+    app: cncf-gar-proxy
+  type: NodePort
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
+    nodePort: 30026

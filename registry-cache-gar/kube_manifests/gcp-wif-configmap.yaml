@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-wif
+  namespace: my-namespace
+data:
+  gcp-wif.json: |
+    {
+      "universe_domain": "googleapis.com",
+      "type": "external_account",
+      "audience": "//iam.googleapis.com/projects/219213881601/locations/global/workloadIdentityPools/my-dev-pool/providers/my-k8s-provider",
+      "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+      "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/my-artifact-reader-gsa@my-project.iam.gserviceaccount.com:generateAccessToken",
+      "token_url": "https://sts.googleapis.com/v1/token",
+      "credential_source": {
+        "file": "/var/run/secrets/google/token",
+        "format": {
+          "type": "text"
+        }
+      }
+    }
