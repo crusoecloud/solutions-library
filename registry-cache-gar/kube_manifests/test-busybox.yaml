@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox2
+  namespace: default
+spec:
+  imagePullSecrets:
+  - name: regcred
+  containers:
+  - name: busybox
+    image: localhost:30027/bchess-dev/dev/busybox:1
+    imagePullPolicy: Always
+    command: ["sleep", "infinity"]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: regcred
+  namespace: default
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: ewogICJhdXRocyI6IHsKICAgICJsb2NhbGhvc3Q6MzAwMjYiOiB7CiAgICAgICJhdXRoIjogImJYbDFjMlZ5Ym1GdFpUcHRlWEJoYzNOM2IzSmsiCiAgICB9LAogICAgImxvY2FsaG9zdDozMDAyNyI6IHsKICAgICAgImF1dGgiOiAiYlhsMWMyVnlibUZ0WlRwdGVYQmhjM04zYjNKayIKICAgIH0KICB9Cn0K

@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cncf-registry-config
+  namespace: my-namespace
+data:
+  # 1. The main config file for the registry
+  config.yml: |
+    version: 0.1
+    log:
+      level: info
+    storage:
+      cache:
+        blobdescriptor: inmemory
+      filesystem:
+        rootdirectory: /var/lib/registry
+    http:
+      addr: :5000
+    auth:
+      htpasswd:
+        realm: basic-realm
+        path: /auth/htpasswd
+    proxy:
+      remoteurl: https://us-central1-docker.pkg.dev
+      exec:
+        command: /docker-credential-gcr
+
+  # 2. The script compatible as a docker-credential-helper
+  get-token.sh: |
+    #!/bin/sh
+    read server_url
+    TOKEN=$(gcloud auth print-access-token)
+    printf '{'
+    printf '"ServerURL": "https://us-central1-docker.pkg.dev",'
+    printf '"Username": "oauth2accesstoken",'
+    printf '"Secret": "%s"' "$TOKEN"
+    printf '}'

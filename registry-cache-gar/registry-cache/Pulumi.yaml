@@ -1,0 +1,40 @@
+name: registry-cache
+description: An in-kube image registry cache for an upstream Google Artifact Registry
+runtime:
+  name: python
+  options:
+    toolchain: uv
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: gcp-python
+  gcpLocation:
+    description: The location for your Google Artifact Registry
+    default: us-central1
+  registryNodePort:
+    description: The port number inside Kubernetes where the proxy registry will be reachable. Must be unique across NodePort Services and must be in the NodePort range (typically 30000-32767)
+    default: "30026"
+  registryHtpasswd:
+    description: Is an httpasswd that will be used as the auth for the registry cache. It must be in bcrypt format (htpasswd -B)
+    default: "myusername:$2y$05$YxaroXeC6YafJXT1LNkWu.hUeMMtUFuW.LNQIIBqO/9nSRa3WKxhi"
+  registryReplicas:
+    description: The number of replicas of the registry cache to run
+    default: "1"
+  garRegistryName:
+    description: The name of your Google Artifact Registry
+    default: my-google-artifact-registry
+  createGarRegistry:
+    description: If true, Pulumi will create the Google Artifact Registry itself. Useful for demo, but in production you probably already have one
+    default: "false"
+  k8sNamespace:
+    description: The Kubernetes namespace to deploy the registry cache into. Pulumi will create this namespace
+    default: registry-cache
+  createNamespace:
+    description: If true, Pulumi will create the Kubernetes namespace specified in `k8sNamespace`. Otherwise it's assumed to already exist.
+    default: "false"
+  registryImage:
+    description: A published image of the `Dockerfile.docker-credential-gcr`
+    default: docker.io/bchess/registry-docker-credential-gcr:3.0
+  registryImagePullSecret:
+    description: if defined, is a pre-existing secret name that will be added as an imagePullSecret to the registry deployment
+    default: ""

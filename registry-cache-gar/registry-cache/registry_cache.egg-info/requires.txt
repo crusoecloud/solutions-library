@@ -1,0 +1,4 @@
+kubernetes>=34.1.0
+pulumi<4.0.0,>=3.0.0
+pulumi-gcp<10.0.0,>=9.0.0
+pulumi-kubernetes<5.0.0,>=4.0.0
