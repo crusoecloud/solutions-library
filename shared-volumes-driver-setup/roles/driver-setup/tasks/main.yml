@@ -18,6 +18,15 @@
     cmd: sed -i 's#deb http://linux.mellanox.com#deb [signed-by=/usr/share/keyrings/mellanox.asc] http://linux.mellanox.com#' /etc/apt/sources.list.d/mellanox_mlnx_ofed.list
   when: mellanox_list_file.stat.exists
 
+- name: Filter for installed gcc packages 12+
+  ansible.builtin.set_fact:
+    gcc_versions_found: >
+      {{ ansible_facts.packages.keys() | select('regex', '^gcc-(1[2-9]|[2-9][0-9])$') | list }}
+
+- name: Set a boolean fact for easy checking
+  ansible.builtin.set_fact:
+    gcc_12_or_higher_installed: (gcc_versions_found | length > 0)
+
 - name: Ensure required packages are installed
   ansible.builtin.apt:
     name:
@@ -25,21 +34,21 @@
       - autotools-dev
       - debhelper
       - dpkg-dev
-      - gcc-12
     state: latest
     update_cache: true 
+
+- name: Ensure gcc-12 package is installed
+  ansible.builtin.apt:
+    name:
+      - gcc-12
+      - g++-12
+    state: present
+    update_cache: true
+  when: not gcc_12_or_higher_installed
 
 - name: Set vastnfs_version based on kernel versions
   ansible.builtin.set_fact:
     vastnfs_version: "{{ (ansible_kernel is version('6.8', '>=')) | ternary(vastnfs_new_kernels, vastnfs_old_kernels) }}"
-
-- name: Update gcc compiler to 12
-  community.general.alternatives:
-    name: gcc
-    path: /usr/bin/gcc-12
-    link: /usr/bin/gcc
-    priority: 120
-    state: present
 
 - name: Ensure source directory exists
   file:
@@ -65,6 +74,9 @@
   command: bash -x ./build-deb.sh --no-ofed
   args:
     chdir: "{{ install_dir }}/vastnfs-{{ vastnfs_version }}"
+  environment:
+    CC: "{{ omit if gcc_12_or_higher_installed else '/usr/bin/gcc-12' }}"
+    CXX: "{{ omit if gcc_12_or_higher_installed else '/usr/bin/g++-12' }}"
   register: build_output
 
 - name: List files in dist directory
