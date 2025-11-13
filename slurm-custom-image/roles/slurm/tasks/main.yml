@@ -5,6 +5,7 @@
       - gcc
       - make
       - libdbus-1-dev
+      - hwloc
 
 - name: Install slurmrestd dependencies
   ansible.builtin.apt:

@@ -1,4 +1,4 @@
-- name: Create GB200 Slurm Image
+- name: Create Slurm Image
   hosts: all
   become: true
   roles:

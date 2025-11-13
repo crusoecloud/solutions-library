@@ -1,13 +1,3 @@
-- name: Set architecture for amd64
-  set_fact:
-    linux_arch: amd64
-  when: ansible_architecture == "x86_64"
-
-- name: Set architecture for arm64
-  set_fact:
-    linux_arch: arm64
-  when: ansible_architecture == "aarch64"
-
 - name: Create /etc/slurm directory
   ansible.builtin.file:
     path: /etc/slurm
