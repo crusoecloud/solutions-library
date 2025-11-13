@@ -1,0 +1,9 @@
+## Mellanox 
+hpcx_version_mlnx: v2.20
+ofed_distro_mlnx: mlnx_ofed
+cuda_version_mlnx: cuda12
+
+## DOCA
+hpcx_version_doca: v2.21.3
+ofed_distro_doca: doca_ofed
+cuda_version_doca: cuda12

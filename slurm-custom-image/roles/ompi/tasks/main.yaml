@@ -1,3 +1,31 @@
+- name: Create /opt/hpcx directory
+  ansible.builtin.file:
+    path: /opt/hpcx
+    state: directory
+    mode: '755'
+
+- name: Set HPC-X variables based on architecture
+  ansible.builtin.set_fact:
+    hpcx_version: "{{ (ansible_architecture == 'x86_64') | ternary(hpcx_version_mlnx, hpcx_version_doca) }}"
+    ofed_distro: "{{ (ansible_architecture == 'x86_64') | ternary(ofed_distro_mlnx, ofed_distro_doca) }}"
+    cuda_version: "{{ (ansible_architecture == 'x86_64') | ternary(cuda_version_mlnx, cuda_version_doca) }}"
+
+- name: Download HPCX archive
+  vars:
+    distribution_with_version: "{{ (ansible_facts['distribution'] | lower) + ansible_facts['distribution_version'] }}"
+  ansible.builtin.get_url:
+    url: https://content.mellanox.com/hpc/hpc-x/{{ hpcx_version }}/hpcx-{{ hpcx_version }}-gcc-{{ ofed_distro }}-{{ distribution_with_version }}-{{ cuda_version }}-{{ ansible_architecture }}.tbz
+    dest: /opt/hpcx.tbz
+    mode: '755'
+
+- name: Extract HPCX archive
+  ansible.builtin.command: tar -xf /opt/hpcx.tbz --directory /opt/hpcx --strip-components 1
+
+- name: Remove HPCX archive
+  ansible.builtin.file:
+    path: /opt/hpcx.tbz
+    state: absent
+
 - name: Remove the existing ompi installation.
   ansible.builtin.file:
     path: /opt/hpcx/ompi/

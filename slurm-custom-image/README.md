@@ -1,6 +1,7 @@
-# Crusoe Slurm Image Generation Ansible
+# Crusoe Slurm Image Generation
+This ansible playbook and role will help you generate a base image with Slurm binaries installed. This base image can be used to create a Crusoe custom image.
 
-This ansible playbook and role will help you generate a custom image with Slurm binaries installed
+NOTE: This requires NVIDIA drivers and CUDA to be pre-installed on the VM
 
 ## Installation
 
