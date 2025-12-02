@@ -12,7 +12,7 @@ ansible-galaxy role install nvidia.enroot
 2. Clone the repo and switch to the directory
 ```
 git clone https://github.com/crusoecloud/solutions-library.git
-cd solutions-library
+cd solutions-library/slurm-custom-image
 ```
 
 3. Create a VM using your desired base image
