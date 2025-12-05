@@ -1,0 +1,115 @@
+#####################################################################
+# STEP 1 — Setup NCCL SSH key & passwordless access
+#####################################################################
+
+- name: Setup NCCL SSH Key (Local Creation)
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Check if NCCL SSH key already exists
+      stat:
+        path: "~/.ssh/id_ed25519"
+      register: nccl_key_stat
+
+    - name: Generate NCCL SSH keypair (only if missing)
+      community.crypto.openssh_keypair:
+        path: "~/.ssh/id_ed25519"
+        type: ed25519
+        regenerate: never
+      when: not nccl_key_stat.stat.exists
+      register: nccl_key
+
+    - name: Read NCCL public key
+      slurp:
+        src: "~/.ssh/id_ed25519.pub"
+      register: nccl_pubkey_raw
+
+    - name: Decode NCCL public key
+      set_fact:
+        nccl_pubkey: "{{ nccl_pubkey_raw.content | b64decode }}"
+
+    - name: Save NCCL public key to temp file
+      copy:
+        dest: "/tmp/nccl_pubkey"
+        content: "{{ nccl_pubkey }}"
+
+
+#####################################################################
+# STEP 2 — Distribute NCCL SSH key to nodes
+#####################################################################
+
+- name: Distribute NCCL SSH key
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Ensure .ssh exists
+      file:
+        path: /home/ubuntu/.ssh
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0700'
+
+    - name: Read NCCL pubkey from localhost
+      delegate_to: localhost
+      become: false
+      slurp:
+        src: "/tmp/nccl_pubkey"
+      register: nccl_pubkey_slurped
+
+    - name: Decode NCCL pubkey
+      set_fact:
+        nccl_pubkey_decoded: "{{ nccl_pubkey_slurped.content | b64decode }}"
+
+    - name: Read extra SSH keys from sshkeys file (optional)
+      delegate_to: localhost
+      set_fact:
+        sshkeys_extra: "{{ lookup('file', 'sshkeys', errors='ignore') | default('') }}"
+
+    - name: Combine authorized_keys
+      set_fact:
+        full_authorized_keys: "{{ nccl_pubkey_decoded }}\n{{ sshkeys_extra }}"
+
+    - name: Push authorized_keys
+      copy:
+        dest: "/home/ubuntu/.ssh/authorized_keys"
+        content: "{{ full_authorized_keys }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Push NCCL private key
+      copy:
+        src: "~/.ssh/id_ed25519"
+        dest: "/home/ubuntu/.ssh/id_ed25519"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Install SSH config
+      copy:
+        dest: "/home/ubuntu/.ssh/config"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+        content: |
+          Host *
+              IdentityFile ~/.ssh/id_ed25519
+              IdentitiesOnly yes
+
+    - name: Upload hostfile
+      ansible.builtin.copy:
+        src:  "hostfile"
+        dest: "/home/ubuntu/hostfile"
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Upload nccl.sh script
+      ansible.builtin.copy:
+        src:  "nccl.sh"
+        dest: "/home/ubuntu/nccl.sh"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
