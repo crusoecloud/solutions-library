@@ -4,7 +4,7 @@ This ansible playbook will help you set up your Crusoe VMs to run a multi-node N
 ## Prerequisites
 
 1. **Crusoe CLI** configured with the project where your VMs are provisioned.
-2. **Crusoe GPU VMs** already provisioned in your Crusoe Cloud account, same GPU node type (i.e. NVIDIA H200) on the same InfiniBand Partition. They all must have the same SSH key, with the key located locally under `~/.ssh`.
+2. **Crusoe GPU VMs** already provisioned in your Crusoe Cloud account, same GPU node type (i.e. NVIDIA H200) on the same InfiniBand Partition. They all must have the same SSH key. The ansible file assumes `~/.ssh/id_ed25519` but you can edit the file to point to your specific location.
 3. **Ansible** and **jq** installed locally.
 
 ## Installation
