@@ -1,3 +1,9 @@
+- name: Install build dependencies
+  ansible.builtin.apt:
+    name: 
+      - squashfuse
+      - fuse-overlayfs
+
 - name: Create /etc/slurm directory
   ansible.builtin.file:
     path: /etc/slurm
@@ -31,6 +37,7 @@
     enroot_version: "3.4.1"
     enroot_deb_packages:
           - "https://github.com/NVIDIA/enroot/releases/download/v3.4.1/enroot_3.4.1-1_{{ linux_arch }}.deb"
+          - "https://github.com/NVIDIA/enroot/releases/download/v3.4.1/enroot+caps_3.4.1-1_{{ linux_arch }}.deb"
 
 - name: Install plugstack.conf
   ansible.builtin.copy:
