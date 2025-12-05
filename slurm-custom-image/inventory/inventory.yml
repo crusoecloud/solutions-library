@@ -1,9 +1,3 @@
 ## List of VM IPs
-# 216.86.169.218 gb200
-# 160.211.69.8 slurm head
-#160.211.67.102 #slurm-head-nvidia uses ubuntu22.04-nvidia-sxm-docker
-#160.211.67.125 #slurm-head-nvidia-slurm uses ubuntu22.04-nvidia-slurm
-# 160.211.64.103 #safdar head
-# 160.211.64.110 #safdar compute
-160.211.64.84
-160.211.64.0
+216.x.x.x
+160.y.y.y
