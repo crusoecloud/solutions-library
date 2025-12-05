@@ -26,6 +26,22 @@ Each solution README will also list its own specific prerequisites.
 
 ### Inference
 
+### Storage
+
+[Shared Volumes NFS Setup](./shared-volumes-driver-setup/)
+
+This solution will install all the necessary drivers, packages and configurations to enable your Crusoe Cloud VMs to mount Crusoe Shared Volumes via NFS.
+
+[OCI Registry Cache for Google Artifact Registry](./registry-cache-gar/)
+
+This is a working solution of an OCI Image registry, on Kubernetes, that acts as a cache for an upstream [Google Artifact Registry](https://docs.cloud.google.com/artifact-registry/docs).
+
+### Performance
+
+[Multi-VM NCCL Test](./nccl-allreduce-test-vms/)
+
+Crusoe Cloud GPU VMs are equipped with high-performance NVIDIA Mellanox InfiniBand (IB) networking. This solution will set up your VMs with necessary configurations to use the pre-loaded NCCL all_reduce test on your VMs and test InfiniBand networking performance. 
+
 ### Observability
 
 [Crusoe Managed Kubernetes logs to Google Cloud Logging](./crusoe-managed-kubernetes-logs-to-gcp/)
