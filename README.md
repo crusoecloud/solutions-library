@@ -30,7 +30,7 @@ Each solution README will also list its own specific prerequisites.
 
 [Shared Volumes NFS Setup](./shared-volumes-driver-setup/)
 
-This is a working solution of an OCI Image registry that acts as a cache for an upstream [Google Artifact Registry](https://docs.cloud.google.com/artifact-registry/docs). The image registry runs in Kubernetes.
+This solution will install all the necessary drivers, packages and configurations to enable your Crusoe Cloud VMs to mount Crusoe Shared Volumes via NFS.
 
 [OCI Registry Cache for Google Artifact Registry](./registry-cache-gar/)
 
