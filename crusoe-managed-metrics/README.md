@@ -1,5 +1,5 @@
-# Crusoe Telemetry Agent Ansible Deployment Guide
-This ansible playbook will set up the Crusoe Telemetry Agent across all the VMs defined in your inventory. 
+# Crusoe-Watch Agent Ansible Deployment Guide
+This ansible playbook will set up the Crusoe-Watch Agent across all the VMs defined in your inventory. 
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ This ansible playbook will set up the Crusoe Telemetry Agent across all the VMs 
 ## File Structure
 
 ```
-crusoe-telemetry-deployment/
+crusoe-watch-deployment/
 ├── setup-metrics.yaml
 ├── inventory.ini
 └── README.md
@@ -84,7 +84,7 @@ After deployment, verify the installation on target VMs:
 ```bash
 # Check service status
 ansible crusoe_vms -i inventory.ini -m shell \
-  -a "sudo systemctl status crusoe-telemetry-agent" -b
+  -a "sudo systemctl status crusoe-watch-agent" -b
 
 # Check Docker containers
 ansible crusoe_vms -i inventory.ini -m shell \
@@ -122,11 +122,11 @@ ansible crusoe_vms -i inventory.ini -m apt \
 
 ### Issue: Ansible playbook fails on some or all hosts, especially when another exporter service had previously been installed
 This issue has been noticed on compute hosts that are part of the standard SLURM solution and that have DCGM exporter already running for the standalone SLURM Prometheus/Grafana solution
-**Solution**: Manually apt upgrade all hosts; Stop and disable the crusoe telemetry agent and any existing dcgm exporter services, then retry. On each host that the playbook reports as 'failed':
+**Solution**: Manually apt upgrade all hosts; Stop and disable the Crusoe-Watch agent and any existing DCGM exporter services, then retry. On each host that the playbook reports as 'failed':
 ```bash
 sudo apt-get update
 sudo apt-get upgrade
-sudo systemctl stop crusoe-telemetry-agent && sudo systemctl disable crusoe-telemetry-agent
+sudo systemctl stop crusoe-watch-agent && sudo systemctl disable crusoe-watch-agent
 sudo systemctl stop crusoe-dcgm-exporter && sudo systemctl disable crusoe-dcgm-exporter
 ```
 When the above commands have been done for all failing hosts, re-run the Ansible playbook
@@ -140,7 +140,7 @@ Create a `group_vars/crusoe_vms.yml` file:
 ```yaml
 ---
 crusoe_monitoring_token: "{{ lookup('env', 'CRUSOE_MONITORING_TOKEN') }}"
-telemetry_agent_script_url: "https://raw.githubusercontent.com/crusoecloud/crusoe-telemetry-agent/refs/heads/main/setup_crusoe_telemetry_agent.sh"
+crusoe_watch_agent_script_url: "https://raw.githubusercontent.com/crusoecloud/crusoe-watch-agent/refs/heads/main/setup_crusoe_watch_agent.sh"
 ```
 
 ### Parallel Execution
@@ -158,22 +158,22 @@ For large-scale deployments, consider using dynamic inventory with Crusoe Cloud 
 
 ## Maintenance Operations
 
-### Restart Telemetry Agent on All VMs
+### Restart Crusoe-Watch Agent on All VMs
 ```bash
 ansible crusoe_vms -i inventory.ini -m systemd \
-  -a "name=crusoe-telemetry-agent state=restarted" -b
+  -a "name=crusoe-watch-agent state=restarted" -b
 ```
 
-### Stop Telemetry Agent
+### Stop Crusoe-Watch Agent
 ```bash
 ansible crusoe_vms -i inventory.ini -m systemd \
-  -a "name=crusoe-telemetry-agent state=stopped" -b
+  -a "name=crusoe-watch-agent state=stopped" -b
 ```
 
 ### Check Agent Status
 ```bash
 ansible crusoe_vms -i inventory.ini -m systemd \
-  -a "name=crusoe-telemetry-agent state=started enabled=yes" -b
+  -a "name=crusoe-watch-agent state=started enabled=yes" -b
 ```
 
 ## Security Best Practices
@@ -189,7 +189,7 @@ ansible crusoe_vms -i inventory.ini -m systemd \
 Example GitLab CI pipeline:
 
 ```yaml
-deploy_telemetry:
+deploy_watch_agent:
   stage: deploy
   script:
     - ansible-playbook -i inventory.ini setup-metrics.yaml 
@@ -200,5 +200,5 @@ deploy_telemetry:
 
 ## Support
 
-For issues with the telemetry agent, contact Crusoe Cloud support.
+For issues with the Crusoe-Watch agent, contact Crusoe Cloud support.
 For Ansible playbook issues, check the task output with `-vvv` flag for detailed debugging information.
