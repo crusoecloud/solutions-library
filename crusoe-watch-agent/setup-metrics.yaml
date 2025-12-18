@@ -1,9 +1,9 @@
 ---
 # ============================================================================
-# Crusoe Telemetry Agent Installation Playbook
+# Crusoe Watch Agent Installation Playbook
 # ============================================================================
-# This playbook automates the installation and configuration of the Crusoe
-# telemetry agent across a fleet of VMs.
+# This playbook automates the installation and configuration of the 
+# Crusoe Watch Agent across a fleet of VMs.
 #
 # Requirements:
 #   - Ansible 2.9+
@@ -16,7 +16,7 @@
 #     -e 'crusoe_monitoring_token=YOUR_TOKEN'
 # ============================================================================
 
-- name: Install and Configure Crusoe Telemetry Agent
+- name: Install and Configure Crusoe Watch Agent
   hosts: crusoe_vms
   become: true
   
@@ -25,11 +25,11 @@
     crusoe_monitoring_token: "{{ lookup('env', 'CRUSOE_MONITORING_TOKEN') | default('') }}"
     
     # Script download settings
-    telemetry_agent_script_url: "https://raw.githubusercontent.com/crusoecloud/crusoe-telemetry-agent/refs/heads/main/setup_crusoe_telemetry_agent.sh"
-    telemetry_agent_script_path: "/tmp/setup_crusoe_telemetry_agent.sh"
+    crusoe_watch_agent_script_url: "https://raw.githubusercontent.com/crusoecloud/crusoe-watch-agent/refs/heads/main/vm/crusoe_watch_agent.sh"
+    crusoe_watch_agent_script_path: "/tmp/crusoe_watch_agent.sh"
     
     # Service configuration
-    telemetry_service_name: "crusoe-telemetry-agent"
+    crusoe_watch_service_name: "crusoe-watch-agent"
 
   # --------------------------------------------------------------------------
   # Pre-flight Checks
@@ -48,10 +48,10 @@
   # --------------------------------------------------------------------------
   tasks:
     # --- Download Setup Script ---
-    - name: Download Crusoe telemetry agent setup script
+    - name: Download Crusoe Watch Agent setup script
       get_url:
-        url: "{{ telemetry_agent_script_url }}"
-        dest: "{{ telemetry_agent_script_path }}"
+        url: "{{ crusoe_watch_agent_script_url }}"
+        dest: "{{ crusoe_watch_agent_script_path }}"
         mode: '0755'
         timeout: 30
       register: download_result
@@ -60,8 +60,8 @@
       until: download_result is succeeded
 
     # --- Check Existing Installation ---
-    - name: Check if telemetry agent service is running
-      command: systemctl is-active "{{ telemetry_service_name }}"
+    - name: Check if Crusoe Watch Agent service is running
+      command: systemctl is-active "{{ crusoe_watch_service_name }}"
       register: service_check
       changed_when: false
       failed_when: false
@@ -78,7 +78,7 @@
 
     - name: Display installation status
       debug:
-        msg: "{{ 'Telemetry agent already installed and running. Skipping installation steps.' if agent_already_installed else 'Telemetry agent not found. Proceeding with installation.' }}"
+        msg: "{{ 'Crusoe Watch Agent already installed and running. Skipping installation steps.' if agent_already_installed else 'Crusoe Watch Agent not found. Proceeding with installation.' }}"
 
     # --- Prepare Automated Installation ---
     - name: Ensure expect package is installed
@@ -104,7 +104,7 @@
           puts "Token value: $token"
           puts "============================\n"
           
-          spawn sudo {{ telemetry_agent_script_path }}
+          spawn sudo {{ crusoe_watch_agent_script_path }}
           
           expect {
             "Please enter the crusoe monitoring token:" {
@@ -130,13 +130,13 @@
               exit [lindex $result 3]
             }
           }
-        dest: /tmp/install_telemetry_agent.exp
+        dest: /tmp/install_crusoe_watch_agent.exp
         mode: '0755'
       when: not agent_already_installed
 
     # --- Run Installation ---
-    - name: Run telemetry agent installation with monitoring token
-      command: "/tmp/install_telemetry_agent.exp {{ crusoe_monitoring_token }}"
+    - name: Run Crusoe Watch Agent installation with monitoring token
+      command: "/tmp/install_crusoe_watch_agent.exp {{ crusoe_monitoring_token }}"
       register: installation_result
       when: not agent_already_installed
       changed_when: "'Setup finished successfully!' in installation_result.stdout"
@@ -178,16 +178,16 @@
         - installation_result is defined
 
     # --- Service Management ---
-    - name: Enable and start crusoe-telemetry-agent service
+    - name: Enable and start crusoe-watch-agent service
       systemd:
-        name: "{{ telemetry_service_name }}"
+        name: "{{ crusoe_watch_service_name }}"
         enabled: true
         state: started
       register: service_result
 
     - name: Restart service if installation just completed
       systemd:
-        name: "{{ telemetry_service_name }}"
+        name: "{{ crusoe_watch_service_name }}"
         state: restarted
       when: 
         - not agent_already_installed
@@ -201,15 +201,15 @@
         prompt: "Waiting for Docker containers to start..."
       when: service_result.changed or (service_restart is defined and service_restart.changed)
 
-    - name: Verify crusoe-telemetry-agent service is active
+    - name: Verify crusoe-watch-agent service is active
       systemd:
-        name: "{{ telemetry_service_name }}"
+        name: "{{ crusoe_watch_service_name }}"
       register: service_status
       failed_when: service_status.status.ActiveState != 'active'
 
     - name: Display service status
       debug:
-        msg: "Service {{ telemetry_service_name }} is {{ service_status.status.ActiveState }}"
+        msg: "Service {{ crusoe_watch_service_name }} is {{ service_status.status.ActiveState }}"
 
     # --- Container Health Checks ---
     - name: Detect if node has GPU
@@ -242,8 +242,8 @@
           Status: {{ vector_container.container.State.Status if vector_container.exists else 'does not exist' }}
           
           Debug steps:
-          1. Check service status: sudo systemctl status crusoe-telemetry-agent
-          2. Check service logs: sudo journalctl -u crusoe-telemetry-agent -n 50
+          1. Check service status: sudo systemctl status crusoe-watch-agent
+          2. Check service logs: sudo journalctl -u crusoe-watch-agent -n 50
           3. Check Docker: docker ps -a | grep crusoe
       when: not vector_container.exists or vector_container.container.State.Status != 'running'
 
@@ -302,8 +302,8 @@
           The container may not be running.
           
           Check manually with:
-            sudo systemctl status crusoe-telemetry-agent
-            sudo journalctl -u crusoe-telemetry-agent -n 50
+            sudo systemctl status crusoe-watch-agent
+            sudo journalctl -u crusoe-watch-agent -n 50
             docker ps -a
       when: vector_logs.rc != 0
 
@@ -316,8 +316,8 @@
         path: "{{ item }}"
         state: absent
       loop:
-        - "{{ telemetry_agent_script_path }}"
-        - /tmp/install_telemetry_agent.exp
+        - "{{ crusoe_watch_agent_script_path }}"
+        - /tmp/install_crusoe_watch_agent.exp
         - /tmp/expect_install.log
       ignore_errors: true
 
@@ -325,10 +325,10 @@
       debug:
         msg:
           - "=========================================="
-          - "  Crusoe Telemetry Agent Deployment"
+          - "  Crusoe Watch Agent Deployment"
           - "=========================================="
           - "Status: ✅ Installation completed"
           - "Service: {{ service_result.state }}"
           - "Containers: crusoe-vector, crusoe-dcgm-exporter"
-          - "Metrics: Now pushing to Crusoe monitoring"
+          - "Metrics: Now pushing to Crusoe Watch"
           - "=========================================="
