@@ -1,5 +1,5 @@
-# Crusoe-Watch Agent Ansible Deployment Guide
-This ansible playbook will set up the Crusoe-Watch Agent across all the VMs defined in your inventory. 
+# Crusoe Watch Agent Ansible Deployment Guide
+This ansible playbook will set up the Crusoe Watch Agent across all the VMs defined in your inventory. 
 
 ## Prerequisites
 
@@ -158,13 +158,13 @@ For large-scale deployments, consider using dynamic inventory with Crusoe Cloud 
 
 ## Maintenance Operations
 
-### Restart Crusoe-Watch Agent on All VMs
+### Restart Crusoe Watch Agent on All VMs
 ```bash
 ansible crusoe_vms -i inventory.ini -m systemd \
   -a "name=crusoe-watch-agent state=restarted" -b
 ```
 
-### Stop Crusoe-Watch Agent
+### Stop Crusoe Watch Agent
 ```bash
 ansible crusoe_vms -i inventory.ini -m systemd \
   -a "name=crusoe-watch-agent state=stopped" -b
@@ -200,5 +200,5 @@ deploy_watch_agent:
 
 ## Support
 
-For issues with the Crusoe-Watch agent, contact Crusoe Cloud support.
+For issues with the Crusoe Watch agent, contact Crusoe Cloud support.
 For Ansible playbook issues, check the task output with `-vvv` flag for detailed debugging information.

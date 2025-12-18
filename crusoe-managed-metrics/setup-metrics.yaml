@@ -1,9 +1,9 @@
 ---
 # ============================================================================
-# Crusoe-Watch Agent Installation Playbook
+# Crusoe Watch Agent Installation Playbook
 # ============================================================================
 # This playbook automates the installation and configuration of the 
-# Crusoe-Watch agent across a fleet of VMs.
+# Crusoe Watch agent across a fleet of VMs.
 #
 # Requirements:
 #   - Ansible 2.9+
@@ -16,7 +16,7 @@
 #     -e 'crusoe_monitoring_token=YOUR_TOKEN'
 # ============================================================================
 
-- name: Install and Configure Crusoe-Watch Agent
+- name: Install and Configure Crusoe Watch Agent
   hosts: crusoe_vms
   become: true
   
@@ -48,7 +48,7 @@
   # --------------------------------------------------------------------------
   tasks:
     # --- Download Setup Script ---
-    - name: Download Crusoe-Watch agent setup script
+    - name: Download Crusoe Watch agent setup script
       get_url:
         url: "{{ crusoe_watch_agent_script_url }}"
         dest: "{{ crusoe_watch_agent_script_path }}"
@@ -60,7 +60,7 @@
       until: download_result is succeeded
 
     # --- Check Existing Installation ---
-    - name: Check if Crusoe-Watch agent service is running
+    - name: Check if Crusoe Watch agent service is running
       command: systemctl is-active "{{ crusoe_watch_service_name }}"
       register: service_check
       changed_when: false
@@ -135,7 +135,7 @@
       when: not agent_already_installed
 
     # --- Run Installation ---
-    - name: Run Crusoe-Watch agent installation with monitoring token
+    - name: Run Crusoe Watch agent installation with monitoring token
       command: "/tmp/install_crusoe_watch_agent.exp {{ crusoe_monitoring_token }}"
       register: installation_result
       when: not agent_already_installed
@@ -325,7 +325,7 @@
       debug:
         msg:
           - "=========================================="
-          - "  Crusoe-Watch Agent Deployment"
+          - "  Crusoe Watch Agent Deployment"
           - "=========================================="
           - "Status: ✅ Installation completed"
           - "Service: {{ service_result.state }}"
