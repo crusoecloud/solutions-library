@@ -1,5 +1,5 @@
 # Crusoe Watch Agent Ansible Deployment Guide
-This ansible playbook will set up the Crusoe Watch Agent across all the VMs defined in your inventory. 
+This Ansible playbook will set up the Crusoe Watch Agent across all the VMs defined in your inventory. 
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ This ansible playbook will set up the Crusoe Watch Agent across all the VMs defi
 ## File Structure
 
 ```
-crusoe-watch-deployment/
+crusoe-watch-agent/
 ├── setup-metrics.yaml
 ├── inventory.ini
 └── README.md

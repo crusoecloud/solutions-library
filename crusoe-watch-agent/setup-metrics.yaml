@@ -25,8 +25,8 @@
     crusoe_monitoring_token: "{{ lookup('env', 'CRUSOE_MONITORING_TOKEN') | default('') }}"
     
     # Script download settings
-    crusoe_watch_agent_script_url: "https://raw.githubusercontent.com/crusoecloud/crusoe-watch-agent/refs/heads/main/setup_crusoe_watch_agent.sh"
-    crusoe_watch_agent_script_path: "/tmp/setup_crusoe_watch_agent.sh"
+    crusoe_watch_agent_script_url: "https://raw.githubusercontent.com/crusoecloud/crusoe-watch-agent/refs/heads/main/vm/crusoe_watch_agent.sh"
+    crusoe_watch_agent_script_path: "/tmp/crusoe_watch_agent.sh"
     
     # Service configuration
     crusoe_watch_service_name: "crusoe-watch-agent"
@@ -330,5 +330,5 @@
           - "Status: ✅ Installation completed"
           - "Service: {{ service_result.state }}"
           - "Containers: crusoe-vector, crusoe-dcgm-exporter"
-          - "Metrics: Now pushing to Crusoe monitoring"
+          - "Metrics: Now pushing to Crusoe Watch"
           - "=========================================="
