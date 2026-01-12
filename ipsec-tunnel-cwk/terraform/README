@@ -1,0 +1,1 @@
+This terraform is an example config that will bring up a Google Cloud VPN in an existing GCP VPC and connect it to a CMK cluster via the `ipsec-tunnel` helm chart. It should work as-is, but is not required for deployment. It is only meant to serve as a reference.

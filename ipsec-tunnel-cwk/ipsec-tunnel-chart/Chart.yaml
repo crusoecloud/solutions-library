@@ -1,0 +1,14 @@
+apiVersion: v2
+name: ipsec-tunnel
+description: Helm chart to deploy IPSec tunnel components (strongSwan, routes, cilium/ip-masq, vpn gateway)
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - ipsec
+  - strongswan
+  - networking
+kubeVersion: ">=1.24.0"
+type: application
+maintainers:
+  - name: ipsec-tunnel-maintainer
+    email: maintainer@example.com

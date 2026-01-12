@@ -1,0 +1,67 @@
+{{- range $i, $t := .Values.tunnels }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ipsec-tunnel-bgpd-config-{{ $i }}
+  labels:
+    {{- include "ipsec-tunnel.labels" $ | nindent 4 }}
+data:
+  daemons: |
+    bgpd=yes
+    vtysh_enable=yes
+    zebra_options="  -A 127.0.0.1 -s 90000000"
+    bgpd_options="   -A 127.0.0.1"
+  frr.conf: |
+    hostname bgpd
+    password zebra
+    log stdout
+
+    router bgp {{ $.Values.bgp.localASN }}
+      bgp router-id {{ $t.localTunnelIP }}
+      neighbor {{ $t.peerTunnelIP }} remote-as {{ $.Values.bgp.peerASN }}
+      neighbor {{ $t.peerTunnelIP }} timers 10 30
+      neighbor {{ $t.peerTunnelIP }} ebgp-multihop 5
+      neighbor {{ $t.peerTunnelIP }} update-source {{ $t.localTunnelIP }}
+
+      # iBGP/eBGP session from netns FRR to host FRR (reflector) via ss0 host IP
+      neighbor 169.254.100.1 remote-as {{ $.Values.bgp.internalASN }}
+      neighbor 169.254.100.1 timers 10 30
+      neighbor 169.254.100.1 update-source 169.254.100.2
+
+      address-family ipv4 unicast
+        {{- $cidrs := $.Values.bgp.advertiseCidrs }}
+        {{- if not $cidrs }}
+        {{- $cidrs = $.Values.localCidrs }}
+        {{- end }}
+        {{- range $cidrs }}
+        network {{ . }}
+        {{- end }}
+
+        ! Send k8s routes to peer
+        neighbor {{ $t.peerTunnelIP }} route-map EXTERNAL_OUT out
+        neighbor {{ $t.peerTunnelIP }} route-map IN in
+        neighbor {{ $t.peerTunnelIP }} activate
+
+        neighbor 169.254.100.1 route-map INTERNAL_OUT out
+        neighbor 169.254.100.1 activate
+      exit-address-family
+
+    {{- range $cidrs }}
+    ip prefix-list PL_K8S permit {{ . }}
+    {{- end }}
+
+    route-map EXTERNAL_OUT permit 10
+      match ip address prefix-list PL_K8S
+    
+    route-map INTERNAL_OUT deny 10
+      match ip address prefix-list PL_K8S
+
+    route-map INTERNAL_OUT permit 20
+
+    route-map IN permit 10
+
+    {{- range $cidrs }}
+    ip route {{ . }} 169.254.100.1
+    {{- end }}
+---
+{{- end }}

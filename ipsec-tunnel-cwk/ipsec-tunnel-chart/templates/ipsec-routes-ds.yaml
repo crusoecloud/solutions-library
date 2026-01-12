@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ipsec-routes
+  labels:
+    {{- include "ipsec-tunnel.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      name: ipsec-routes
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 100%
+  template:
+    metadata:
+      labels:
+        name: ipsec-routes
+        {{- include "ipsec-tunnel.labels" . | nindent 8 }}
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: frr
+        image: {{ .Values.bgp.frrImage | quote }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        command:
+        - bash
+        - -c
+        - |
+          set -e
+          apk add --update iproute2-minimal musl-utils jq bind-tools
+
+          # Choose FRR config based on whether this node is a reflector
+          NODE_NAME=$(cat /etc/hostname)
+          REFLECTOR_NAMES="{{- range $i, $t := .Values.tunnels }}{{ $t.nodeName }} {{ end }}"
+          if echo "$REFLECTOR_NAMES" | tr ' ' '\n' | cut -d. -f 1 | grep -qx "$NODE_NAME"; then
+            echo "This node ($NODE_NAME) is a route reflector"
+            REFLECTOR=1
+            FRR_CONF=/etc/frr-configmap/frr.conf.reflector
+          else
+            echo "This node ($NODE_NAME) is an iBGP client"
+            REFLECTOR=0
+            FRR_CONF=/etc/frr-configmap/frr.conf.client
+          fi
+          # Expand env variables from config file
+          eval "cat <<EOF
+          $(cat $FRR_CONF)
+          EOF
+          " > /etc/frr/frr.conf
+
+          touch /etc/frr/vtysh.conf
+          /usr/lib/frr/docker-start &
+
+          if [ $REFLECTOR -eq 0 ]; then
+            ip neigh replace $IPSEC_MOCK_VIA_IP lladdr aa:bb:cc:dd:ee:ff dev cilium_vxlan nud permanent
+            source /usr/local/lib/ipsec-routes.sh
+
+            while true; do
+              vtysh -c "show ip bgp json" | apply_routes
+              sleep 1
+            done
+          else
+            # Reflector: nothing extra to do
+            tail -f /dev/null
+          fi
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["NET_ADMIN", "SYS_ADMIN"]
+        volumeMounts:
+        - name: ipsec-routes-config
+          mountPath: /etc/frr-configmap
+        - name: ipsec-routes-config
+          mountPath: /etc/frr/daemons
+          subPath: daemons
+        - name: ipsec-routes-config
+          mountPath: /usr/local/lib/ipsec-routes.sh
+          subPath: ipsec-routes.sh
+        - name: hostrun
+          mountPath: /run/ipsec-routes
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - bash
+              - -c
+              - |
+                source /usr/local/lib/ipsec-routes.sh
+                cleanup_routes
+                ip neigh del $IPSEC_MOCK_VIA_IP lladdr aa:bb:cc:dd:ee:ff dev cilium_vxlan nud permanent
+        env:
+        - name: KUBE_NODE_INTERNAL_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: IPSEC_ROUTES_STATE_DIR
+          value: "/run/ipsec-routes"
+        - name: IPSEC_MOCK_VIA_IP
+          value: "169.254.179.179"  # Any unique unused link-local IP
+      volumes:
+      - name: ipsec-routes-config
+        configMap:
+          name: ipsec-routes-config
+      - name: hostrun
+        hostPath:
+          path: /run/ipsec-routes
