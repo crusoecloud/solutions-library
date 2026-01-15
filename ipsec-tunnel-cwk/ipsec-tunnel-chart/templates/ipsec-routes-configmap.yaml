@@ -1,0 +1,137 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ipsec-routes-config
+  labels:
+    {{- include "ipsec-tunnel.labels" . | nindent 4 }}
+data:
+  ipsec-routes.sh: |
+    if [ -z "$IPSEC_ROUTES_STATE_DIR" ]; then
+        echo "IPSEC_ROUTES_STATE_DIR must be set"
+        exit 1
+    fi
+    if [ -z "$IPSEC_MOCK_VIA_IP" ]; then
+      echo "IPSEC_MOCK_VIA_IP must be set"
+      exit 1
+    fi
+    CURRENT_STATE="$IPSEC_ROUTES_STATE_DIR/current_prefixes"
+    NEW_STATE="$IPSEC_ROUTES_STATE_DIR/new_prefixes"
+
+    mkdir -p "$IPSEC_ROUTES_STATE_DIR"
+    touch "$CURRENT_STATE"
+
+    function apply_routes() {
+        # 1. Prepare the new state file
+        : > "$NEW_STATE"
+
+        jq -r --arg via "$IPSEC_MOCK_VIA_IP" '.routes | to_entries[] | 
+          .key as $prefix | 
+          (
+            # Collect all nexthops from all paths, make unique by IP
+            [.value[].nexthops[]] | unique_by(.ip) | map(
+              "nexthop via \($via) encap ip id 2 src 0.0.0.0 dst \(.ip) ttl 0 tos 0 dev cilium_vxlan onlink"
+            ) | join(" ")
+          ) as $nexthop_cmd |
+
+          "\($prefix)|\($prefix) \($nexthop_cmd)"
+        ' | \
+        while IFS='|' read -r prefix cmd; do
+            
+            # Track that this prefix exists in the current run
+            echo "$prefix" >> "$NEW_STATE"
+
+            # Apply/Update the route immediately
+            # (replace handles both creating new and updating changed params)
+            echo "Applying: $prefix"
+            ip route replace $cmd
+        done
+
+        # 3. RECONCILIATION / PRUNING
+        # Sort files is required for 'comm' to work
+        sort -u "$CURRENT_STATE" -o "$CURRENT_STATE"
+        sort -u "$NEW_STATE" -o "$NEW_STATE"
+
+        comm -23 "$CURRENT_STATE" "$NEW_STATE" | while read -r stale_prefix; do
+            if [ -n "$stale_prefix" ]; then
+                echo "Route disappeared: $stale_prefix. Deleting..."
+                ip route del "$stale_prefix" dev cilium_vxlan 2>/dev/null || true
+            fi
+        done
+
+        # 4. Commit the new state
+        mv "$NEW_STATE" "$CURRENT_STATE"
+    }
+
+    function cleanup_routes() {
+        if [ -f "$CURRENT_STATE" ]; then
+            echo "Teardown: Removing all tracked routes..."
+            sort -u "$CURRENT_STATE" | while read -r prefix; do
+                [ -n "$prefix" ] && sudo ip route del "$prefix" dev cilium_vxlan 2>/dev/null
+            done
+            rm -f "$CURRENT_STATE"
+        fi
+        rm -rf "$IPSEC_ROUTES_STATE_DIR/*"
+        echo "Done."
+    }
+  daemons: |
+    bgpd=yes
+    vtysh_enable=yes
+    zebra_options="  -A 127.0.0.1 -s 90000000"
+    bgpd_options="   -A 127.0.0.1"
+  frr.conf.client: |
+    hostname node-bgp
+    password zebra
+    log stdout
+    bgp no-rib
+
+    router bgp {{ .Values.bgp.internalASN }}
+      {{- range .Values.tunnels }}
+      neighbor {{ .internalIP }} remote-as {{ $.Values.bgp.internalASN }}
+      neighbor {{ .internalIP }} timers 10 30
+      neighbor {{ .internalIP }} bfd
+      neighbor {{ .internalIP }} route-map IN in
+      {{- end }}
+      address-family ipv4 unicast
+      {{- range .Values.tunnels }}
+        neighbor {{ .internalIP }} activate
+      {{- end }}
+      exit-address-family
+
+      route-map IN permit 20
+
+    line vty
+  frr.conf.reflector: |
+    hostname node-bgp-rr
+    password zebra
+    log stdout
+
+    router bgp {{ .Values.bgp.internalASN }}
+      # Explicit neighbor to local strongswan netns over ss0 (eBGP to netns ASN)
+      neighbor 169.254.100.2 remote-as {{ .Values.bgp.localASN }}
+      neighbor 169.254.100.2 timers 10 30
+      neighbor 169.254.100.2 bfd
+      neighbor 169.254.100.2 route-map IN in
+      neighbor RR-CLIENTS peer-group
+      neighbor RR-CLIENTS remote-as {{ $.Values.bgp.internalASN }}
+      neighbor RR-CLIENTS timers 10 30
+      neighbor RR-CLIENTS bfd
+      neighbor RR-CLIENTS route-map OUT out
+
+      address-family ipv4 unicast
+        neighbor RR-CLIENTS activate
+        neighbor RR-CLIENTS route-reflector-client
+        neighbor RR-CLIENTS next-hop-self
+        neighbor 169.254.100.2 activate
+      exit-address-family
+      
+      bgp listen range 172.27.0.0/16 peer-group RR-CLIENTS
+      
+      ip protocol bgp route-map IN
+
+      route-map OUT permit 20
+
+      route-map IN permit 20
+       set src ${KUBE_NODE_INTERNAL_IP}
+      exit
+
+    line vty

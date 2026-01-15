@@ -1,0 +1,178 @@
+{{- range $i, $t := .Values.tunnels }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipsec-tunnel-{{ $i }}
+  labels:
+    {{- include "ipsec-tunnel.labels" $ | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ipsec-tunnel
+      ipsec-tunnel-index: "{{ $i }}"
+  template:
+    metadata:
+      labels:
+        app: ipsec-tunnel
+        ipsec-tunnel-index: "{{ $i }}"
+        {{- include "ipsec-tunnel.labels" $ | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/ipsec-tunnel-configmap.yaml") (dict "Values" $.Values "tunnel" $t "Chart" $.Chart "Release" $.Release "Template" $.Template) | sha256sum }}
+        {{- if $.Values.bgp.enabled }}
+        checksum/ipsec-tunnel-bgpd-config: {{ include (print $.Template.BasePath "/ipsec-tunnel-bgpd-configmap.yaml") (dict "Values" $.Values "tunnel" $t "Chart" $.Chart "Release" $.Release "Template" $.Template) | sha256sum }}
+        {{- end }}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ $t.nodeName | quote }}
+      hostNetwork: true
+      containers:
+      - name: strongswan
+        image: {{ $.Values.strongswan.image | quote }}
+        imagePullPolicy: {{ $.Values.imagePullPolicy }}
+        command:
+        - sh
+        - -c
+        - |
+          # Ensure a clean state
+          ip link del ss0 2>/dev/null || true
+          ip netns del strongswan 2>/dev/null || true
+
+          # Expand env variables
+          eval "cat <<EOF
+          $(cat /tmp/swanctl.conf.tpl)
+          EOF
+          " > /etc/swanctl/swanctl.conf
+
+          iptables -t nat -C POSTROUTING -o {{ .Values.networkInterface }} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o {{ .Values.networkInterface }} -j MASQUERADE
+
+          iptables -t nat -N SWAN_PREROUTING 2>/dev/null || iptables -t nat -F SWAN_PREROUTING
+          iptables -t nat -C PREROUTING -i {{ .Values.networkInterface }} -j SWAN_PREROUTING 2>/dev/null || iptables -t nat -A PREROUTING -i {{ .Values.networkInterface }} -j SWAN_PREROUTING
+          iptables -t nat -A SWAN_PREROUTING -p udp -m udp --dport 500 -j DNAT --to-destination 169.254.100.2:500
+          iptables -t nat -A SWAN_PREROUTING -p udp -m udp --dport 4500 -j DNAT --to-destination 169.254.100.2:4500
+
+          iptables -N SWAN_FORWARD 2>/dev/null || iptables -F SWAN_FORWARD
+          iptables -C FORWARD -j SWAN_FORWARD 2>/dev/null || iptables -A FORWARD -j SWAN_FORWARD
+          iptables -A SWAN_FORWARD -i ss0 -o {{ .Values.networkInterface }} -j ACCEPT
+          iptables -A SWAN_FORWARD -i {{ .Values.networkInterface }} -o ss0 -p udp -m udp --dport 4500 -m state --state NEW,RELATED,ESTABLISHED -j ACCEPT
+          iptables -A SWAN_FORWARD -i {{ .Values.networkInterface }} -o ss0 -p icmp -m state --state NEW,RELATED,ESTABLISHED -j ACCEPT
+          iptables -A SWAN_FORWARD -i {{ .Values.networkInterface }} -o ss0 -p udp -m udp --dport 500 -m state --state NEW,RELATED,ESTABLISHED -j ACCEPT
+
+          ip netns add strongswan
+          ip link add ss0 type veth peer name ssguest
+          ip link set ssguest netns strongswan
+          ip addr add 169.254.100.1/30 dev ss0
+          ip link set ss0 up
+
+          # Route to remote CIDR is now handled by iBGP via node FRR.
+
+          ip netns exec strongswan ip addr add 169.254.100.2/30 dev ssguest
+          ip netns exec strongswan ip link add ipsec0 type xfrm if_id 42
+          ip netns exec strongswan ip link set ipsec0 up
+          ip netns exec strongswan sysctl -w net.ipsec0.ip_forward=1
+          ip netns exec strongswan ip link set ssguest up
+          ip netns exec strongswan ip link set lo up
+          ip netns exec strongswan sysctl -w net.ipv4.ip_forward=1
+          ip netns exec strongswan sysctl -w net.ipv4.conf.ssguest.send_redirects=0
+          ip netns exec strongswan sysctl -w net.ipv4.conf.all.send_redirects=0
+          ip netns exec strongswan ip route add default via 169.254.100.1
+
+          # Start strongswan.
+          exec ip netns exec strongswan /usr/libexec/ipsec/charon
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - sh
+              - -c
+              - |
+                iptables -t nat -D POSTROUTING -o {{ .Values.networkInterface }} -j MASQUERADE 2>/dev/null || true
+                iptables -t nat -D PREROUTING -i {{ .Values.networkInterface }} -j SWAN_PREROUTING 2>/dev/null || true
+                iptables -t nat -F SWAN_PREROUTING 2>/dev/null || true
+                iptables -t nat -X SWAN_PREROUTING 2>/dev/null || true
+
+                iptables -D FORWARD -j SWAN_FORWARD 2>/dev/null || true
+                iptables -F SWAN_FORWARD 2>/dev/null || true
+                iptables -X SWAN_FORWARD 2>/dev/null || true
+
+                # Route cleanup for remote CIDR is handled by iBGP; nothing to delete here.
+                ip link del ss0 2>/dev/null || true
+                ip netns del strongswan 2>/dev/null || true
+        env:
+        - name: KUBE_NODE_PUBLIC_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: KUBE_NODE_INTERNAL_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: IPSEC_LOCAL_CIDRS
+          valueFrom:
+            configMapKeyRef:
+              name: ipsec-tunnel-{{ $i }}
+              key: local-cidrs
+        - name: IPSEC_REMOTE_PUBLIC_IP
+          valueFrom:
+            configMapKeyRef:
+              name: ipsec-tunnel-{{ $i }}
+              key: remote-public-ip
+        - name: IPSEC_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: ipsec-tunnel-{{ $i }}
+              key: secret
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN", "NET_RAW"]
+          privileged: true
+        volumeMounts:
+        - name: config
+          mountPath: /tmp/swanctl.conf.tpl
+          subPath: swanctl.conf.tpl
+        - name: config
+          mountPath: /etc/strongswan.d/charon-custom.conf
+          subPath: charon
+        - name: hostrunnetns
+          mountPath: /run/netns
+          mountPropagation: Bidirectional
+      {{- if $.Values.bgp.enabled }}
+      - name: frr
+        image: {{ $.Values.bgp.frrImage | quote }}
+        imagePullPolicy: {{ $.Values.imagePullPolicy }}
+        command:
+        - sh
+        - -c
+        - |
+          # wait for netns and ipsec0 to be ready
+          for i in $(seq 1 300); do ip netns list | grep -q strongswan && ip netns exec strongswan ip link show ipsec0 && break; sleep 2; done
+          ip netns exec strongswan ip addr add {{ $t.localTunnelIP }}/30 dev ipsec0
+          ip netns exec strongswan /usr/lib/frr/docker-start
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["NET_ADMIN", "SYS_ADMIN"]
+        volumeMounts:
+        - name: ipsec-tunnel-config
+          mountPath: /etc/frr
+        - name: hostrunnetns
+          mountPath: /run/netns
+          mountPropagation: Bidirectional
+      {{- end }}
+      volumes:
+      - name: config
+        configMap:
+          name: ipsec-tunnel-{{ $i }}
+      - name: hostrunnetns
+        hostPath:
+          path: /run/netns
+          type: Directory
+      {{- if $.Values.bgp.enabled }}
+      - name: ipsec-tunnel-config
+        configMap:
+          name: ipsec-tunnel-bgpd-config-{{ $i }}
+      {{- end }}
+---
+{{- end }}

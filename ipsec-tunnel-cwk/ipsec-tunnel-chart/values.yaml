@@ -1,0 +1,42 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullPolicy: IfNotPresent
+networkInterface: "ens3"
+
+localCidrs:
+- "10.234.0.0/16" # pod CIDR
+- "172.27.48.0/20" # node CIDR
+- "10.233.0.0/16" # service CIDR
+
+tunnels:
+- publicIP: "34.34.34.34" # public IP of first node
+  internalIP: "172.27.0.1" # internal IP of first node
+  nodeName: "np-aaaaaaaa-1.eu-iceland1-a.compute.internal" # node name of first node
+  localTunnelIP: "169.254.174.222" # local BGP tunnel IP
+  peerTunnelIP: "169.254.174.221" # peer BGP tunnel IP
+  psk: "somesecretkey"
+- publicIP: "34.34.34.35" # public IP of second node
+  internalIP: "172.27.0.2" # internal IP of second node
+  nodeName: "np-aaaaaaaa-2.eu-iceland1-a.compute.internal" # node name of second node
+  localTunnelIP: "169.254.197.150" # local BGP tunnel IP
+  peerTunnelIP: "169.254.197.149" # peer BGP tunnel IP
+  psk: "somesecretkey"
+
+strongswan:
+  image: "docker.io/mberner/strongswan:5.9.11"
+ipsecRoutes:
+  image: "docker.io/alpine:3"
+
+# BGP (FRR)
+bgp:
+  enabled: true
+  localASN: 65010
+  peerASN: 64512
+  # If unset, we will advertise localCidrs
+  advertiseCidrs: []
+  frrImage: "quay.io/frrouting/frr:10.5.0"
+  # iBGP clients (populated for reflector config). You can leave this empty to accept dynamic neighbors,
+  # or list expected node IPs for stricter configs.
+  internalClients: []
+  internalASN: 65020 # just for iBGP, not shared outside cluster

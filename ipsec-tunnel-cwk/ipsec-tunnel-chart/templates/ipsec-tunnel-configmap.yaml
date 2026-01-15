@@ -1,0 +1,66 @@
+{{- range $i, $t := .Values.tunnels }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ipsec-tunnel-{{ $i }}
+  labels:
+    {{- include "ipsec-tunnel.labels" $ | nindent 4 }}
+data:
+  local-cidrs: {{ join "," $.Values.localCidrs | quote }}
+  remote-public-ip: {{ $t.publicIP | quote }}
+  #### NO NEED TO CUSTOMIZE ANYTHING BELOW THIS LINE ####
+  swanctl.conf.tpl: |
+    connections {
+      k8s-to-cloud {
+        local_addrs = ${KUBE_NODE_LOCAL_IP}
+        remote_addrs = ${IPSEC_REMOTE_PUBLIC_IP}
+
+        local {
+          auth = psk
+          id = ${KUBE_NODE_PUBLIC_IP}
+        }
+        remote {
+          auth = psk
+          id = ${IPSEC_REMOTE_PUBLIC_IP}
+        }
+        proposals = aes256-sha256-modp2048
+        children {
+          net-net {
+            start_action = start
+            local_ts = ${IPSEC_LOCAL_CIDRS},{{ $t.localTunnelIP }}
+            remote_ts = 0.0.0.0/0
+
+            if_id_in = 42
+            if_id_out = 42
+
+            esp_proposals = aes256-sha256-modp2048
+          }
+        }
+      }
+    }
+    secrets {
+      ike-psk {
+        id = ${IPSEC_REMOTE_PUBLIC_IP}
+        secret = ${IPSEC_SECRET}
+      }
+    }
+  charon: | 
+    charon {
+      install_routes = no
+      
+      start-scripts {
+        swanctl-load-all = /usr/sbin/swanctl --load-all
+      }
+
+      # Logging for easier debugging
+      filelog {
+        /dev/stdout {
+          time_format = %b %e %T
+          default = 1
+          ike = 2
+          knl = 2
+        }
+      }
+    }
+---
+{{- end }}

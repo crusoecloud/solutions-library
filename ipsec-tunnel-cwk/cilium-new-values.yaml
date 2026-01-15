@@ -1,0 +1,4 @@
+devices: ens3 ss0
+bpf:
+  hostLegacyRouting: true
+  lbExternalClusterIP: true # Necessary for ClusterIP Services to be reachable from IPSec
