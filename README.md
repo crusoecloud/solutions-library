@@ -50,6 +50,10 @@ For your applications running on Crusoe Managed Kubernetes cluster, you can coll
 
 ### Identity & Security
 
+[Crusoe Bastion Host](./crusoe-bastion-host/)
+
+A production-ready, click-to-deploy bastion host solution for secure access to private infrastructure on Crusoe Cloud. This solution provides a hardened jump server with SSH key-based authentication, session logging, automatic security updates, fail2ban intrusion prevention, and comprehensive management tools. Includes an interactive deployment script for easy setup and supports high availability configurations for production environments.
+
 [Crusoe to Splunk HEC Log Forwarder](./crusoe-splunk-hec/README.md)
 
 Crusoe Cloud provides a 90-day history of who did what in your cloud, when, where, and with what result - also called [Crusoe Audit Logs](https://docs.crusoecloud.com/identity-and-security/audit-logs/index.html). This solution provides a sample Python tool to fetch those logs and forward them to a Splunk HTTP Event Collector (HEC). 
