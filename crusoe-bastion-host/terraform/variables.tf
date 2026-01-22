@@ -3,6 +3,12 @@ variable "project_id" {
   type        = string
 }
 
+variable "vpc_network" {
+  description = "VPC network name for firewall rules"
+  type        = string
+  default     = "default-vpc-network"
+}
+
 variable "location" {
   description = "Crusoe Cloud location (e.g., us-east1-a)"
   type        = string
@@ -37,12 +43,6 @@ variable "allowed_ssh_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
-variable "enable_session_logging" {
-  description = "Enable SSH session logging and recording"
-  type        = bool
-  default     = true
-}
-
 variable "ha_enabled" {
   description = "Enable high availability mode (deploy multiple bastions)"
   type        = bool
@@ -55,41 +55,8 @@ variable "ha_count" {
   default     = 2
 }
 
-variable "admin_username" {
-  description = "Admin username for the bastion host"
-  type        = string
-  default     = "bastionadmin"
-}
-
-variable "tags" {
-  description = "Tags to apply to resources"
-  type        = map(string)
-  default = {
-    Purpose = "bastion-host"
-    Managed = "terraform"
-  }
-}
-
-variable "auto_update_enabled" {
-  description = "Enable automatic security updates"
-  type        = bool
-  default     = true
-}
-
-variable "fail2ban_enabled" {
-  description = "Enable fail2ban intrusion prevention"
-  type        = bool
-  default     = true
-}
-
 variable "ssh_port" {
-  description = "SSH port (default 22, can be changed for additional security)"
+  description = "SSH port for firewall rules (default 22)"
   type        = number
   default     = 22
-}
-
-variable "session_timeout_seconds" {
-  description = "SSH session timeout in seconds"
-  type        = number
-  default     = 900
 }

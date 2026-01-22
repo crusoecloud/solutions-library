@@ -326,6 +326,35 @@ cd scripts
 # - Failed login attempts
 ```
 
+### Testing Security Features
+
+The bastion host includes an automated test script to verify all security features are properly configured. This is useful after deployment or when troubleshooting.
+
+> **Note**: Wait 2-3 minutes after deployment before running tests to ensure all services (fail2ban, UFW, etc.) are fully initialized.
+
+```bash
+cd scripts
+
+# Run all tests (remote connectivity + on-bastion security checks)
+BASTION_IP=<bastion-ip> ./test-bastion.sh all
+
+# Run only remote tests (from your local machine)
+BASTION_IP=<bastion-ip> ./test-bastion.sh remote
+
+# Run only bastion tests (must be run on the bastion itself)
+./test-bastion.sh bastion
+```
+
+The test script validates:
+- **SSH Connectivity** - Verifies the bastion is reachable
+- **Root Login Disabled** - Confirms root SSH access is blocked
+- **SSH Hardening** - Checks secure SSH configuration
+- **Fail2ban** - Verifies intrusion prevention is active
+- **UFW Firewall** - Confirms firewall rules are in place
+- **Session Logging** - Validates session recording is configured
+- **Admin User** - Checks bastionadmin account exists with proper permissions
+- **Ubuntu User Disabled** - Confirms default user is locked (security hardening)
+
 ## High Availability
 
 For production environments, deploy multiple bastion hosts for redundancy:

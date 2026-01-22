@@ -37,10 +37,14 @@ if ! [[ "$SSH_KEY" =~ ^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp
     exit 1
 fi
 
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TERRAFORM_DIR="$SCRIPT_DIR/../terraform"
+
 # If bastion IP not provided, try to get it from Terraform output
 if [ -z "$BASTION_IP" ]; then
-    if [ -f "../terraform/terraform.tfstate" ]; then
-        BASTION_IP=$(cd ../terraform && terraform output -json bastion_public_ips 2>/dev/null | jq -r '.[0]' 2>/dev/null || echo "")
+    if [ -d "$TERRAFORM_DIR" ]; then
+        BASTION_IP=$(cd "$TERRAFORM_DIR" && terraform output -json bastion_public_ips 2>/dev/null | jq -r '.[0]' 2>/dev/null || echo "")
     fi
     
     if [ -z "$BASTION_IP" ]; then
@@ -87,8 +91,8 @@ echo "User $USERNAME configured successfully"
 SCRIPT
 )
 
-# Execute on bastion host
-ssh -o StrictHostKeyChecking=no "$BASTION_IP" "sudo bash -s -- '$USERNAME' '$SSH_KEY'" <<< "$REMOTE_SCRIPT"
+# Execute on bastion host (connect as bastionadmin - ubuntu is disabled for security)
+ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes "bastionadmin@$BASTION_IP" "sudo bash -s -- '$USERNAME' '$SSH_KEY'" <<< "$REMOTE_SCRIPT"
 
 echo ""
 echo "✓ User '$USERNAME' added successfully!"

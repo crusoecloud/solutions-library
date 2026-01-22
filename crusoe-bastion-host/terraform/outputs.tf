@@ -17,7 +17,7 @@ output "ssh_commands" {
   description = "SSH commands to connect to bastion host(s)"
   value = [
     for idx, instance in crusoe_compute_instance.bastion :
-    "ssh -i ~/.ssh/your-private-key ${var.admin_username}@${instance.network_interfaces[0].public_ipv4.address}"
+    "ssh -i ~/.ssh/your-private-key bastionadmin@${instance.network_interfaces[0].public_ipv4.address}"
   ]
 }
 
@@ -39,19 +39,19 @@ output "connection_instructions" {
     │ CONNECT TO BASTION                                                      │
     └─────────────────────────────────────────────────────────────────────────┘
     
-    ssh -i ~/.ssh/your-private-key ${var.admin_username}@${crusoe_compute_instance.bastion[0].network_interfaces[0].public_ipv4.address}
+    ssh -i ~/.ssh/your-private-key bastionadmin@${crusoe_compute_instance.bastion[0].network_interfaces[0].public_ipv4.address}
     
     ┌─────────────────────────────────────────────────────────────────────────┐
     │ CONNECT TO PRIVATE INSTANCE VIA BASTION                                │
     └─────────────────────────────────────────────────────────────────────────┘
     
     # Method 1: SSH Jump Host
-    ssh -i ~/.ssh/your-private-key -J ${var.admin_username}@${crusoe_compute_instance.bastion[0].network_interfaces[0].public_ipv4.address} user@<private-instance-ip>
+    ssh -i ~/.ssh/your-private-key -J bastionadmin@${crusoe_compute_instance.bastion[0].network_interfaces[0].public_ipv4.address} user@<private-instance-ip>
     
     # Method 2: SSH ProxyJump (add to ~/.ssh/config)
     Host bastion
         HostName ${crusoe_compute_instance.bastion[0].network_interfaces[0].public_ipv4.address}
-        User ${var.admin_username}
+        User bastionadmin
         IdentityFile ~/.ssh/your-private-key
     
     Host private-instance
@@ -80,10 +80,10 @@ output "connection_instructions" {
     
     ✓ SSH key-based authentication enabled
     ✓ Root login disabled
-    ✓ Automatic security updates: ${var.auto_update_enabled ? "ENABLED" : "DISABLED"}
-    ✓ Fail2ban intrusion prevention: ${var.fail2ban_enabled ? "ENABLED" : "DISABLED"}
-    ✓ Session logging: ${var.enable_session_logging ? "ENABLED" : "DISABLED"}
-    ✓ Session timeout: ${var.session_timeout_seconds} seconds
+    ✓ Automatic security updates: ENABLED
+    ✓ Fail2ban intrusion prevention: ENABLED
+    ✓ Session logging: ENABLED
+    ✓ Session timeout: 900 seconds
     
     For more information, see the README.md and SECURITY.md files.
     
@@ -108,7 +108,7 @@ output "ssh_config_snippet" {
     
     Host crusoe-bastion
         HostName ${crusoe_compute_instance.bastion[0].network_interfaces[0].public_ipv4.address}
-        User ${var.admin_username}
+        User bastionadmin
         IdentityFile ~/.ssh/your-private-key
         ServerAliveInterval 60
         ServerAliveCountMax 3

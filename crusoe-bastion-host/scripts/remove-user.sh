@@ -22,10 +22,14 @@ if ! [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
     exit 1
 fi
 
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TERRAFORM_DIR="$SCRIPT_DIR/../terraform"
+
 # If bastion IP not provided, try to get it from Terraform output
 if [ -z "$BASTION_IP" ]; then
-    if [ -f "../terraform/terraform.tfstate" ]; then
-        BASTION_IP=$(cd ../terraform && terraform output -json bastion_public_ips 2>/dev/null | jq -r '.[0]' 2>/dev/null || echo "")
+    if [ -d "$TERRAFORM_DIR" ]; then
+        BASTION_IP=$(cd "$TERRAFORM_DIR" && terraform output -json bastion_public_ips 2>/dev/null | jq -r '.[0]' 2>/dev/null || echo "")
     fi
     
     if [ -z "$BASTION_IP" ]; then
@@ -71,8 +75,8 @@ echo "User $USERNAME removed successfully"
 SCRIPT
 )
 
-# Execute on bastion host
-ssh -o StrictHostKeyChecking=no "$BASTION_IP" "sudo bash -s -- '$USERNAME'" <<< "$REMOTE_SCRIPT"
+# Execute on bastion host (connect as bastionadmin - ubuntu is disabled for security)
+ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes "bastionadmin@$BASTION_IP" "sudo bash -s -- '$USERNAME'" <<< "$REMOTE_SCRIPT"
 
 echo ""
 echo "✓ User '$USERNAME' removed successfully!"

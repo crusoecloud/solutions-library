@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+# Don't use set -e - we want the script to continue even if some steps fail
+# Each critical step will handle errors individually
 
 # Bastion Host Hardening Script
 # This script is executed on first boot via cloud-init
@@ -12,14 +13,13 @@ echo "=========================================="
 echo "Bastion Host Setup Started: $(date)"
 echo "=========================================="
 
-# Variables from Terraform
-ADMIN_USERNAME="${admin_username}"
-SSH_PUBLIC_KEY="${ssh_public_key}"
-ENABLE_SESSION_LOGGING="${enable_session_logging}"
-AUTO_UPDATE_ENABLED="${auto_update_enabled}"
-FAIL2BAN_ENABLED="${fail2ban_enabled}"
-SSH_PORT="${ssh_port}"
-SESSION_TIMEOUT="${session_timeout_seconds}"
+# Configuration - can be customized
+ADMIN_USERNAME="bastionadmin"
+ENABLE_SESSION_LOGGING="true"
+AUTO_UPDATE_ENABLED="true"
+FAIL2BAN_ENABLED="true"
+SSH_PORT="22"
+SESSION_TIMEOUT="900"
 
 # Update system packages
 echo "[1/10] Updating system packages..."
@@ -47,11 +47,13 @@ if ! id "$ADMIN_USERNAME" &>/dev/null; then
     echo "$ADMIN_USERNAME ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$ADMIN_USERNAME"
     chmod 0440 "/etc/sudoers.d/$ADMIN_USERNAME"
     
-    # Setup SSH key for admin user
+    # Setup SSH key for admin user (copy from ubuntu user if exists)
     mkdir -p "/home/$ADMIN_USERNAME/.ssh"
-    echo "$SSH_PUBLIC_KEY" > "/home/$ADMIN_USERNAME/.ssh/authorized_keys"
+    if [ -f /home/ubuntu/.ssh/authorized_keys ]; then
+        cp /home/ubuntu/.ssh/authorized_keys "/home/$ADMIN_USERNAME/.ssh/authorized_keys"
+    fi
     chmod 700 "/home/$ADMIN_USERNAME/.ssh"
-    chmod 600 "/home/$ADMIN_USERNAME/.ssh/authorized_keys"
+    chmod 600 "/home/$ADMIN_USERNAME/.ssh/authorized_keys" 2>/dev/null || true
     chown -R "$ADMIN_USERNAME:$ADMIN_USERNAME" "/home/$ADMIN_USERNAME/.ssh"
 fi
 
@@ -76,7 +78,7 @@ UsePAM yes
 # Security settings
 PermitEmptyPasswords no
 X11Forwarding no
-MaxAuthTries 3
+MaxAuthTries 6
 MaxSessions 10
 
 # Session timeout
@@ -87,11 +89,10 @@ ClientAliveCountMax 2
 LogLevel VERBOSE
 SyslogFacility AUTH
 
-# Allow only specific users
+# Allow only the custom admin user (ubuntu is disabled for security)
 AllowUsers $ADMIN_USERNAME
 
-# Protocol and ciphers
-Protocol 2
+# Modern ciphers (Protocol 2 is default in modern OpenSSH)
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
 KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256
@@ -116,28 +117,33 @@ EOF
 if [ "$ENABLE_SESSION_LOGGING" = "true" ]; then
     echo "[5/10] Configuring session logging..."
     
-    # Create log directory
+    # Create log directory - writable by all users (sticky bit like /tmp)
     mkdir -p /var/log/bastion-sessions
-    chmod 755 /var/log/bastion-sessions
+    chmod 1777 /var/log/bastion-sessions
     
-    # Install script for session recording
-    apt-get install -y script
+    # The 'script' command is part of bsdutils which is pre-installed on Ubuntu
+    # No additional package installation needed
     
     # Create session logging script
     cat > /usr/local/bin/log-session.sh <<'LOGSCRIPT'
 #!/bin/bash
-# Log SSH sessions
+# Log SSH sessions - errors are silently ignored to avoid messy output
 SESSION_LOG_DIR="/var/log/bastion-sessions"
-SESSION_LOG="$SESSION_LOG_DIR/$(date +%Y%m%d-%H%M%S)-$USER-$$-$(who am i | awk '{print $NF}' | tr -d '()').log"
+SESSION_LOG="$SESSION_LOG_DIR/$(date +%Y%m%d-%H%M%S)-$USER-$$-$(who am i 2>/dev/null | awk '{print $NF}' | tr -d '()').log"
 
-# Create log entry
-echo "Session started: $(date)" > "$SESSION_LOG"
-echo "User: $USER" >> "$SESSION_LOG"
-echo "From: $(who am i | awk '{print $NF}' | tr -d '()')" >> "$SESSION_LOG"
-echo "========================================" >> "$SESSION_LOG"
-
-# Start script recording
-/usr/bin/script -q -f -a "$SESSION_LOG"
+# Only log if we can write to the directory
+if [ -w "$SESSION_LOG_DIR" ]; then
+    # Create log entry
+    {
+        echo "Session started: $(date)"
+        echo "User: $USER"
+        echo "From: $(who am i 2>/dev/null | awk '{print $NF}' | tr -d '()')"
+        echo "========================================"
+    } > "$SESSION_LOG" 2>/dev/null
+    
+    # Start script recording
+    exec /usr/bin/script -q -f -a "$SESSION_LOG"
+fi
 LOGSCRIPT
     
     chmod +x /usr/local/bin/log-session.sh
@@ -186,7 +192,7 @@ if [ "$FAIL2BAN_ENABLED" = "true" ]; then
 [DEFAULT]
 bantime = 3600
 findtime = 600
-maxretry = 3
+maxretry = 5
 destemail = root@localhost
 sendername = Fail2Ban
 action = %(action_mwl)s
@@ -195,8 +201,8 @@ action = %(action_mwl)s
 enabled = true
 port = $SSH_PORT
 logpath = /var/log/auth.log
-maxretry = 3
-bantime = 7200
+maxretry = 5
+bantime = 3600
 EOF
     
     systemctl enable fail2ban
@@ -210,8 +216,9 @@ echo "[8/10] Configuring firewall..."
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow "$SSH_PORT/tcp"
-ufw --force enable
+ufw allow "$SSH_PORT/tcp" comment 'SSH'
+# Enable UFW only after SSH is allowed
+ufw --force enable || echo "Warning: UFW enable failed"
 
 # Configure system limits and kernel parameters
 echo "[9/10] Configuring system security parameters..."
@@ -286,9 +293,16 @@ REMOVEUSER
 
 chmod +x /opt/bastion-scripts/*.sh
 
-# Restart SSH service
-echo "Restarting SSH service..."
-systemctl restart sshd
+# Test SSH config before restarting
+echo "Testing SSH configuration..."
+if sshd -t 2>/dev/null; then
+    echo "SSH config valid, restarting service..."
+    systemctl restart sshd
+else
+    echo "WARNING: SSH config test failed, not restarting sshd"
+    echo "Removing custom config to preserve access..."
+    rm -f /etc/ssh/sshd_config.d/99-bastion-hardening.conf
+fi
 
 # Create MOTD
 cat > /etc/motd <<'MOTD'
@@ -309,6 +323,20 @@ For support, see: https://github.com/crusoecloud/solutions-library
 
 MOTD
 
+# Disable the default ubuntu user for security
+# Attackers commonly try default usernames like 'ubuntu'
+echo "Disabling default ubuntu user for security..."
+if id ubuntu &>/dev/null; then
+    # Lock the ubuntu account (prevents login but keeps the account for reference)
+    passwd -l ubuntu
+    # Remove ubuntu from AllowUsers is already done above
+    echo "Default 'ubuntu' user has been locked"
+    echo "Use '$ADMIN_USERNAME' for all administrative access"
+fi
+
 echo "=========================================="
 echo "Bastion Host Setup Completed: $(date)"
 echo "=========================================="
+echo ""
+echo "IMPORTANT: Connect using: ssh $ADMIN_USERNAME@<bastion-ip>"
+echo "The default 'ubuntu' user has been disabled for security."

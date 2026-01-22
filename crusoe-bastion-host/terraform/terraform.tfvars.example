@@ -12,26 +12,21 @@ ssh_public_key  = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... your-email@example
 # instance_type = "c1a.2x"
 # disk_size_gib = 32
 
-# admin_username = "bastionadmin"
+# VPC network for firewall rules (default: "default")
+# vpc_network = "default"
 
+# Restrict SSH access to specific IP ranges
 # allowed_ssh_cidrs = [
 #   "203.0.113.0/24",  # Your office IP range
 #   "198.51.100.0/24"  # Your VPN IP range
 # ]
 
-# enable_session_logging = true
-# auto_update_enabled = true
-# fail2ban_enabled = true
-
+# SSH port for firewall rules
 # ssh_port = 22
-# session_timeout_seconds = 900
 
 # High Availability Configuration
 # ha_enabled = false
 # ha_count = 2
 
-# tags = {
-#   Environment = "production"
-#   Purpose     = "bastion-host"
-#   Managed     = "terraform"
-# }
+# Note: Security features (session logging, fail2ban, auto-updates) are
+# configured in the user-data.sh script and enabled by default.

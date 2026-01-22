@@ -105,10 +105,12 @@ prompt_input() {
     
     while true; do
         if [ -n "$default" ]; then
-            read -p "$(echo -e ${CYAN}$prompt${NC} [${default}]: )" input
+            printf "\033[0;36m%s\033[0m [%s]: " "$prompt" "$default"
+            read input
             input="${input:-$default}"
         else
-            read -p "$(echo -e ${CYAN}$prompt${NC}: )" input
+            printf "\033[0;36m%s\033[0m: " "$prompt"
+            read input
         fi
         
         # Validate input if validation function provided
@@ -164,9 +166,72 @@ validate_ssh_key() {
 validate_cidr() {
     if [[ "$1" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
         return 0
+    elif [ "$1" = "done" ]; then
+        return 0
     else
         print_error "Invalid CIDR format (e.g., 203.0.113.0/24)"
         return 1
+    fi
+}
+
+# Fetch available VPC networks
+fetch_vpc_networks() {
+    print_info "Fetching available VPC networks..."
+    
+    if ! command -v crusoe &> /dev/null; then
+        print_warning "Crusoe CLI not installed. Using default VPC network name."
+        VPC_NETWORK="default"
+        return
+    fi
+    
+    # Fetch VPC networks using Crusoe CLI
+    local vpc_json
+    vpc_json=$(crusoe networking vpc-networks list --project-id "$PROJECT_ID" --json 2>/dev/null)
+    
+    if [ $? -ne 0 ] || [ -z "$vpc_json" ]; then
+        print_warning "Could not fetch VPC networks. Using default."
+        VPC_NETWORK="default"
+        return
+    fi
+    
+    # Parse VPC names using jq if available
+    if command -v jq &> /dev/null; then
+        local vpc_names
+        vpc_names=$(echo "$vpc_json" | jq -r '.[].name' 2>/dev/null)
+        
+        if [ -z "$vpc_names" ]; then
+            print_warning "No VPC networks found. Using default."
+            VPC_NETWORK="default"
+            return
+        fi
+        
+        # Display available VPCs
+        echo ""
+        print_info "Available VPC Networks:"
+        local idx=1
+        local vpc_array=()
+        while IFS= read -r vpc; do
+            echo "  $idx) $vpc"
+            vpc_array+=("$vpc")
+            ((idx++))
+        done <<< "$vpc_names"
+        
+        echo ""
+        printf "\033[0;36mSelect VPC network\033[0m [1]: "
+        read vpc_choice
+        vpc_choice="${vpc_choice:-1}"
+        
+        # Validate selection
+        if [[ "$vpc_choice" =~ ^[0-9]+$ ]] && [ "$vpc_choice" -ge 1 ] && [ "$vpc_choice" -le "${#vpc_array[@]}" ]; then
+            VPC_NETWORK="${vpc_array[$((vpc_choice-1))]}"
+            print_success "Selected VPC: $VPC_NETWORK"
+        else
+            print_warning "Invalid selection. Using first VPC: ${vpc_array[0]}"
+            VPC_NETWORK="${vpc_array[0]}"
+        fi
+    else
+        print_warning "jq not installed. Using default VPC network name."
+        VPC_NETWORK="default"
     fi
 }
 
@@ -177,9 +242,54 @@ collect_configuration() {
     echo "Let's configure your bastion host deployment."
     echo ""
     
-    # Project ID
-    print_info "Your Crusoe project ID (UUID format)"
-    prompt_input "Project ID" PROJECT_ID "" validate_project_id
+    # Project ID - try to auto-detect from CLI
+    print_info "Detecting your Crusoe project..."
+    local detected_project=""
+    local detected_project_id=""
+    local detected_project_name=""
+    
+    if command -v crusoe &> /dev/null; then
+        # Get the default project from CLI config (could be name or ID)
+        detected_project=$(crusoe config get default_project 2>/dev/null || echo "")
+        
+        if [ -n "$detected_project" ]; then
+            # Check if it's already a UUID
+            if [[ "$detected_project" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
+                detected_project_id="$detected_project"
+            else
+                # It's a project name, try to get the ID
+                detected_project_name="$detected_project"
+                detected_project_id=$(crusoe projects list --json 2>/dev/null | jq -r --arg name "$detected_project" '.[] | select(.name == $name) | .id' 2>/dev/null || echo "")
+            fi
+        fi
+    fi
+    
+    if [ -n "$detected_project_id" ] && [[ "$detected_project_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
+        if [ -n "$detected_project_name" ]; then
+            print_success "Detected project: $detected_project_name ($detected_project_id)"
+        else
+            print_success "Detected project: $detected_project_id"
+        fi
+        echo ""
+        echo "  1) Use detected project"
+        echo "  2) Enter a different project ID"
+        echo ""
+        printf "\033[0;36mSelect option\033[0m [1]: "
+        read project_choice
+        project_choice="${project_choice:-1}"
+        
+        if [ "$project_choice" = "1" ]; then
+            PROJECT_ID="$detected_project_id"
+        else
+            prompt_input "Project ID" PROJECT_ID "" validate_project_id
+        fi
+    else
+        print_warning "Could not auto-detect project ID"
+        prompt_input "Project ID" PROJECT_ID "" validate_project_id
+    fi
+    
+    # Fetch and select VPC network
+    fetch_vpc_networks
     
     # Location
     print_info "Available locations: us-east1-a, us-central1-a, etc."
@@ -209,15 +319,12 @@ collect_configuration() {
     prompt_input "SSH public key path" SSH_KEY_PATH "$DEFAULT_KEY" validate_ssh_key
     SSH_PUBLIC_KEY=$(cat "$SSH_KEY_PATH")
     
-    # Admin username
-    prompt_input "Admin username" ADMIN_USERNAME "bastionadmin"
-    
     # Allowed SSH CIDRs
     echo ""
     print_info "Restrict SSH access to specific IP ranges (CIDR notation)"
     print_warning "Using 0.0.0.0/0 allows access from anywhere (not recommended for production)"
     
-    read -p "$(echo -e ${CYAN}Restrict SSH access to specific IPs?${NC} (y/n) [n]: )" RESTRICT_SSH
+    read -p $'\033[0;36mRestrict SSH access to specific IPs?\033[0m (y/n) [n]: ' RESTRICT_SSH
     RESTRICT_SSH="${RESTRICT_SSH:-n}"
     
     if [[ "$RESTRICT_SSH" =~ ^[Yy] ]]; then
@@ -238,25 +345,9 @@ collect_configuration() {
         ALLOWED_CIDRS="\"0.0.0.0/0\""
     fi
     
-    # Security features
-    echo ""
-    print_section "Security Features"
-    
-    read -p "$(echo -e ${CYAN}Enable session logging?${NC} (y/n) [y]: )" ENABLE_LOGGING
-    ENABLE_LOGGING="${ENABLE_LOGGING:-y}"
-    SESSION_LOGGING=$([[ "$ENABLE_LOGGING" =~ ^[Yy] ]] && echo "true" || echo "false")
-    
-    read -p "$(echo -e ${CYAN}Enable automatic security updates?${NC} (y/n) [y]: )" ENABLE_UPDATES
-    ENABLE_UPDATES="${ENABLE_UPDATES:-y}"
-    AUTO_UPDATES=$([[ "$ENABLE_UPDATES" =~ ^[Yy] ]] && echo "true" || echo "false")
-    
-    read -p "$(echo -e ${CYAN}Enable fail2ban intrusion prevention?${NC} (y/n) [y]: )" ENABLE_FAIL2BAN
-    ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-y}"
-    FAIL2BAN=$([[ "$ENABLE_FAIL2BAN" =~ ^[Yy] ]] && echo "true" || echo "false")
-    
     # High Availability
     echo ""
-    read -p "$(echo -e ${CYAN}Enable High Availability mode (multiple bastions)?${NC} (y/n) [n]: )" ENABLE_HA
+    read -p $'\033[0;36mEnable High Availability mode (multiple bastions)?\033[0m (y/n) [n]: ' ENABLE_HA
     ENABLE_HA="${ENABLE_HA:-n}"
     
     if [[ "$ENABLE_HA" =~ ^[Yy] ]]; then
@@ -284,27 +375,14 @@ ssh_public_key  = "$SSH_PUBLIC_KEY"
 # Instance Configuration
 bastion_name    = "$BASTION_NAME"
 instance_type   = "$INSTANCE_TYPE"
-admin_username  = "$ADMIN_USERNAME"
 
-# Network Security
+# Network Configuration
+vpc_network       = "$VPC_NETWORK"
 allowed_ssh_cidrs = [$ALLOWED_CIDRS]
-
-# Security Features
-enable_session_logging = $SESSION_LOGGING
-auto_update_enabled    = $AUTO_UPDATES
-fail2ban_enabled       = $FAIL2BAN
 
 # High Availability
 ha_enabled = $HA_ENABLED
 ha_count   = $HA_COUNT
-
-# Tags
-tags = {
-  Environment = "production"
-  Purpose     = "bastion-host"
-  Managed     = "terraform"
-  DeployedBy  = "deploy-script"
-}
 EOF
     
     print_success "Configuration file created: $TFVARS_FILE"
@@ -316,16 +394,13 @@ display_summary() {
     
     echo -e "${CYAN}Project:${NC}           $PROJECT_ID"
     echo -e "${CYAN}Location:${NC}          $LOCATION"
+    echo -e "${CYAN}VPC Network:${NC}       $VPC_NETWORK"
     echo -e "${CYAN}Bastion Name:${NC}      $BASTION_NAME"
     echo -e "${CYAN}Instance Type:${NC}     $INSTANCE_TYPE"
-    echo -e "${CYAN}Admin User:${NC}        $ADMIN_USERNAME"
     echo -e "${CYAN}SSH Key:${NC}           $SSH_KEY_PATH"
     echo -e "${CYAN}Allowed CIDRs:${NC}     $ALLOWED_CIDRS"
     echo ""
-    echo -e "${CYAN}Security Features:${NC}"
-    echo -e "  Session Logging:    $SESSION_LOGGING"
-    echo -e "  Auto Updates:       $AUTO_UPDATES"
-    echo -e "  Fail2ban:           $FAIL2BAN"
+    echo -e "${CYAN}Security Features:${NC}  All enabled by default (session logging, auto-updates, fail2ban)"
     echo ""
     echo -e "${CYAN}High Availability:${NC}  $HA_ENABLED"
     if [ "$HA_ENABLED" = "true" ]; then
@@ -336,61 +411,51 @@ display_summary() {
 
 # Deploy with Terraform
 deploy_terraform() {
-    print_section "Terraform Deployment"
+    print_section "Deploying Bastion Host"
     
     cd "$TERRAFORM_DIR"
     
-    # Initialize Terraform
+    local TF_LOG_FILE="/tmp/terraform-deploy-$$.log"
+    
+    # Initialize Terraform (quiet)
     print_info "Initializing Terraform..."
-    if terraform init; then
+    if terraform init -no-color > "$TF_LOG_FILE" 2>&1; then
         print_success "Terraform initialized"
     else
         print_error "Terraform initialization failed"
+        echo ""
+        echo -e "${RED}Error details:${NC}"
+        cat "$TF_LOG_FILE"
+        rm -f "$TF_LOG_FILE"
         exit 1
     fi
     
-    echo ""
-    
-    # Validate configuration
+    # Validate configuration (quiet)
     print_info "Validating configuration..."
-    if terraform validate; then
-        print_success "Configuration is valid"
+    if terraform validate -no-color >> "$TF_LOG_FILE" 2>&1; then
+        print_success "Configuration valid"
     else
         print_error "Configuration validation failed"
+        echo ""
+        echo -e "${RED}Error details:${NC}"
+        cat "$TF_LOG_FILE"
+        rm -f "$TF_LOG_FILE"
         exit 1
     fi
     
+    # Apply directly with auto-approve (user already confirmed config)
+    print_info "Deploying bastion host (this may take 1-2 minutes)..."
     echo ""
     
-    # Plan
-    print_info "Creating deployment plan..."
-    if terraform plan -out=tfplan; then
-        print_success "Plan created successfully"
-    else
-        print_error "Plan creation failed"
-        exit 1
-    fi
-    
-    echo ""
-    
-    # Confirm deployment
-    read -p "$(echo -e ${YELLOW}Proceed with deployment?${NC} (yes/no): )" CONFIRM
-    if [ "$CONFIRM" != "yes" ]; then
-        print_warning "Deployment cancelled"
-        rm -f tfplan
-        exit 0
-    fi
-    
-    echo ""
-    
-    # Apply
-    print_info "Deploying bastion host..."
-    if terraform apply tfplan; then
+    if terraform apply -auto-approve -no-color >> "$TF_LOG_FILE" 2>&1; then
         print_success "Deployment completed successfully!"
-        rm -f tfplan
+        rm -f "$TF_LOG_FILE"
     else
         print_error "Deployment failed"
-        rm -f tfplan
+        echo ""
+        echo -e "${RED}Error details:${NC}"
+        cat "$TF_LOG_FILE"
+        rm -f "$TF_LOG_FILE"
         exit 1
     fi
 }
@@ -453,7 +518,7 @@ main() {
     collect_configuration
     display_summary
     
-    read -p "$(echo -e ${CYAN}Continue with this configuration?${NC} (y/n) [y]: )" CONTINUE
+    read -p $'\033[0;36mContinue with this configuration?\033[0m (y/n) [y]: ' CONTINUE
     CONTINUE="${CONTINUE:-y}"
     
     if [[ ! "$CONTINUE" =~ ^[Yy] ]]; then
