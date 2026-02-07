@@ -4,7 +4,7 @@ echo -e "\e[32mCrusoe Cluster Validation Test\e[0m"
 
 echo -e "\e[33mChecking kernel messages of all hosts for Xid errors\e[0m"
 
-for host in $(cat hostfile);do ssh $host "sudo dmesg|grep NVRM"; done
+for host in $(cat hostfile|awk '{print $1}');do ssh $host "sudo dmesg|grep NVRM"; done
 
 echo -e "\e[33mNCCL all-reduce perfomance tests between all GPUs in cluster\e[0m"
 
