@@ -2,7 +2,7 @@
 This is a terraform and ansible solution which creates a cluster of your chosen host type and runs kernel message checks and an all-reduce NCCL test as part of the cluster creation process.  
 The main use case is for sanity-testing a cluster of hosts prior to production delivery.
 
-### Instructionds ###
+### Instructions ###
 
 On your workstation, edit terraform.tfvars to set the location, project ID, path to your public SSH key, vpc subnet ID and IB partition ID.  
 Set a suitable image for your hosts (typically the latest published official image for that compute type), along with the node type and count.  
