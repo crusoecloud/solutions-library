@@ -1,0 +1,3 @@
+cpu_count: "{{ instance_size }}"
+real_memory: "{{ (instance_size | int) * 3956 }}"
+threads_per_core: 2

@@ -1,0 +1,15 @@
+- name: Run pre-tasks
+  hosts: all
+  remote_user: ubuntu
+  become: true
+  roles:
+    - pre_tasks
+    - hostname
+    - ssh_keys
+
+- name: Configure nodes
+  hosts: nodes
+  remote_user: ubuntu
+  become: true
+  roles:
+    - node

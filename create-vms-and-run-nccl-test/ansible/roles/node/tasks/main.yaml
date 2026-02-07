@@ -1,0 +1,65 @@
+- name: Mount /scratch/local
+  ansible.builtin.import_role:
+    name: raid0
+  vars:
+    raid0_mount_path: /scratch/local
+  when: (ansible_local.nvme.nvme.count | int) > 0
+
+- name: Create symbolic link for NVML library
+  ansible.builtin.file:
+    src: /usr/lib/{{ ansible_architecture }}-linux-gnu/libnvidia-ml.so.1
+    dest: /usr/lib/{{ ansible_architecture }}-linux-gnu/libnvidia-ml.so
+    state: link
+
+- name: Hostfile for MPI
+  block:
+  - name: Copy the hostfile to each node
+    ansible.builtin.copy:
+      src: ../../../hostfile
+      dest: /home/ubuntu/hostfile
+      owner: ubuntu
+      group: ubuntu
+      mode: '0644'
+
+- name: IMEX Support
+  when:
+    - use_imex | default(false) | bool
+  block:
+  - name: Copy the imex node file to each node
+    ansible.builtin.copy:
+      src: ../../../imex_nodes.txt
+      dest: /etc/nvidia-imex/nodes_config.cfg
+      owner: root
+      group: root
+      mode: '0644'
+
+  - name: Discover IMEX major number
+    command: grep nvidia-caps-imex-channels /proc/devices
+    register: imex_device
+
+  - name: Create IMEX channel directory and node as root
+    become: true
+    block:
+      - name: Ensure IMEX channel directory exists
+        file:
+          path: /dev/nvidia-caps-imex-channels
+          state: directory
+          mode: '0755'
+
+      - name: Create channel0 device node
+        command: mknod /dev/nvidia-caps-imex-channels/channel0 c {{ imex_device.stdout.split()[0] }} 0
+        args:
+          creates: /dev/nvidia-caps-imex-channels/channel0
+
+  - name: Stop nvidia-imex service
+    become: true
+    ansible.builtin.systemd:
+      name: nvidia-imex
+      state: stopped
+
+  - name: Start nvidia-imex service
+    become: true
+    ansible.builtin.systemd:
+      name: nvidia-imex
+      state: started
+      enabled: yes

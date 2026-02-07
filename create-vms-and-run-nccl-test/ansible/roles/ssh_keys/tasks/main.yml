@@ -1,0 +1,36 @@
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: /home/ubuntu/.ssh
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0700'
+
+- name: Copy cluster private key to nodes
+  ansible.builtin.copy:
+    content: "{{ cluster_ssh_private_key }}"
+    dest: /home/ubuntu/.ssh/id_rsa
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+
+- name: Add cluster public key to authorized_keys
+  ansible.builtin.lineinfile:
+    path: /home/ubuntu/.ssh/authorized_keys
+    line: "{{ cluster_ssh_public_key }}"
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+    create: yes
+
+- name: Configure SSH client to disable strict host key checking for cluster
+  ansible.builtin.blockinfile:
+    path: /home/ubuntu/.ssh/config
+    create: yes
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+    block: |
+      Host 10.* 172.* 192.168.*
+          StrictHostKeyChecking no
+          UserKnownHostsFile=/dev/null

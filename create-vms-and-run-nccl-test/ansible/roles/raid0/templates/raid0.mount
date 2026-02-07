@@ -1,0 +1,12 @@
+[Unit]
+Description=raid0
+After=raid0.service
+
+[Mount]
+What=/dev/md/ephemeral
+Where={{ raid0_mount_path }}
+Type=xfs
+Options=defaults
+
+[Install]
+WantedBy=multi-user.target
