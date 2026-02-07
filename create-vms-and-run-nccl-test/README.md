@@ -6,7 +6,7 @@ The main use case is for sanity-testing a cluster of hosts prior to production d
 
 On your workstation, edit terraform.tfvars to set the location, project ID, path to your public SSH key, vpc subnet ID and IB partition ID.  
 Set a suitable image for your hosts (typically the latest published official image for that compute type), along with the node type and count.  
-Set imex_support to true if you are usign GB200 hosts.
+Set imex_support to true if you are using GB200 hosts.
 Set node_name_prefix to something that ensures your host names will be unique in your project (hosts are named in the format \<node_name_prefix\>-\[0-\<node_count\>\])  
 
 Then run the usual terraform commands:
