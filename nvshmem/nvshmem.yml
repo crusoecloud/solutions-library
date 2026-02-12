@@ -1,0 +1,156 @@
+---
+- name: Install GDRCopy Dependencies and Source
+  hosts: all
+  become: yes
+  vars:
+    gdrcopy_version: "2.5.1"
+    install_path: "/home/ubuntu" # Change this to your desired destination directory. It should be a shared directory across all nodes.
+    cuda_dir: "/usr/local/cuda"
+    nvshmem_version: "3.5.19-1"
+    deep_ep_repo: "https://github.com/deepseek-ai/DeepEP.git"
+    linux_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
+    ubuntu_version: "{{ ansible_distribution_version | replace('.', '') }}"
+  handlers:
+    - ansible.builtin.import_tasks: handlers/main.yml
+  tasks:
+    - name: Gather the package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Install compilers if missing from facts
+      become: yes
+      ansible.builtin.apt:
+        name:
+          - gcc-13
+          - g++-13
+        state: present
+      when: 
+        - "'gcc-13' not in ansible_facts.packages"
+        - "'g++-13' not in ansible_facts.packages"
+
+    - name: Install cmake
+      ansible.builtin.apt:
+        name:
+          - cmake
+        state: present
+        update_cache: yes
+
+    - name: Remove existing GDRCopy packages to avoid version conflicts
+      ansible.builtin.apt:
+        name:
+          - gdrcopy
+          - gdrcopy-tests
+          - libgdrapi
+          - gdrdrv-dkms
+        state: absent
+
+    - name: Download and unpack GDRCopy
+      ansible.builtin.unarchive:
+        src: https://github.com/NVIDIA/gdrcopy/archive/refs/tags/v{{ gdrcopy_version }}.tar.gz
+        dest: "{{ install_path }}"  
+        remote_src: yes
+        creates: "{{ install_path }}/gdrcopy-{{ gdrcopy_version }}"
+      run_once: true
+
+    - name: Build GDRCopy
+      community.general.make:
+        chdir: "{{ install_path }}/gdrcopy-{{ gdrcopy_version }}"
+        params:
+          num_jobs: "{{ ansible_processor_vcpus }}"  # Add this line
+      run_once: true
+
+    - name: Install GDRCopy
+      community.general.make:
+        chdir: "{{ install_path }}/gdrcopy-{{ gdrcopy_version }}"
+        target: install
+        params:
+          prefix: "{{ install_path }}/gdrcopy"
+      run_once: true
+
+    - name: Run the build-deb-packages script
+      ansible.builtin.shell:
+        cmd: "CUDA={{ cuda_dir }} NVCC_PREPEND_FLAGS='-ccbin /usr/bin/g++-13' ./build-deb-packages.sh --set-envvar=CC=/usr/bin/gcc-13 --set-envvar=CXX=/usr/bin/g++-13"
+        chdir: "{{ install_path }}/gdrcopy-{{ gdrcopy_version }}/packages/"
+      args:
+        creates: "{{ install_path }}/gdrcopy-{{ gdrcopy_version }}/gdrdrv-dkms_{{ gdrcopy_version }}_*.deb"
+      run_once: true
+
+    - name: Identify generated deb files
+      ansible.builtin.find:
+        paths: "{{ install_path }}/gdrcopy-{{ gdrcopy_version }}/packages"
+        patterns: "*.deb"
+      register: deb_files
+
+    - name: Install packages in strict manual order
+      ansible.builtin.apt:
+        deb: "{{ item }}"
+      loop:
+        - "{{ (deb_files.files | selectattr('path', 'search', 'gdrdrv-dkms') | first).path }}"
+        - "{{ (deb_files.files | selectattr('path', 'search', 'libgdrapi') | first).path }}"
+        - "{{ (deb_files.files | selectattr('path', 'search', 'gdrcopy-tests') | first).path }}"
+        - "{{ (deb_files.files | selectattr('path', 'search', 'gdrcopy_') | first).path }}"
+
+    - name: Load gdrdrv module
+      community.general.modprobe:
+        name: gdrdrv
+        state: present
+
+    - name: Download and unpack nvshmem
+      ansible.builtin.unarchive:
+        src: https://github.com/NVIDIA/nvshmem/archive/refs/tags/v{{ nvshmem_version }}.tar.gz
+        dest: "{{ install_path }}"  
+        remote_src: yes
+        creates: "{{ install_path }}/nvshmem-{{ nvshmem_version }}"
+      run_once: true
+
+    - name: Configure NVSHMEM with IBGDA support
+      command: 
+        cmd: "cmake -S . -B build/ -DCMAKE_INSTALL_PREFIX={{ install_path }}/nvshmem-{{ nvshmem_version }}"
+        chdir: "{{ install_path }}/nvshmem-{{ nvshmem_version }}"
+      environment:
+        CUDA_HOME: "{{ cuda_dir }}"
+        GDRCOPY_HOME: "{{ install_path }}/gdrcopy"
+        NVSHMEM_SHMEM_SUPPORT: "0"
+        NVSHMEM_UCX_SUPPORT: "0"
+        NVSHMEM_USE_NCCL: "0"
+        NVSHMEM_MPI_SUPPORT: "0"
+        NVSHMEM_IBGDA_SUPPORT: "1"
+        NVSHMEM_PMIX_SUPPORT: "0"
+        NVSHMEM_TIMEOUT_DEVICE_POLLING: "0"
+        NVSHMEM_USE_GDRCOPY: "1"
+      run_once: true
+
+    - name: Build NVSHMEM
+      community.general.make:
+        chdir: "{{ install_path }}/nvshmem-{{ nvshmem_version }}/build"
+        params:
+          num_jobs: "{{ ansible_processor_vcpus }}"
+      run_once: true
+
+    - name: Install NVSHMEM
+      community.general.make:
+        chdir: "{{ install_path }}/nvshmem-{{ nvshmem_version }}/build"
+        target: install
+      run_once: true
+      
+    - name: Create NVSHMEM environment profile
+      become: yes
+      copy:
+        dest: /etc/profile.d/nvshmem.sh
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          export NVSHMEM_DIR={{ install_path }}/nvshmem-{{ nvshmem_version }}
+          export LD_LIBRARY_PATH="${NVSHMEM_DIR}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+          export PATH="${NVSHMEM_DIR}/bin${PATH:+:${PATH}}"
+
+    - name: Append IBGDA and StreamMemOPs to existing nvidia options
+      become: yes
+      ansible.builtin.lineinfile:
+        path: /etc/modprobe.d/nvidia.conf
+        regexp: '^options nvidia (.*)'
+        line: 'options nvidia \1 NVreg_EnableStreamMemOPs=1 NVreg_RegistryDwords="PeerMappingOverride=1;"'
+        backrefs: yes
+        state: present
+      notify: update initramfs

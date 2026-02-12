@@ -1,0 +1,4 @@
+- name: update initramfs
+  become: yes
+  ansible.builtin.command: update-initramfs -u
+  when: ansible_os_family == "Debian"
