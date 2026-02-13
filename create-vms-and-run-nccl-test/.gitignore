@@ -4,7 +4,6 @@
 terraform.tfstate
 terraform.tfstate.backup
 
-
 # Generated SSH keys for cluster
 cluster_ssh_key
 cluster_ssh_key.pub
@@ -12,9 +11,6 @@ cluster_ssh_key.pub
 # Generated hostfiles
 hostfile
 imex_nodes.txt
-
-# Ansible files
-ansible/inventory/inventory.yml
 
 # The output of the tests
 nccltest_output.txt
