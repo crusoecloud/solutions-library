@@ -9,7 +9,7 @@ Set a suitable image for your hosts (typically the latest published official ima
 Set imex_support to true if you are using GB200 hosts.
 Set node_name_prefix to something that ensures your host names will be unique in your project (hosts are named in the format \<node_name_prefix\>-\[0-\<node_count\>\])  
 
-** If using B200s: ** edit nccltest.sh to uncomment the UCX_NET_DEVICES environment variable  
+**If using B200s:** edit nccltest.sh to uncomment the UCX_NET_DEVICES environment variable  
 
 Then run the usual terraform commands:
 ```
