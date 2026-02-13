@@ -3,7 +3,7 @@
 .terraform.lock.hcl
 terraform.tfstate
 terraform.tfstate.backup
-*.tfvars
+
 
 # Generated SSH keys for cluster
 cluster_ssh_key
