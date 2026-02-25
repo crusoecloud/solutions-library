@@ -1,6 +1,6 @@
 [![Crusoe](./assets/CrusoeLogo_black.png)](https://www.crusoe.ai/)
 
-# Crusoe Solutions Library
+# Crusoe Solutions Library   
 
 ## Table of contents
 * [Introduction](#introduction)
