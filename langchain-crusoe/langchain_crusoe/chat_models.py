@@ -161,7 +161,7 @@ class ChatCrusoe(BaseChatOpenAI):
 
     crusoe_api_base: str = Field(
         default_factory=from_env(
-            "CRUSOE_API_BASE", default="https://api.crusoe.ai/v1"
+            "CRUSOE_API_BASE", default="https://managed-inference-api-proxy.crusoecloud.com/v1/"
         ),
     )
     """Base URL for the Crusoe API.
