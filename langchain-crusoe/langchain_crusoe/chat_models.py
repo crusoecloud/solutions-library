@@ -161,12 +161,12 @@ class ChatCrusoe(BaseChatOpenAI):
 
     crusoe_api_base: str = Field(
         default_factory=from_env(
-            "CRUSOE_API_BASE", default="https://managed-inference-api-proxy.crusoecloud.com/v1/"
+            "CRUSOE_API_BASE", default="https://managed-inference-api-proxy.crusoecloud.com/v1"
         ),
     )
     """Base URL for the Crusoe API.
 
-    Defaults to ``https://api.crusoe.ai/v1``.
+    Defaults to ``https://managed-inference-api-proxy.crusoecloud.com/v1``.
     Can be overridden via env var ``CRUSOE_API_BASE``.
     """
 
@@ -210,11 +210,7 @@ class ChatCrusoe(BaseChatOpenAI):
 
         # Initialize the clients
         client_params: dict = {
-            "api_key": (
-                self.crusoe_api_key.get_secret_value()
-                if self.crusoe_api_key
-                else None
-            ),
+            "api_key": self.crusoe_api_key.get_secret_value(),
             "base_url": self.crusoe_api_base,
             "timeout": self.request_timeout,
             "max_retries": self.max_retries if self.max_retries is not None else 2,

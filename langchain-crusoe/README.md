@@ -129,7 +129,7 @@ export CRUSOE_PROJECT_ID="my-project-id"
 |-----------|-------------|---------|-------------|
 | `api_key` | `CRUSOE_API_KEY` | — | Your Crusoe inference API key (required) |
 | `model` | — | `meta-llama/Llama-3.3-70B-Instruct` | Model to use |
-| `crusoe_api_base` | `CRUSOE_API_BASE` | `https://api.crusoe.ai/v1` | API endpoint |
+| `crusoe_api_base` | `CRUSOE_API_BASE` | `https://managed-inference-api-proxy.crusoecloud.com/v1` | API endpoint |
 | `crusoe_project_id` | `CRUSOE_PROJECT_ID` | `None` | Project ID for attribution |
 | `temperature` | — | `0.7` (inherited) | Sampling temperature |
 | `max_tokens` | — | `None` | Max tokens to generate |
@@ -140,8 +140,8 @@ export CRUSOE_PROJECT_ID="my-project-id"
 
 ```bash
 # Clone the repo
-git clone https://github.com/langchain-ai/langchain-crusoe.git
-cd langchain-crusoe/libs/crusoe
+git clone https://github.com/crusoecloud/solutions-library.git
+cd solutions-library/langchain-crusoe
 
 # Install dependencies
 poetry install --with lint,typing,test,test_integration

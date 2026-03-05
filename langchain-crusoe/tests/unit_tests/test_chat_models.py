@@ -45,7 +45,7 @@ class TestChatCrusoeInit:
         """Test default API base URL."""
         with patch.dict(os.environ, {"CRUSOE_API_KEY": "test-key"}):
             llm = ChatCrusoe()
-        assert llm.crusoe_api_base == "https://api.crusoe.ai/v1"
+        assert llm.crusoe_api_base == "https://managed-inference-api-proxy.crusoecloud.com/v1"
 
     def test_custom_api_base(self) -> None:
         """Test custom API base URL from env."""
