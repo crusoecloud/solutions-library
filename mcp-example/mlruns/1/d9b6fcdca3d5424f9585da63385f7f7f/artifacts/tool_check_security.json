@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "total_vulnerabilities": 2,
+  "vulnerabilities": [
+    {
+      "type": "dangerous_function",
+      "severity": "critical",
+      "line": 15,
+      "message": "Use of eval() \u2014 can execute arbitrary code"
+    },
+    {
+      "type": "dangerous_function",
+      "severity": "critical",
+      "line": 24,
+      "message": "Use of exec() \u2014 can execute arbitrary code"
+    }
+  ]
+}

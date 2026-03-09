@@ -1,0 +1,33 @@
+{
+  "status": "ok",
+  "total_issues": 5,
+  "issues": [
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'os' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'json' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'sys' is imported but never used"
+    },
+    {
+      "type": "bare_except",
+      "severity": "warning",
+      "line": 17,
+      "message": "Bare 'except:' clause \u2014 catches all exceptions including KeyboardInterrupt"
+    },
+    {
+      "type": "todo_comment",
+      "severity": "info",
+      "line": 8,
+      "message": "Found comment: # TODO: validate input"
+    }
+  ]
+}

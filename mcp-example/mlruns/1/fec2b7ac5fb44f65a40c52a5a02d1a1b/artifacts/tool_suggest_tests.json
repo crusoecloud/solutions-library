@@ -1,0 +1,34 @@
+{
+  "total_functions": 4,
+  "test_suggestions": [
+    {
+      "function": "fetch_user",
+      "parameters": [
+        "user_id"
+      ],
+      "suggested_test": "def test_fetch_user():\n    # TODO: Add test values\n    result = fetch_user(user_id=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_fetch_user_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "parse_input",
+      "parameters": [
+        "data"
+      ],
+      "suggested_test": "def test_parse_input():\n    # TODO: Add test values\n    result = parse_input(data=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_parse_input_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "calculate_discount",
+      "parameters": [
+        "price",
+        "discount"
+      ],
+      "suggested_test": "def test_calculate_discount():\n    # TODO: Add test values\n    result = calculate_discount(price=..., discount=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_calculate_discount_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "load_config",
+      "parameters": [
+        "path"
+      ],
+      "suggested_test": "def test_load_config():\n    # TODO: Add test values\n    result = load_config(path=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_load_config_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    }
+  ]
+}
