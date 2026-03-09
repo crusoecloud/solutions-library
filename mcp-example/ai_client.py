@@ -22,6 +22,7 @@ import os
 import time
 
 import mlflow
+import mlflow.deployments
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_crusoe import ChatCrusoe
 from mcp import ClientSession, StdioServerParameters
@@ -44,6 +45,26 @@ MLFLOW_EXPERIMENT = "code-review-mcp"
 def deployment_name(model: str) -> str:
     """Convert a model ID to a safe artifact/file name."""
     return model.replace("/", "--")
+
+
+def ensure_deployments() -> mlflow.deployments.BaseDeploymentClient:
+    """Create MLflow Crusoe deployments for each model if they don't exist."""
+    client = mlflow.deployments.get_deploy_client("crusoe")
+    existing = {d["name"] for d in client.list_deployments()}
+
+    for model in MODELS:
+        name = deployment_name(model)
+        if name not in existing:
+            client.create_deployment(
+                name=name,
+                model_uri=model,
+                config={"temperature": 0.7, "max_tokens": 4096},
+            )
+            print(f"  [mlflow-crusoe] Created deployment: {name}")
+        else:
+            print(f"  [mlflow-crusoe] Deployment exists: {name}")
+
+    return client
 
 
 # ─── MCP helpers ──────────────────────────────────────────────────────────────
@@ -133,12 +154,16 @@ async def main():
         print("Run: export CRUSOE_API_KEY='<your-api-key>'")
         return
 
-    # Set up MLflow experiment + enable LangChain auto-tracing
+    # Set up MLflow
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
     mlflow.langchain.autolog()
 
-    print(f"Using {len(MODELS)} model(s): {', '.join(MODELS)}\n")
+    # Ensure deployments exist
+    print("Checking MLflow Crusoe deployments...")
+    ensure_deployments()
+
+    print(f"\nUsing {len(MODELS)} model(s): {', '.join(MODELS)}\n")
 
     # Get code input
     print("Paste the Python code to review (then press Enter twice):")
@@ -157,7 +182,6 @@ async def main():
     )
 
     with mlflow.start_run():
-        # Log inputs
         mlflow.log_param("models", ", ".join(MODELS))
         mlflow.log_param("lines_of_code", len(code.splitlines()))
         mlflow.log_text(code, "input_code.py")
@@ -219,7 +243,7 @@ async def main():
 
         mlflow.log_text(final_review, "final_review.md")
         print(f"\n[mlflow] Run logged to experiment '{MLFLOW_EXPERIMENT}'")
-        print("[mlflow] View runs with: uv run mlflow ui")
+        print("[mlflow] View runs with: uv run mlflow ui --backend-store-uri sqlite:///mlflow.db")
 
 
 if __name__ == "__main__":

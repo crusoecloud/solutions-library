@@ -1,7 +1,0 @@
-.venv/
-mlruns/
-mlflow.db
-.python-version
-__pycache__/
-*.pyc
-uv.lock

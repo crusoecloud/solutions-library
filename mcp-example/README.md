@@ -14,11 +14,16 @@ MCP Server (server.py)
     └── suggest_tests    — pytest stub generation
     │
     ▼
+mlflow-crusoe (deployment management)
+    └── creates named deployment configs per model
+    │
+    ▼
 ChatCrusoe / Kimi-K2-Thinking
-    │  synthesizes tool results into a human review
+    │  synthesizes tool results into a human review (streamed)
     ▼
 MLflow (mlflow.db)
-    └── logs code, tool results, reviews, latency metrics
+    ├── experiment tracking — artifacts, metrics, params
+    └── LangChain autolog  — traces, latency, token usage
 ```
 
 ## Files
@@ -91,6 +96,22 @@ Each run logs:
 
 Metrics logged: `tool_analysis_seconds`, `review_seconds`.
 
+## MLflow Crusoe Deployments
+
+`mlflow-crusoe` manages named deployment configs for each model. On startup, `ai_client.py` automatically creates a deployment for every model in `MODELS` and stores it at:
+
+```
+~/.mlflow/crusoe_deployments/<model-name>.json
+```
+
+Each deployment config contains the model ID, temperature, and max tokens. On subsequent runs, existing deployments are reused.
+
+> **Note:** `mlflow-crusoe==0.1.1` requires a local patch to add the missing `run_local` interface before it can be loaded by MLflow's plugin system. This is a known upstream issue. Apply the patch by adding the following to `.venv/lib/python3.12/site-packages/mlflow_crusoe/deployment.py`:
+> ```python
+> def run_local(name, model_uri, flavor=None, config=None):
+>     raise NotImplementedError("Local deployment is not supported for Crusoe managed inference.")
+> ```
+
 ## MCP Server — Tools
 
 | Tool | How it works | Detects |
@@ -131,3 +152,4 @@ Update the path in the config to point to your `server.py`, then restart Claude 
 | `langchain` | MLflow LangChain autologging |
 | `openai` | Underlying HTTP client for Crusoe API |
 | `mlflow` | Experiment tracking, traces, metrics |
+| `mlflow-crusoe` | Deployment config management for Crusoe models |

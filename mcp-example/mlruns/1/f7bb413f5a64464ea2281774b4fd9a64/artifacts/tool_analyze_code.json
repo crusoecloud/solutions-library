@@ -1,0 +1,38 @@
+{
+  "status": "ok",
+  "total_issues": 6,
+  "issues": [
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'json' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'threading' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'sys' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'os' is imported but never used"
+    },
+    {
+      "type": "bare_except",
+      "severity": "warning",
+      "line": 31,
+      "message": "Bare 'except:' clause \u2014 catches all exceptions including KeyboardInterrupt"
+    },
+    {
+      "type": "todo_comment",
+      "severity": "info",
+      "line": 22,
+      "message": "Found comment: # TODO: add expiry check"
+    }
+  ]
+}
