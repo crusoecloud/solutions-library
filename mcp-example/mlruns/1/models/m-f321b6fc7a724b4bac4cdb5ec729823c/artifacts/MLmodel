@@ -1,0 +1,19 @@
+artifact_path: /Users/eacheampong/Documents/Managed AI Projects/mcp-example/mlruns/1/models/m-f321b6fc7a724b4bac4cdb5ec729823c/artifacts
+flavors:
+  python_function:
+    cloudpickle_version: 3.1.2
+    code: null
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pyfunc.model
+    python_model: python_model.pkl
+    python_version: 3.12.13
+    streamable: false
+mlflow_version: 3.10.1
+model_id: m-f321b6fc7a724b4bac4cdb5ec729823c
+model_size_bytes: 2071
+model_uuid: m-f321b6fc7a724b4bac4cdb5ec729823c
+prompts: null
+run_id: 8b88025b78eb4612b8d9d64062ea92ca
+utc_time_created: '2026-03-10 22:30:06.328559'

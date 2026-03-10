@@ -1,0 +1,21 @@
+{
+  "status": "ok",
+  "total_issues": 3,
+  "issues": [
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'datetime' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'os' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'json' is imported but never used"
+    }
+  ]
+}

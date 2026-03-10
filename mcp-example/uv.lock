@@ -567,7 +567,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -1495,6 +1495,7 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-crusoe" },
     { name = "mcp" },
+    { name = "mlflow" },
     { name = "mlflow-crusoe" },
     { name = "openai" },
 ]
@@ -1504,7 +1505,8 @@ requires-dist = [
     { name = "langchain", specifier = ">=0.3.28" },
     { name = "langchain-crusoe", specifier = ">=0.1.1" },
     { name = "mcp", specifier = ">=1.26.0" },
-    { name = "mlflow-crusoe", specifier = ">=0.1.0" },
+    { name = "mlflow", specifier = ">=3.10.1" },
+    { name = "mlflow-crusoe", specifier = ">=0.1.1" },
     { name = "openai", specifier = ">=2.26.0" },
 ]
 

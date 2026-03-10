@@ -1,0 +1,36 @@
+{
+  "status": "ok",
+  "total_vulnerabilities": 5,
+  "vulnerabilities": [
+    {
+      "type": "dangerous_function",
+      "severity": "critical",
+      "line": 38,
+      "message": "Use of eval() \u2014 can execute arbitrary code"
+    },
+    {
+      "type": "dangerous_function",
+      "severity": "critical",
+      "line": 39,
+      "message": "Use of eval() \u2014 can execute arbitrary code"
+    },
+    {
+      "type": "sql_injection",
+      "severity": "critical",
+      "line": 18,
+      "message": "Possible SQL injection \u2014 use parameterized queries instead of f-strings"
+    },
+    {
+      "type": "sql_injection",
+      "severity": "critical",
+      "line": 26,
+      "message": "Possible SQL injection \u2014 use parameterized queries instead of f-strings"
+    },
+    {
+      "type": "hardcoded_secret",
+      "severity": "high",
+      "line": 23,
+      "message": "Possible hardcoded secret \u2014 use environment variables instead"
+    }
+  ]
+}

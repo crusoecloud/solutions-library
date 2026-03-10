@@ -1,0 +1,121 @@
+{
+  "status": "ok",
+  "total_issues": 23,
+  "issues": [
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'tempfile' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 're' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'sys' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'Optional' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'urllib.parse' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'timedelta' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'lru_cache' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'List' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'os' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'Dict' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'json' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'sqlite3' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'time' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'pickle' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'threading' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'HTTPServer' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'datetime' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'Any' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'defaultdict' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'subprocess' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'Tuple' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'BaseHTTPRequestHandler' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'hashlib' is imported but never used"
+    }
+  ]
+}

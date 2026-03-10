@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "total_vulnerabilities": 3,
+  "vulnerabilities": [
+    {
+      "type": "dangerous_function",
+      "severity": "critical",
+      "line": 28,
+      "message": "Use of exec() \u2014 can execute arbitrary code"
+    },
+    {
+      "type": "dangerous_function",
+      "severity": "critical",
+      "line": 29,
+      "message": "Use of eval() \u2014 can execute arbitrary code"
+    },
+    {
+      "type": "hardcoded_secret",
+      "severity": "high",
+      "line": 12,
+      "message": "Possible hardcoded secret \u2014 use environment variables instead"
+    }
+  ]
+}

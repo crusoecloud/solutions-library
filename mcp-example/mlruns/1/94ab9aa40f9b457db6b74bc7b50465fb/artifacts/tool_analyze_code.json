@@ -1,0 +1,34 @@
+{
+  "status": "ok",
+  "total_issues": 5,
+  "issues": [
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'statistics' is imported but never used"
+    },
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'os' is imported but never used"
+    },
+    {
+      "type": "bare_except",
+      "severity": "warning",
+      "line": 19,
+      "message": "Bare 'except:' clause \u2014 catches all exceptions including KeyboardInterrupt"
+    },
+    {
+      "type": "todo_comment",
+      "severity": "info",
+      "line": 40,
+      "message": "Found comment: # FIXME: clarify discount convention with team"
+    },
+    {
+      "type": "todo_comment",
+      "severity": "info",
+      "line": 65,
+      "message": "Found comment: # TODO: add pagination for large datasets"
+    }
+  ]
+}

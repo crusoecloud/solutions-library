@@ -1,0 +1,29 @@
+{
+  "status": "ok",
+  "total_issues": 4,
+  "issues": [
+    {
+      "type": "unused_import",
+      "severity": "warning",
+      "message": "Import 'os' is imported but never used"
+    },
+    {
+      "type": "bare_except",
+      "severity": "warning",
+      "line": 34,
+      "message": "Bare 'except:' clause \u2014 catches all exceptions including KeyboardInterrupt"
+    },
+    {
+      "type": "todo_comment",
+      "severity": "info",
+      "line": 43,
+      "message": "Found comment: # TODO: add pagination for large datasets"
+    },
+    {
+      "type": "todo_comment",
+      "severity": "info",
+      "line": 52,
+      "message": "Found comment: # FIXME: this doesn't handle binary data in rows"
+    }
+  ]
+}

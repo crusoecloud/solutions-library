@@ -1,0 +1,89 @@
+{
+  "total_functions": 12,
+  "test_suggestions": [
+    {
+      "function": "merge_records",
+      "parameters": [
+        "base",
+        "updates"
+      ],
+      "suggested_test": "def test_merge_records():\n    # TODO: Add test values\n    result = merge_records(base=..., updates=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_merge_records_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "compute_commission",
+      "parameters": [
+        "sales_total",
+        "tier"
+      ],
+      "suggested_test": "def test_compute_commission():\n    # TODO: Add test values\n    result = compute_commission(sales_total=..., tier=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_compute_commission_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "format_currency",
+      "parameters": [
+        "amount"
+      ],
+      "suggested_test": "def test_format_currency():\n    # TODO: Add test values\n    result = format_currency(amount=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_format_currency_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "__init__",
+      "parameters": [
+        "records"
+      ],
+      "suggested_test": "def test___init__():\n    # TODO: Add test values\n    result = __init__(records=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test___init___edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "load_csv",
+      "parameters": [
+        "filepath"
+      ],
+      "suggested_test": "def test_load_csv():\n    # TODO: Add test values\n    result = load_csv(filepath=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_load_csv_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "get_average_sale",
+      "parameters": [],
+      "suggested_test": "def test_get_average_sale():\n    # TODO: Add test values\n    result = get_average_sale()\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_get_average_sale_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "get_top_performers",
+      "parameters": [
+        "n"
+      ],
+      "suggested_test": "def test_get_top_performers():\n    # TODO: Add test values\n    result = get_top_performers(n=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_get_top_performers_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "calculate_growth",
+      "parameters": [
+        "current",
+        "previous"
+      ],
+      "suggested_test": "def test_calculate_growth():\n    # TODO: Add test values\n    result = calculate_growth(current=..., previous=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_calculate_growth_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "apply_discount",
+      "parameters": [
+        "amount",
+        "discount"
+      ],
+      "suggested_test": "def test_apply_discount():\n    # TODO: Add test values\n    result = apply_discount(amount=..., discount=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_apply_discount_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "get_monthly_totals",
+      "parameters": [],
+      "suggested_test": "def test_get_monthly_totals():\n    # TODO: Add test values\n    result = get_monthly_totals()\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_get_monthly_totals_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "find_outliers",
+      "parameters": [
+        "threshold"
+      ],
+      "suggested_test": "def test_find_outliers():\n    # TODO: Add test values\n    result = find_outliers(threshold=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_find_outliers_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    },
+    {
+      "function": "generate_report",
+      "parameters": [
+        "output_path"
+      ],
+      "suggested_test": "def test_generate_report():\n    # TODO: Add test values\n    result = generate_report(output_path=...)\n    assert result is not None  # Replace with actual assertion\n\n\ndef test_generate_report_edge_case():\n    # TODO: Test edge cases (empty input, None, boundary values)\n    pass\n"
+    }
+  ]
+}

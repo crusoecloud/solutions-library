@@ -1,0 +1,12 @@
+{
+  "status": "ok",
+  "total_vulnerabilities": 1,
+  "vulnerabilities": [
+    {
+      "type": "hardcoded_secret",
+      "severity": "high",
+      "line": 32,
+      "message": "Possible hardcoded secret \u2014 use environment variables instead"
+    }
+  ]
+}
