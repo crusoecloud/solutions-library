@@ -26,6 +26,32 @@ Each solution README will also list its own specific prerequisites.
 
 ### Inference
 
+[LangChain × Crusoe AI](./langchain-crusoe/)
+
+[![PyPI version](https://badge.fury.io/py/langchain-crusoe.svg)](https://pypi.org/project/langchain-crusoe/)
+
+The `langchain-crusoe` package integrates Crusoe's [Managed Inference](https://www.crusoe.ai/cloud/managed-inference) service with the [LangChain](https://www.langchain.com/) ecosystem. It provides a `ChatCrusoe` class that wraps Crusoe's OpenAI-compatible API, giving you access to leading open-source models — including Llama 3.3, DeepSeek V3/R1, Qwen3, Gemma 3, and Kimi-K2 — through a standard LangChain interface.
+
+Key capabilities:
+
+- **Drop-in LangChain integration** via `BaseChatOpenAI` — streaming, async, tool calling, and structured output work out of the box
+- **LangSmith tracing** with `ls_provider="crusoe"` for built-in observability
+- **Project attribution** via `CRUSOE_PROJECT_ID` header for multi-tenant usage tracking
+- **Flexible configuration** — API key, base URL, and project ID all configurable via environment variables
+
+```bash
+pip install langchain-crusoe
+```
+
+```python
+from langchain_crusoe import ChatCrusoe
+
+llm = ChatCrusoe(model="meta-llama/Llama-3.3-70B-Instruct")
+response = llm.invoke("Explain MemoryAlloy inference technology in one paragraph.")
+```
+
+See the [langchain-crusoe README](./langchain-crusoe/README.md) for full setup instructions and usage examples.
+
 ### Storage
 
 [Shared Volumes NFS Setup](./shared-volumes-driver-setup/)
