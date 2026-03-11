@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+.env/
+
+# IDEs
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# mlflow
+mlruns/
+mlflow.db
+
+# Lockfiles
+uv.lock
+
+# Logs
+*.log
+
+# Temporary
+*.tmp
+*.swp
+
+# Ignore local config
+*.env

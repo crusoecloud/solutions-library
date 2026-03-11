@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Ignore local solution directories not part of this repo
+langchain-crusoe/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+.env/
+
+# mlflow
+mlruns/
+mlflow.db
+
+# Lockfiles
+uv.lock
+
+# Logs
+*.log
+
+# Temporary
+*.tmp
+*.swp
