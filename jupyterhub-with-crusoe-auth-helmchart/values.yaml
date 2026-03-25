@@ -1,0 +1,90 @@
+jupyterhub:
+  proxy:
+    https:
+      # To enable TLS for Jupyterhub, populate tls-secret.yaml with your
+      # base64-encoded cert and key and set enabled: true
+      enabled: false
+      type: secret
+      secret:
+        name: jupyterhub-tls
+        key: tls.key
+        crt: tls.crt
+  hub:
+    extraEnv:
+      CRUSOE_PROJECT_ID: "<id of Crusoe Coloud project whose users are permitted to sign into Jupyterhub>" # ID of the K8s cluster's project
+      
+    extraFiles:
+      crusoe_auth_script:
+        mountPath: /usr/local/etc/jupyterhub/crusoe_auth.py
+        # Read the python code directly into the container
+        stringData: |
+          from jupyterhub.auth import Authenticator
+          from tornado import web
+          import requests
+          import hmac
+          import hashlib
+          import base64
+          import datetime
+          import os
+
+          class CrusoeCloudAuthenticator(Authenticator):
+
+              def _generate_signature(self, api_version,api_secret_key,request_path,request_verb,query_params,dt):
+                payload = api_version + request_path + "\n" + query_params + "\n" + request_verb + "\n{0}\n".format(dt)
+                decoded = base64.urlsafe_b64decode(api_secret_key + '=' * (-len(api_secret_key) % 4))
+                return base64.urlsafe_b64encode(hmac.new(decoded, msg = bytes(payload, 'ascii'), digestmod=hashlib.sha256).digest()).decode('ascii').rstrip("=")
+
+              async def authenticate(self, handler, data):
+                api_access_key = data['username']
+                api_secret_key = data['password']
+                target_project_id = os.environ.get('CRUSOE_PROJECT_ID')
+                signature_version = "1.0"
+                api_version = "/v1alpha5"
+
+                #get the org's projects visible to this user
+                request_path = "/organizations/projects"
+                request_verb = "GET"
+                query_params = ""
+
+                dt = str(datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0))
+                dt = dt.replace(" ", "T")
+                signature = self._generate_signature(api_version,api_secret_key,request_path,request_verb,query_params,dt)
+
+                print("Crusoe JH Auth - Requesting org projects")
+
+                # make sure this method matches your HTTP verb above
+                response = requests.get(
+                  'https://api.crusoecloud.com' + api_version + request_path,
+                  headers={'X-Crusoe-Timestamp': dt, 'Authorization': 'Bearer {0}:{1}:{2}'.format(signature_version, api_access_key, signature)},
+                  params=query_params
+                  )
+
+                if response.status_code != 200:
+                  return None # Authentication failed (invalid credentials)
+
+                projects=response.json().get("items")
+                for project in projects:
+                  if project.get('id') == target_project_id:
+                    request_path = "/users/identities"
+                    signature = self._generate_signature(api_version,api_secret_key,request_path,request_verb,query_params,dt)
+
+                    user_response = requests.get(
+                      'https://api.crusoecloud.com' + api_version + request_path,
+                      headers={'X-Crusoe-Timestamp': dt, 'Authorization': 'Bearer {0}:{1}:{2}'.format(signature_version, api_access_key, signature)},
+                      params=query_params
+                    )
+                    if user_response.status_code == 200:
+                      email = user_response.json().get('identity').get('email', api_access_key)
+                      return {"name": email.replace("@", "-").replace(".", "-")}
+
+                    return {"name": api_access_key}
+                return None
+              
+              def check_allowed(self, username, authentication=None):
+                return True
+          
+          
+    config:
+      JupyterHub:
+        # Tell JupyterHub to use your newly injected class
+        authenticator_class: crusoe_auth.CrusoeCloudAuthenticator
