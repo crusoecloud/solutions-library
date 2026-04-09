@@ -1,3 +1,3 @@
 %{ for ip in ips ~}
-${ip} slots=1
+${ip} slots=8
 %{ endfor ~}
