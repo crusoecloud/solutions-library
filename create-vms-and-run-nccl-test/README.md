@@ -8,6 +8,7 @@ On your workstation, edit terraform.tfvars to set the location, project ID, path
 Set a suitable image for your hosts (typically the latest published official image for that compute type), along with the node type and count. Feel free to flesh out the example terraform.tfvars with GPU-specific examples.
 Set imex_support to true if you are using GB200 hosts.
 Set node_name_prefix to something that ensures your host names will be unique in your project (hosts are named in the format \<node_name_prefix\>-\[0-\<node_count\>\])  
+Edit hostfile.tpl to set 'slots=8' to match the number of GPUs in your nodetype (8 in most cases, but 4 for GB200)
 
 **If using B200s:** edit nccltest.sh to uncomment the UCX_NET_DEVICES environment variable  
 
