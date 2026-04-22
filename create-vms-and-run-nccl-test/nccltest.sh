@@ -20,5 +20,5 @@ NUM_NODES=$(cat /home/ubuntu/hostfile | wc -l)
 GPU_PER_NODE=$(nvidia-smi -L | wc -l)
 
 /opt/hpcx/ompi/bin/mpirun --hostfile /home/ubuntu/hostfile -np $(( $NUM_NODES * $GPU_PER_NODE )) -N $GPU_PER_NODE \
-        -x LD_LIBRARY_PATH -x UCX_NET_DEVICES -x NCCL_IB_HCA -x NCCL_TOPO_FILE -x NCCL_DEBUG \
+         --bind-to none -x LD_LIBRARY_PATH -x UCX_NET_DEVICES -x NCCL_IB_HCA -x NCCL_TOPO_FILE -x NCCL_DEBUG \
         /opt/nccl-tests/build/all_reduce_perf -b 8G -e 32G -f 2 -g 1
