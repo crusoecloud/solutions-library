@@ -1,0 +1,46 @@
+# ServiceAccount assigned to each notebook (singleuser) pod so that code
+# running inside the notebook can authenticate to the Kubernetes API.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notebook-user
+  namespace: {{ .Release.Namespace }}
+---
+# Role granting the notebook pod permission to manage Ray and PyTorch training
+# custom resources in the same namespace.  Assumes the relevant CRDs
+# (RayJob, RayCluster from kuberay-operator; PyTorchJob from
+# training-operator) are already installed on the cluster.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: notebook-user
+  namespace: {{ .Release.Namespace }}
+rules:
+  # KubeRay resources
+  - apiGroups: ["ray.io"]
+    resources:
+      - rayjobs
+      - rayclusters
+      - rayjobs/status
+      - rayclusters/status
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Kubeflow Training Operator resources
+  - apiGroups: ["kubeflow.org"]
+    resources:
+      - pytorchjobs
+      - pytorchjobs/status
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notebook-user
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: notebook-user
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: notebook-user
+  apiGroup: rbac.authorization.k8s.io

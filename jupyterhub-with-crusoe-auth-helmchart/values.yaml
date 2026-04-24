@@ -3,15 +3,23 @@ jupyterhub:
     https:
       # To enable TLS for Jupyterhub, populate tls-secret.yaml with your
       # base64-encoded cert and key and set enabled: true
-      enabled: false
+      enabled: true
       type: secret
       secret:
         name: jupyterhub-tls
         key: tls.key
         crt: tls.crt
+  singleuser:
+    # Assign the notebook-user ServiceAccount so pods can call the K8s API
+    # to create RayJobs, RayClusters, and PyTorchJobs.
+    serviceAccountName: notebook-user
+    networkPolicy:
+      enabled: false
   hub:
+    networkPolicy:
+      enabled: false
     extraEnv:
-      CRUSOE_PROJECT_ID: "<id of Crusoe Coloud project whose users are permitted to sign into Jupyterhub>" # ID of the K8s cluster's project
+      CRUSOE_PROJECT_ID: "6b60dd75-ea5f-4fae-81b8-12bbe3049e2a" # ID of the K8s cluster's project
       
     extraFiles:
       crusoe_auth_script:
