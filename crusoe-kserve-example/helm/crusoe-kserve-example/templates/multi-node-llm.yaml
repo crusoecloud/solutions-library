@@ -1,0 +1,84 @@
+{{- if .Values.multiNode.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: {{ .Values.multiNode.model.name }}-llm-multi-node
+  namespace: {{ .Values.namespace }}
+spec:
+  model:
+    uri: {{ .Values.multiNode.model.uri }}
+    name: {{ .Values.multiNode.model.name }}
+  replicas: {{ .Values.multiNode.replicas }}
+  parallelism:
+    tensor: {{ .Values.multiNode.parallelism.tensor }}
+    data: {{ .Values.multiNode.parallelism.data }}
+    dataLocal: {{ .Values.multiNode.parallelism.dataLocal }}
+  template:
+    containers:
+      - name: main
+        image: {{ .Values.image }}
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+        args:
+          - "--model"
+          - "/mnt/models"
+          - "--tensor-parallel-size"
+          - {{ .Values.multiNode.parallelism.tensor | quote }}
+        resources:
+          limits:
+            nvidia.com/gpu: {{ .Values.multiNode.resources.limits.gpu | quote }}
+            cpu: {{ .Values.multiNode.resources.limits.cpu | quote }}
+            memory: {{ .Values.multiNode.resources.limits.memory }}
+          requests:
+            nvidia.com/gpu: {{ .Values.multiNode.resources.requests.gpu | quote }}
+            cpu: {{ .Values.multiNode.resources.requests.cpu | quote }}
+            memory: {{ .Values.multiNode.resources.requests.memory }}
+    {{- if .Values.modelStorage.enabled }}
+    volumes:
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.multiNode.nodeSelector | nindent 6 }}
+  worker:
+    containers:
+      - name: main
+        image: {{ .Values.image }}
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+        args:
+          - "--model"
+          - "/mnt/models"
+          - "--tensor-parallel-size"
+          - {{ .Values.multiNode.parallelism.tensor | quote }}
+        resources:
+          limits:
+            nvidia.com/gpu: {{ .Values.multiNode.resources.limits.gpu | quote }}
+            cpu: {{ .Values.multiNode.resources.limits.cpu | quote }}
+            memory: {{ .Values.multiNode.resources.limits.memory }}
+          requests:
+            nvidia.com/gpu: {{ .Values.multiNode.resources.requests.gpu | quote }}
+            cpu: {{ .Values.multiNode.resources.requests.cpu | quote }}
+            memory: {{ .Values.multiNode.resources.requests.memory }}
+    {{- if .Values.modelStorage.enabled }}
+    volumes:
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.multiNode.nodeSelector | nindent 6 }}
+  router:
+    gateway: {}
+    route: {}
+    scheduler: {}
+{{- end }}

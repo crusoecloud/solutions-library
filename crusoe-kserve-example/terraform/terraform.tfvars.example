@@ -1,0 +1,22 @@
+project_id      = "your-project-id"
+cluster_name    = "kserve-cluster"
+cluster_version = "1.33.4-cmk.43"
+location        = "us-east1-a"
+
+# HuggingFace token — required to pull models
+hf_token       = "hf_your_token_here"
+ssh_public_key = "ssh-ed25519 AAAA... user@host"
+
+# KServe version
+kserve_version = "v0.17.0"
+
+# Namespace for LLM workloads
+namespace = "kserve-test"
+
+# Adjust node counts based on which deployment mode you plan to use:
+#   Basic LLM serving:      a100=1, h100=0, cpu=2
+#   Multi-node inference:   a100=2, h100=0, cpu=2
+#   Disaggregated PD:       a100=2, h100=1, cpu=2
+a100_node_count = 2
+h100_node_count = 1
+cpu_node_count  = 2

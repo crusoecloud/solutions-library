@@ -1,0 +1,16 @@
+{
+  "model": "qwen",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant that provides clear and concise answers."
+    },
+    {
+      "role": "user",
+      "content": "Write a short poem about artificial intelligence and machine learning."
+    }
+  ],
+  "max_tokens": 150,
+  "temperature": 0.7,
+  "stream": false
+}

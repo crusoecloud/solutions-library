@@ -1,0 +1,5 @@
+apiVersion: v2
+name: crusoe-kserve-example
+description: Deploy LLM inference on CMK using KServe and vLLM
+version: 0.1.0
+appVersion: "0.17.0"

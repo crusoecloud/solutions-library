@@ -1,0 +1,22 @@
+{{- if .Values.modelStorage.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: crusoe-ssd
+provisioner: ssd.csi.crusoe.ai
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-storage
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: crusoe-ssd
+  resources:
+    requests:
+      storage: {{ .Values.modelStorage.size }}
+{{- end }}
