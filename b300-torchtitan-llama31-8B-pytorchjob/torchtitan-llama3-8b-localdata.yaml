@@ -1,3 +1,5 @@
+# Apply setup-local-c4-datavol.yaml before first run
+# of this pytorchjob - to populate the data-disk pvc with the c4 dataset
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -7,10 +9,10 @@ data:
   llama3_8B_pvc.toml: |
     [job]
     dump_folder = "/outputs"
-    description = "Llama 3.1 8B training on Crusoe B300"
+    description = "Llama 3.1 8B training on Crusoe H100"
 
     [profiling]
-    enable_profiling = true
+    enable_profiling = false
     save_traces_folder = "profile_trace"
     profile_freq = 100
 
@@ -34,11 +36,12 @@ data:
     warmup_steps = 200
 
     [training]
-    local_batch_size = 4
+    local_batch_size = 1
     seq_len = 8192
     max_norm = 1.0
     steps = 1000
     dataset = "c4"
+    dataset_path = "/data/c4"
 
     [parallelism]
     data_parallel_replicate_degree = 1
@@ -54,7 +57,7 @@ data:
     interval = 500
     last_save_model_only = true
     export_dtype = "float32"
-    # Chasnge async_mode to "disabled" if async checkpointing causes OOM crashes
+    # Change async_mode to "disabled" if async checkpointing causes OOM crashes
     async_mode = "async"
 
     [compile]
@@ -82,11 +85,9 @@ spec:
       restartPolicy: OnFailure
       template:
         spec:
-          nodeSelector:
-            crusoe.ai/accelerator: "nvidia-b300-288gb-sxm-ib"
           containers:
           - name: pytorch
-            image: docker.io/abesharphpe/torchtitan-llama3-8b:v9
+            image: docker.io/abesharphpe/torchtitan-llama3-8b:v14
             imagePullPolicy: IfNotPresent
             securityContext:
               privileged: true
@@ -122,10 +123,10 @@ spec:
               value: "4"
             - name: NCCL_NSOCKS_PERTHREAD
               value: "2"
+            - name: NCCL_NET_GDR_LEVEL
+              value: "2"
             - name: NCCL_TOPO_FILE
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
-            - name: NCCL_BUFFSIZE
-              value: "2097152"
             - name: LD_LIBRARY_PATH
               value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
             resources:
@@ -154,8 +155,6 @@ spec:
             configMap:
               name: torchtitan-llama3-8b-config
           - name: outputs
-            # Replace with a PVC to persist checkpoints and TensorBoard logs
-            # beyond the lifetime of the pod.
             emptyDir: {}
           - name: dshm
             emptyDir:
@@ -175,11 +174,9 @@ spec:
       restartPolicy: OnFailure
       template:
         spec:
-          nodeSelector:
-            crusoe.ai/accelerator: "nvidia-b300-288gb-sxm-ib"
           containers:
           - name: pytorch
-            image: docker.io/abesharphpe/torchtitan-llama3-8b:v9
+            image: docker.io/abesharphpe/torchtitan-llama3-8b:v14
             imagePullPolicy: IfNotPresent
             securityContext:
               privileged: true
@@ -215,8 +212,8 @@ spec:
               value: "4"
             - name: NCCL_NSOCKS_PERTHREAD
               value: "2"
-            - name: NCCL_BUFFSIZE
-              value: "2097152"
+            - name: NCCL_NET_GDR_LEVEL
+              value: "2"
             - name: NCCL_TOPO_FILE
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
             - name: LD_LIBRARY_PATH

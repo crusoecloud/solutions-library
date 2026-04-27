@@ -1,0 +1,51 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-disk
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: crusoe-csi-driver-fs-sc
+  resources:
+    requests:
+      storage: 100Ti
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: c4-dataset-download
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: downloader
+        image: debian:bookworm-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          apt-get update && apt-get install -y --no-install-recommends ca-certificates git git-lfs && \
+          update-ca-certificates && \
+          git lfs install && \
+          cd /data && \
+          GIT_LFS_SKIP_SMUDGE=1 git clone --verbose https://huggingface.co/datasets/allenai/c4 && \
+          cd c4 && \
+          git lfs pull --verbose --include "en/*"
+        volumeMounts:
+        - name: data-disk
+          mountPath: /data
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+      volumes:
+      - name: data-disk
+        persistentVolumeClaim:
+          claimName: data-disk
+---
