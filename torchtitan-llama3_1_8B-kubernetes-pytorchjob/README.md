@@ -1,6 +1,34 @@
-# TorchTitan Llama 3.1 8B — Kubernetes PyTorchJob on Crusoe
+# TorchTitan Pretraining benchmark as a PyTorchJob on Crusoe Managed Kubernetes
 
-This example runs a two-node, 16-GPU pre-training job for Meta's Llama 3.1 8B model using [TorchTitan](https://github.com/crusoecloud/torchtitan) on Crusoe Cloud Kubernetes, orchestrated via the [Kubeflow Training Operator](https://github.com/kubeflow/training-operator) `PyTorchJob` CRD.
+This example runs a two-node, 16-GPU pre-training job for Meta's Llama 3.1 8B model using [TorchTitan](https://github.com/crusoecloud/torchtitan) on Crusoe Managed Kubernetes, orchestrated via the [Kubeflow Training Operator](https://github.com/kubeflow/training-operator) `PyTorchJob` CRD. The intention is to make it simple to run TorchTitan benchmarking directly on a Crusoe Managed Kubernetes cluster without having to set up any Slurm capabilities (the standard TorchTitan examples are all Slurm-based). The job can easily be adapted to run on larger models such as Llama 3.1 70B (although the size of GPU cluster available to you will dictate your choice here).
+
+## Quick Start
+
+1. Set up the prerequisites: A Crusoe Managed Kubernetes cluster with a nodepool containing one or more Hopper or Blackwell GPU nodes, Kubeflow training operator V1 and (optionally) CSI for shared disk and a storage class installed.
+2. Check that Nvidia GPU Operator is successfully installed and running ('kubectl -n nvidia-gpu-operator' should show all pods in Running or Completed state).
+3. Clone this repo and cd into the resulting directory, then edit either the '-streamingdata' or the '-localdata' variant of the PyTorchJob to suit your GPU type (topology filename and Mellanox interfaces)  - and huggingface token if using the streaming option - see reference below.
+4. The -streamingdata variant of the job streams the c4 dataset direct from Huggingface as the job runs. To run this option, ```kubectl apply -f torchtitan-llama3-8b-streamingdata.yaml``` and tail the logs of the master pod to follow job progress.
+5. The '-localdata' variant of the job reads the training data from a local PVC as the job runs. So first of all, run ```kubectl apply -f setup-local-c4-datavol.yaml``` which creates the PVC and copies the data onto it from Huggingface using GIT LFS (it will take at least several minutes to download the c4/en dataset from Huggingface to the PVC). When the downloader job is complete, ```kubectl apply -f torchtitan-llama3-8b-localdata.yaml``` then tail the logs of the master pod to see progress of the Torchtitan job. You can also kubectl exec inside any of the Pytorchjob pods to see the contents of the outputs directory (checkpoints etc).
+
+The yaml files in the repo specify a prebuilt version of the same container image described in the Dockerfile. You can edit the Dockerfile to suit your own needs, push it to your registry and update the YAML files to use your new image.
+
+Note: if Autoscaling is enabled on your cluster, you might appear to have fewer running CMK nodes than your reservation allows for. Run the job anyway, configured to use your expected number of nodes, and the autoscaler will create additional nodes as needed up to the limit of your capacity. It takes approx 10 minutes for a new node to be created and the Nvidia GPU Operator pods to start up, so it will take at least that long for your job to start up in this scenario.
+
+## Topology filenames and Infiniband interfaces for different Crusoe GPU SKUs
+
+### Topology files  
+```
+a100-80gb-sxm-ib-cloud-hypervisor.xml  
+a100-80gb-sxm-ib-qemu.xml  
+b200-180gb-sxm-ib-cloud-hypervisor.xml  
+b300-288gb-sxm-ib-cloud-hypervisor.xml  
+h100-80gb-sxm-ib-cloud-hypervisor.xml  
+h100-80gb-sxm-ib-qemu.xml  
+h200-141gb-sxm-ib-cloud-hypervisor.xml  
+```
+### Mellanox/IB interfaces
+**H100, H200:** mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8
+**B200, B300:** mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12
 
 ## What is TorchTitan?
 
@@ -37,7 +65,7 @@ Running distributed GPU training as a Kubernetes `PyTorchJob` rather than bare `
 The image is built from the NVIDIA NGC PyTorch base image (`nvcr.io/nvidia/pytorch:26.03-py3`), which ships with pre-compiled CUDA, cuDNN, NCCL, and PyTorch. On top of that:
 
 1. **System packages** — `git`, `infiniband-diags`, `wget`, and TLS certificates are installed for network-aware debugging and secure fetches.
-2. **TorchTitan source** — the Crusoe-maintained fork is cloned at the pinned `release-v0.2.2` tag into `/workspace/torchtitan`.
+2. **TorchTitan source** — the Crusoe-maintained fork is cloned at the pinned `release-v0.2.2` tag into `/workspace/torchtitan`. This release is the latest version of TorchTitan that still supports the toml-based job configuration format.
 3. **Python dependencies** — `torchdata`, `datasets`, `tokenizers`, and supporting libraries are installed. A nightly `torchtitan` wheel is pulled from PyTorch's CUDA 13.0 nightly index.
 4. **Tokenizer assets** — the Llama 3.1 8B tokenizer and model config are downloaded from Hugging Face **at build time** using a [BuildKit secret](https://docs.docker.com/build/building/secrets/). The token is never written into an image layer.
 
