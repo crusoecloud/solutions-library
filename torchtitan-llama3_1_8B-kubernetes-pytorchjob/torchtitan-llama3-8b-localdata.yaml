@@ -88,7 +88,7 @@ spec:
         spec:
           containers:
           - name: pytorch
-            image: docker.io/abesharphpe/torchtitan-llama3-8b:v14
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:latest
             imagePullPolicy: IfNotPresent
             securityContext:
               capabilities:
@@ -176,7 +176,7 @@ spec:
         spec:
           containers:
           - name: pytorch
-            image: docker.io/abesharphpe/torchtitan-llama3-8b:v14
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:latest
             imagePullPolicy: IfNotPresent
             securityContext:
               capabilities:
