@@ -1,5 +1,6 @@
 # Apply setup-local-c4-datavol.yaml before first run
 # of this pytorchjob - to populate the data-disk pvc with the c4 dataset
+# dataset_path gives the path to the directory containing the 'en' directory with the webdataset files
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -13,7 +14,7 @@ data:
 
     [profiling]
     enable_profiling = false
-    save_traces_folder = "profile_trace"
+    save_traces_folder = "/outputs/profile_trace"
     profile_freq = 100
 
     [metrics]
@@ -90,7 +91,8 @@ spec:
             image: docker.io/abesharphpe/torchtitan-llama3-8b:v14
             imagePullPolicy: IfNotPresent
             securityContext:
-              privileged: true
+              capabilities:
+                add: ["IPC_LOCK"]
             workingDir: /workspace/torchtitan
             command:
             - /bin/bash
@@ -118,14 +120,8 @@ spec:
               value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
             - name: NCCL_IB_GID_INDEX
               value: "3"
-            - name: NCCL_IB_TIMEOUT
-              value: "22"
-            - name: NCCL_SOCKET_NTHREADS
-              value: "4"
-            - name: NCCL_NSOCKS_PERTHREAD
-              value: "2"
             - name: NCCL_NET_GDR_LEVEL
-              value: "2"
+              value: "SYS"
             - name: NCCL_TOPO_FILE
             # replace with correct topo file for your SKU type as found in /etc/crusoe/nccl_topo of node
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
@@ -134,8 +130,10 @@ spec:
             resources:
               limits:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
               requests:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
             volumeMounts:
             - name: c4-dataset
               mountPath: /data
@@ -181,7 +179,8 @@ spec:
             image: docker.io/abesharphpe/torchtitan-llama3-8b:v14
             imagePullPolicy: IfNotPresent
             securityContext:
-              privileged: true
+              capabilities:
+                add: ["IPC_LOCK"]
             workingDir: /workspace/torchtitan
             command:
             - /bin/bash
@@ -209,14 +208,8 @@ spec:
               value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
             - name: NCCL_IB_GID_INDEX
               value: "3"
-            - name: NCCL_IB_TIMEOUT
-              value: "22"
-            - name: NCCL_SOCKET_NTHREADS
-              value: "4"
-            - name: NCCL_NSOCKS_PERTHREAD
-              value: "2"
             - name: NCCL_NET_GDR_LEVEL
-              value: "2"
+              value: "SYS"
             - name: NCCL_TOPO_FILE
             # replace with correct topo file for your SKU type as found in /etc/crusoe/nccl_topo of node
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
@@ -225,8 +218,10 @@ spec:
             resources:
               limits:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
               requests:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
             volumeMounts:
             - name: c4-dataset
               mountPath: /data

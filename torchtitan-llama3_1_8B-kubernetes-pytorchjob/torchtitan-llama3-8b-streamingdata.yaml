@@ -7,11 +7,11 @@ data:
   llama3_8B.toml: |
     [job]
     dump_folder = "/outputs"
-    description = "Llama 3.1 8B training on Crusoe H100"
+    description = "Llama 3.1 8B training on Crusoe Cloud"
 
     [profiling]
-    enable_profiling = false
-    save_traces_folder = "profile_trace"
+    enable_profiling = true
+    save_traces_folder = "/outputs/profile_trace"
     profile_freq = 100
 
     [metrics]
@@ -87,7 +87,8 @@ spec:
             image: docker.io/abesharphpe/torchtitan-llama3-8b:latest
             imagePullPolicy: IfNotPresent
             securityContext:
-              privileged: true
+              capabilities:
+                add: ["IPC_LOCK"]
             workingDir: /workspace/torchtitan
             command:
             - /bin/bash
@@ -115,14 +116,8 @@ spec:
               value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
             - name: NCCL_IB_GID_INDEX
               value: "3"
-            - name: NCCL_IB_TIMEOUT
-              value: "22"
-            - name: NCCL_SOCKET_NTHREADS
-              value: "4"
-            - name: NCCL_NSOCKS_PERTHREAD
-              value: "2"
             - name: NCCL_NET_GDR_LEVEL
-              value: "2"
+              value: "SYS"
             - name: HF_TOKEN
               value: "<YOUR HF TOKEN HERE>"
             - name: NCCL_TOPO_FILE
@@ -133,8 +128,10 @@ spec:
             resources:
               limits:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
               requests:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
             volumeMounts:
             - name: config
               mountPath: /config
@@ -174,7 +171,8 @@ spec:
             image: docker.io/abesharphpe/torchtitan-llama3-8b:latest
             imagePullPolicy: IfNotPresent
             securityContext:
-              privileged: true
+              capabilities:
+                add: ["IPC_LOCK"]
             workingDir: /workspace/torchtitan
             command:
             - /bin/bash
@@ -202,14 +200,8 @@ spec:
               value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
             - name: NCCL_IB_GID_INDEX
               value: "3"
-            - name: NCCL_IB_TIMEOUT
-              value: "22"
-            - name: NCCL_SOCKET_NTHREADS
-              value: "4"
-            - name: NCCL_NSOCKS_PERTHREAD
-              value: "2"
             - name: NCCL_NET_GDR_LEVEL
-              value: "2"
+              value: "SYS"
             - name: HF_TOKEN
               value: "<YOUR HF TOKEN HERE>"
             - name: NCCL_TOPO_FILE
@@ -220,8 +212,10 @@ spec:
             resources:
               limits:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"                
               requests:
                 nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
             volumeMounts:
             - name: config
               mountPath: /config
