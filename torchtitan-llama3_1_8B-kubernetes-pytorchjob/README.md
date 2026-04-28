@@ -27,7 +27,7 @@ h100-80gb-sxm-ib-qemu.xml
 h200-141gb-sxm-ib-cloud-hypervisor.xml  
 ```
 ### Mellanox/IB interfaces
-**H100, H200:** mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8
+**H100, H200:** mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8  
 **B200, B300:** mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12
 
 ## What is TorchTitan?
