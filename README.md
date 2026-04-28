@@ -25,6 +25,7 @@ Each solution README will also list its own specific prerequisites.
 ### Training
 
 [TorchTitan pre-training benchmark as a PyTorchJob for Crusoe Managed Kubernetes](./torchtitan-llama3_1_8B-kubernetes-pytorchjob)  
+
 TorchTitan is a widely-used reference Pytorch program for benchmarking the pretraining of Llama 3.1 and other models. This implementation is designed to be run as a PyTorchJon on CMK.
 
 ### Inference
