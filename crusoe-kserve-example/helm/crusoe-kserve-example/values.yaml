@@ -1,0 +1,136 @@
+# HuggingFace API token (required)
+hfToken: ""
+
+# Namespace for LLM workloads
+namespace: kserve-test
+
+# vLLM image
+image: vllm/vllm-openai:latest
+
+# Persistent storage for model weights (required for models >100GB)
+modelStorage:
+  enabled: false
+  size: 200Gi
+
+# --------------------------------------------------------------------------
+# Available Crusoe GPU node types (for nodeSelector reference)
+# --------------------------------------------------------------------------
+# | Node Type                  | GPU             | GPUs | VRAM    | BW (TB/s) | Best For              |
+# |----------------------------|-----------------|------|---------|-----------|-----------------------|
+# | a100-80gb-sxm-ib.8x       | A100 SXM 80GB   | 8    | 640 GB  | 2.0       | Decode, general LLM   |
+# | h100-80gb-sxm-ib.8x       | H100 SXM 80GB   | 8    | 640 GB  | 3.35      | Prefill, training     |
+# | h200-141gb-sxm-ib.8x      | H200 SXM 141GB  | 8    | 1128 GB | 4.8       | Large models, highest |
+# | l40s-48gb.1x               | L40S 48GB       | 1    | 48 GB   | 0.86      | Cost-effective small  |
+# | a100-80gb.1x               | A100 PCIe 80GB  | 1    | 80 GB   | 2.0       | Single-GPU inference  |
+#
+# nodeSelector labels:
+#   nvidia-a100-80gb-sxm-ib  (A100 SXM IB)
+#   nvidia-h100-80gb-sxm-ib  (H100 SXM IB)
+#   nvidia-h200-141gb-sxm-ib (H200 SXM IB)
+#   nvidia-l40s              (L40S)
+
+# --------------------------------------------------------------------------
+# Deployment modes — enable the ones you want
+# --------------------------------------------------------------------------
+
+# Basic: single-GPU LLM serving (e.g., Qwen2.5-0.5B-Instruct)
+basic:
+  enabled: true
+  model:
+    uri: hf://Qwen/Qwen2.5-0.5B-Instruct
+    name: qwen
+  args:
+    - "--gpu-memory-utilization"
+    - "0.95"
+    - "--enable-chunked-prefill"
+    - "--max-num-batched-tokens"
+    - "4096"
+  resources:
+    limits:
+      gpu: "1"
+      cpu: "2"
+      memory: 6Gi
+    requests:
+      gpu: "1"
+      cpu: "1"
+      memory: 4Gi
+  nodeSelector:
+    crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib
+
+# Multi-node: tensor + pipeline parallelism (e.g., Qwen2.5-72B-Instruct)
+multiNode:
+  enabled: false
+  model:
+    uri: hf://Qwen/Qwen2.5-72B-Instruct
+    name: qwen
+  replicas: 2
+  parallelism:
+    tensor: 8
+    data: 16
+    dataLocal: 8
+  resources:
+    limits:
+      gpu: "8"
+      cpu: "64"
+      memory: 512Gi
+    requests:
+      gpu: "8"
+      cpu: "32"
+      memory: 256Gi
+  nodeSelector:
+    crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib
+
+# Disaggregated prefill-decode serving
+disaggregated:
+  enabled: false
+  model:
+    uri: hf://Qwen/Qwen2.5-72B-Instruct
+    name: qwen
+  decode:
+    replicas: 2
+    parallelism:
+      tensor: 8
+      data: 16
+      dataLocal: 8
+    args:
+      - "--model"
+      - "/mnt/models"
+      - "--tensor-parallel-size"
+      - "8"
+      - "--enforce-eager"
+      - "--gpu-memory-utilization"
+      - "0.90"
+    resources:
+      limits:
+        gpu: "8"
+        cpu: "64"
+        memory: 512Gi
+      requests:
+        gpu: "8"
+        cpu: "32"
+        memory: 256Gi
+    nodeSelector:
+      crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib
+  prefill:
+    replicas: 1
+    args:
+      - "--model"
+      - "/mnt/models"
+      - "--tensor-parallel-size"
+      - "8"
+      - "--enable-chunked-prefill"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--gpu-memory-utilization"
+      - "0.90"
+    resources:
+      limits:
+        gpu: "8"
+        cpu: "64"
+        memory: 512Gi
+      requests:
+        gpu: "8"
+        cpu: "32"
+        memory: 256Gi
+    nodeSelector:
+      crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib

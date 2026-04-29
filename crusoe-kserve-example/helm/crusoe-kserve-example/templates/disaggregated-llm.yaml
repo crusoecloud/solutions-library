@@ -1,0 +1,87 @@
+{{- if .Values.disaggregated.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: {{ .Values.disaggregated.model.name }}-disagg
+  namespace: {{ .Values.namespace }}
+  annotations:
+    serving.kserve.io/deploymentMode: Standard
+spec:
+  model:
+    uri: {{ .Values.disaggregated.model.uri }}
+    name: {{ .Values.disaggregated.model.name }}
+
+  # Decode pool
+  replicas: {{ .Values.disaggregated.decode.replicas }}
+  parallelism:
+    tensor: {{ .Values.disaggregated.decode.parallelism.tensor }}
+    data: {{ .Values.disaggregated.decode.parallelism.data }}
+    dataLocal: {{ .Values.disaggregated.decode.parallelism.dataLocal }}
+  template:
+    containers:
+      - name: main
+        image: {{ .Values.image }}
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+        args:
+          {{- toYaml .Values.disaggregated.decode.args | nindent 10 }}
+        resources:
+          limits:
+            nvidia.com/gpu: {{ .Values.disaggregated.decode.resources.limits.gpu | quote }}
+            cpu: {{ .Values.disaggregated.decode.resources.limits.cpu | quote }}
+            memory: {{ .Values.disaggregated.decode.resources.limits.memory }}
+          requests:
+            nvidia.com/gpu: {{ .Values.disaggregated.decode.resources.requests.gpu | quote }}
+            cpu: {{ .Values.disaggregated.decode.resources.requests.cpu | quote }}
+            memory: {{ .Values.disaggregated.decode.resources.requests.memory }}
+    {{- if .Values.modelStorage.enabled }}
+    volumes:
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.disaggregated.decode.nodeSelector | nindent 6 }}
+
+  # Prefill pool
+  prefill:
+    replicas: {{ .Values.disaggregated.prefill.replicas }}
+    template:
+      containers:
+        - name: main
+          image: {{ .Values.image }}
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: HF_TOKEN
+          args:
+            {{- toYaml .Values.disaggregated.prefill.args | nindent 12 }}
+          resources:
+            limits:
+              nvidia.com/gpu: {{ .Values.disaggregated.prefill.resources.limits.gpu | quote }}
+              cpu: {{ .Values.disaggregated.prefill.resources.limits.cpu | quote }}
+              memory: {{ .Values.disaggregated.prefill.resources.limits.memory }}
+            requests:
+              nvidia.com/gpu: {{ .Values.disaggregated.prefill.resources.requests.gpu | quote }}
+              cpu: {{ .Values.disaggregated.prefill.resources.requests.cpu | quote }}
+              memory: {{ .Values.disaggregated.prefill.resources.requests.memory }}
+      {{- if .Values.modelStorage.enabled }}
+      volumes:
+        - name: kserve-provision-location
+          persistentVolumeClaim:
+            claimName: model-storage
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.disaggregated.prefill.nodeSelector | nindent 8 }}
+
+  router:
+    gateway: {}
+    route: {}
+    scheduler: {}
+{{- end }}
