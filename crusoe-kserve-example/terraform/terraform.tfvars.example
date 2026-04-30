@@ -5,6 +5,8 @@ location        = "us-east1-a"
 
 # HuggingFace token — required to pull models
 hf_token       = "hf_your_token_here"
+
+# Set your Crusoe SSH key to SSH into your GPU nodes for debugging
 ssh_public_key = "ssh-ed25519 AAAA... user@host"
 
 # KServe version

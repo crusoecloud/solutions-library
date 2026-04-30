@@ -1,0 +1,243 @@
+{
+  "title": "AMD GPU Inference Metrics",
+  "uid": "amd-gpu-inference",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "panels": [
+    {
+      "id": 1,
+      "title": "GPU Utilization",
+      "description": "Percentage of time the GPU graphics engine is actively executing tasks (gpu_gfx_activity). LLM decode is bursty — expect 60-100% during active inference.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "gpu_gfx_activity",
+          "legendFormat": "{{node}} GPU {{gpu_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 2,
+      "title": "Memory Bandwidth Utilization",
+      "description": "Percentage of peak HBM3 bandwidth in use (gpu_umc_activity). LLM decode is memory-bandwidth bound — MI300x peaks at 5.2 TB/s. Sustained >60% is expected under load.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "gpu_umc_activity",
+          "legendFormat": "{{node}} GPU {{gpu_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 3,
+      "title": "GPU Memory Used (GiB)",
+      "description": "HBM3 memory allocated (gpu_used_visible_vram) vs total (gpu_total_visible_vram). MI300x has 192 GB per GPU. Model weights are constant; KV cache grows under load. Values are in MiB.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "gpu_used_visible_vram",
+          "legendFormat": "{{node}} GPU {{gpu_id}} used",
+          "refId": "A"
+        },
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "gpu_total_visible_vram",
+          "legendFormat": "{{node}} GPU {{gpu_id}} total",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 4,
+      "title": "Power Draw (W)",
+      "description": "GPU power consumption (gpu_power_usage). MI300x TDP is 750W. Expect idle ~100W, sustained inference 500-700W under full concurrency.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "gpu_power_usage",
+          "legendFormat": "{{node}} GPU {{gpu_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 5,
+      "title": "GPU Temperature (°C)",
+      "description": "Junction temperature (gpu_junction_temperature). MI300x thermal limit ~110°C. Sustained inference should stay below 85°C with adequate cooling.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "gpu_junction_temperature",
+          "legendFormat": "{{node}} GPU {{gpu_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 6,
+      "title": "XGMI Bandwidth (bytes/s)",
+      "description": "Inter-GPU data transfer over XGMI fabric (equivalent of NVLink). Active during tensor-parallel all-reduce between GPUs. High values indicate healthy TP communication.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "rate(gpu_xgmi_link_rx[1m])",
+          "legendFormat": "{{node}} GPU {{gpu_id}} RX",
+          "refId": "A"
+        },
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "rate(gpu_xgmi_link_tx[1m])",
+          "legendFormat": "{{node}} GPU {{gpu_id}} TX",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 7,
+      "title": "PCIe Bandwidth (bytes/s)",
+      "description": "Data transfer rate between CPU host memory and GPU over PCIe (pcie_bandwidth). Active during model loading and KV cache migration in disaggregated setups.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "pcie_bandwidth",
+          "legendFormat": "{{node}} GPU {{gpu_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 8,
+      "title": "ECC Error Rates (errors/min)",
+      "description": "Correctable (single-bit) and uncorrectable (multi-bit) ECC memory errors per minute. Any uncorrectable errors are a serious hardware signal requiring investigation.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "rate(gpu_ecc_correct_total[1m]) * 60",
+          "legendFormat": "{{node}} GPU {{gpu_id}} correctable",
+          "refId": "A"
+        },
+        {
+          "datasource": { "uid": "prometheus" },
+          "expr": "rate(gpu_ecc_uncorrect_total[1m]) * 60",
+          "legendFormat": "{{node}} GPU {{gpu_id}} uncorrectable",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.001 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*uncorrectable.*" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+    }
+  ]
+}

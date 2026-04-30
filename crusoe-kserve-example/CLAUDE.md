@@ -1,17 +1,23 @@
 # CLAUDE.md — KServe LLM Serving on Crusoe
 
-This project deploys open-source LLMs on Crusoe Managed Kubernetes (CMK) using KServe and vLLM.
+This project deploys open-source LLMs on Crusoe Managed Kubernetes (CMK) using KServe and vLLM. It supports both NVIDIA and AMD GPU clusters.
 
 ## What This Does
 
-Provisions a CMK cluster with GPU node pools and installs KServe for LLM inference. Supports three deployment modes:
-- **Basic**: Single-GPU serving (e.g., Qwen2.5-0.5B on 1x A100)
-- **Multi-Node**: Tensor-parallel across multiple nodes (e.g., Qwen2.5-72B on 16 GPUs)
+Provisions a CMK cluster with GPU node pools and installs KServe for LLM inference. Supports five deployment modes:
+- **Basic (NVIDIA)**: Single-GPU serving (e.g., Qwen2.5-0.5B on 1x A100)
+- **Multi-Node (NVIDIA)**: Tensor-parallel across multiple nodes (e.g., Qwen2.5-72B on 16 GPUs)
 - **Disaggregated Prefill-Decode**: H100 for prefill, A100 for decode (cost-optimized)
+- **Basic (AMD)**: Single-GPU or full-node serving on MI300X (e.g., MiniMax-M2 on 8x MI300X)
+- **Multi-Node (AMD)**: Multi-node tensor-parallel on MI300X (e.g., MiniMax-M2 on 2x8 MI300X)
 
 ## Setup Flow
 
-### 1. Configure `terraform/terraform.tfvars`
+There are two independent setup paths: NVIDIA (default) and AMD. They use separate Terraform directories.
+
+### NVIDIA Setup
+
+#### 1. Configure `terraform/terraform.tfvars`
 
 Copy the example and fill in values:
 ```bash
@@ -21,7 +27,7 @@ cd terraform && cp terraform.tfvars.example terraform.tfvars
 Required values the user must provide:
 - `project_id` — Crusoe project ID (get via `crusoe projects list`)
 - `hf_token` — HuggingFace API token
-- `ssh_public_key` — User's SSH public key string
+- `ssh_public_key` — User's SSH public key string; provisioned onto nodes at creation time so the user can SSH in for debugging (e.g. checking driver issues, running `nvidia-smi`)
 - `a100_ib_partition_id` — InfiniBand partition ID for A100 nodes (get via `crusoe networking ib-partitions list`)
 - `h100_ib_partition_id` — InfiniBand partition ID for H100 nodes (only needed if `h100_node_count > 0`)
 
@@ -32,7 +38,7 @@ crusoe networking ib-networks get <ib-network-id> --project-id <project-id> -f j
 ```
 Look for a network with the correct location and `slice_type` (e.g., `a100-80gb-sxm-ib.8x`).
 
-### 2. Provision Infrastructure + Install KServe
+#### 2. Provision Infrastructure + Install KServe
 
 ```bash
 make setup
@@ -45,7 +51,7 @@ This runs `terraform apply` which:
 4. Installs KServe v0.17.0 (standard mode + LLMInferenceService CRDs)
 5. Creates the `kserve-test` namespace with the HuggingFace secret
 
-### 3. Deploy a Model
+#### 3. Deploy a Model
 
 ```bash
 make deploy-basic          # Qwen2.5-0.5B on 1x A100
@@ -54,13 +60,13 @@ make deploy-multi-node     # Qwen2.5-72B on 2x8 A100 (needs a100_node_count=2)
 make deploy-disaggregated  # Qwen2.5-72B with H100 prefill + A100 decode (needs h100_node_count=1)
 ```
 
-### 4. Test
+#### 4. Test
 
 ```bash
 make test   # Port-forward + single curl request
 ```
 
-### 5. Benchmark
+#### 5. Benchmark
 
 Uses vLLM's built-in `vllm bench serve` running inside the serving pod — no port-forward overhead, proper statistical analysis.
 
@@ -76,6 +82,69 @@ make bench BENCH_RATE=inf BENCH_NUM_PROMPTS=300
 ```
 
 Reports TTFT, TPOT (time per output token), ITL (inter-token latency), and throughput with percentiles.
+
+---
+
+### AMD Setup
+
+AMD clusters use a separate Terraform directory (`terraform-amd/`) and require the AMD GPU operator (not the NVIDIA operator). Docker Hub credentials are needed to push the AMD GPU driver image.
+
+#### 1. Configure `terraform-amd/terraform.tfvars`
+
+```bash
+cd terraform-amd && cp terraform.tfvars.example terraform.tfvars
+```
+
+Required values:
+- `project_id` — Crusoe project ID
+- `hf_token` — HuggingFace API token
+- `amd_node_type` — AMD GPU instance type (e.g., `mi300x-192gb-ib.8x`)
+- `amd_ib_partition_id` — InfiniBand partition ID for AMD nodes
+- `ssh_public_key` — User's SSH public key string; provisioned onto nodes at creation time so the user can SSH in for debugging (e.g. checking driver issues, running `rocm-smi`)
+- `docker_username`, `docker_email`, `docker_password` — Docker Hub credentials (for pushing AMD GPU driver image)
+
+#### 2. Provision Infrastructure + Install AMD GPU Operator + KServe
+
+```bash
+make setup-amd
+```
+
+This runs three steps:
+1. `terraform apply` in `terraform-amd/` — creates CMK cluster with **`crusoe_csi` add-on only** (no NVIDIA add-ons), AMD GPU node pool, CPU node pool, fetches kubeconfig
+2. `install-amd-gpu-operator` — installs cert-manager v1.15.1, AMD GPU operator v1.4.2, creates Docker registry secret in `kube-amd-gpu`, applies AMD DeviceConfig
+3. `install-kserve` — installs KServe v0.17.0, patches storage-initializer, creates `kserve-test` namespace with HuggingFace secret
+
+**Key difference from NVIDIA**: AMD clusters use `amd.com/gpu` resource limits instead of `nvidia.com/gpu`, and use the `vllm/vllm-openai-rocm:latest` image (ROCm-based).
+
+#### 3. Deploy a Model on AMD
+
+```bash
+make deploy-amd-basic      # Qwen2.5-0.5B on 1x MI300X
+make deploy-amd-minimax    # MiniMax-M2 on 8x MI300X (TP=8, EP, 1500Gi PVC) — deletes existing PVC first
+make redeploy-amd-minimax  # Update MiniMax-M2 args WITHOUT deleting PVC (preserves downloaded model)
+make deploy-amd-multi-node # MiniMax-M2 on 2x8 MI300X (TP=8, 2 replicas)
+```
+
+**Note**: `deploy-amd-minimax` deletes the PVC before deploying. Use `redeploy-amd-minimax` to update args while preserving already-downloaded model weights.
+
+#### 4. Test AMD
+
+```bash
+make test           # Same port-forward + curl (works for any deployed model)
+make test-amd-minimax  # Test with minimax model name
+```
+
+#### 5. Benchmark AMD
+
+```bash
+make bench-amd                    # Default: 50 req/s, 512 input, 150 output (served-model-name=minimax)
+make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
+```
+
+#### AMD-Specific vLLM Environment Variables
+
+The AMD templates inject these env vars automatically:
+- `VLLM_ROCM_USE_AITER=1` — enables AMD's AITER kernel acceleration (significant throughput improvement on MI300X)
 
 ## Model Storage (PVC)
 
@@ -101,13 +170,26 @@ The Terraform setup also patches the KServe `inferenceservice-config` configmap 
 
 ## Key Files
 
-- `terraform/main.tf` — Cluster, node pools, KServe install, namespace setup (all-in-one)
-- `terraform/variables.tf` — All configurable variables with defaults
-- `terraform/terraform.tfvars.example` — Template for user configuration
-- `helm/crusoe-kserve-example/values.yaml` — Model config, GPU resources, deployment mode toggles
-- `helm/crusoe-kserve-example/templates/` — LLMInferenceService manifests for each mode
+- `terraform/main.tf` — NVIDIA cluster, node pools, KServe install, namespace setup (all-in-one)
+- `terraform/variables.tf` — NVIDIA Terraform variables
+- `terraform/terraform.tfvars.example` — NVIDIA template for user configuration
+- `terraform-amd/main.tf` — AMD cluster + node pools (KServe installed separately by `make setup-amd`)
+- `terraform-amd/variables.tf` — AMD Terraform variables (includes Docker Hub credentials)
+- `terraform-amd/terraform.tfvars.example` — AMD template for user configuration
+- `helm/crusoe-kserve-example/values.yaml` — All deployment mode configs (NVIDIA + AMD)
+- `helm/crusoe-kserve-example/templates/basic-llm.yaml` — NVIDIA single-GPU manifest
+- `helm/crusoe-kserve-example/templates/multi-node-llm.yaml` — NVIDIA multi-node manifest
+- `helm/crusoe-kserve-example/templates/disaggregated-llm.yaml` — NVIDIA disaggregated manifest
+- `helm/crusoe-kserve-example/templates/amd-basic-llm.yaml` — AMD single-GPU manifest
+- `helm/crusoe-kserve-example/templates/amd-multi-node-llm.yaml` — AMD multi-node manifest
+- `monitoring/docker-compose.yml` — Grafana container (port 3000)
+- `monitoring/setup.py` — Configures Grafana datasource + prints dashboard URL
+- `monitoring/env.example` — Template for monitoring credentials (copy to `env` and fill in values)
+- `monitoring/env` — Crusoe credentials for monitoring (not committed)
+- `monitoring/grafana/dashboards/` — Pre-built dashboards (nvidia/, amd/)
+- `scripts/chat.py` — Interactive streaming chat REPL
 - `chat-test.json` — Sample OpenAI-compatible chat request
-- `Makefile` — All commands: `setup`, `deploy-*`, `test`, `bench`, `destroy`
+- `Makefile` — All commands: `setup`, `setup-amd`, `deploy-*`, `test`, `bench`, `monitor-*`, `destroy`
 
 ## Crusoe CLI Notes
 
@@ -119,6 +201,8 @@ The Terraform setup also patches the KServe `inferenceservice-config` configmap 
 
 ## Available GPU SKUs
 
+### NVIDIA
+
 | Node Type                | GPU             | GPUs | VRAM     | BW (TB/s) | Best For                    |
 |--------------------------|-----------------|------|----------|-----------|-----------------------------|
 | a100-80gb-sxm-ib.8x     | A100 SXM 80GB   | 8    | 640 GB   | 2.0       | Decode, general inference   |
@@ -128,6 +212,17 @@ The Terraform setup also patches the KServe `inferenceservice-config` configmap 
 | a100-80gb.1x             | A100 PCIe 80GB  | 1    | 80 GB    | 2.0       | Single-GPU inference        |
 
 nodeSelector labels: `nvidia-a100-80gb-sxm-ib`, `nvidia-h100-80gb-sxm-ib`, `nvidia-h200-141gb-sxm-ib`, `nvidia-l40s`
+
+### AMD
+
+| Node Type              | GPU          | GPUs | VRAM     | Best For                              |
+|------------------------|--------------|------|----------|---------------------------------------|
+| mi300x-192gb-ib.8x     | MI300X       | 8    | 1536 GB  | Large MoE models, high-memory serving |
+
+nodeSelector label: `amd-mi300x-192gb-ib`
+
+Resource key: `amd.com/gpu` (not `nvidia.com/gpu`)
+vLLM image: `vllm/vllm-openai-rocm:latest`
 
 ## Node Count Guidelines
 
@@ -177,6 +272,54 @@ make bench BENCH_RATE=10 BENCH_INPUT_LEN=128        # Low-latency profile
 make bench BENCH_RATE=inf BENCH_NUM_PROMPTS=300      # Max throughput
 ```
 
+## Monitoring (Grafana + Prometheus)
+
+Local monitoring stack runs Grafana + a Crusoe-managed Prometheus datasource via Docker Compose. No in-cluster components needed.
+
+### Prerequisites
+
+Create `monitoring/env` with your Crusoe credentials:
+```
+CRUSOE_PROJECT_ID=<your-project-id>
+CRUSOE_MONITORING_TOKEN=<your-monitoring-token>
+```
+
+Get the monitoring token from the Crusoe console or API.
+
+### Start / Stop
+
+```bash
+make monitor-up-nvidia   # Start with NVIDIA GPU dashboard (default)
+make monitor-up-amd      # Start with AMD GPU dashboard
+make monitor-up          # Alias for monitor-up-nvidia
+
+make monitor-down        # Stop Grafana
+make monitor-clean       # Wipe Grafana state and restart fresh
+```
+
+After starting, `setup.py` automatically:
+1. Waits for Grafana to be ready at `localhost:3000`
+2. Configures the Crusoe Prometheus datasource (pointing at `api.crusoecloud.com/v1alpha5/projects/<id>/metrics/timeseries`)
+3. Prints the dashboard URL
+
+Dashboard URLs (login: admin / admin):
+- NVIDIA: `http://localhost:3000/d/gpu-inference`
+- AMD: `http://localhost:3000/d/amd-gpu-inference`
+
+### Dashboard Files
+
+- `monitoring/grafana/dashboards/nvidia/gpu-inference.json` — NVIDIA GPU inference dashboard
+- `monitoring/grafana/dashboards/amd/amd-gpu-inference.json` — AMD GPU inference dashboard
+- `monitoring/grafana/provisioning/datasources/prometheus.yml` — empty placeholder (datasource is configured at runtime by `setup.py` via Grafana API)
+
+## Scripts
+
+- `scripts/chat.py` — Interactive streaming chat client. Port-forwards to the serving pod and opens a REPL.
+  ```bash
+  make chat              # Auto-detects deployed service
+  make chat MODEL=qwen   # Override model name
+  ```
+
 ## Cleanup
 
 ```bash
@@ -198,3 +341,11 @@ This uninstalls the Helm release and runs `terraform destroy` to tear down all i
 - If vLLM crashes with "unrecognized arguments: /mnt/models", you have `--model` in your args — remove it, KServe injects this automatically
 - Check KServe controller logs: `kubectl logs -n kserve -l control-plane=kserve-controller-manager`
 - Check vLLM logs: `kubectl logs -n kserve-test deploy/<model>-kserve -c main`
+
+### AMD-Specific
+
+- If AMD GPU nodes show no GPU resources (`amd.com/gpu: 0`), the AMD GPU operator DeviceConfig hasn't finished reconciling. Check: `kubectl get deviceconfig -n kube-amd-gpu` and `kubectl get pods -n kube-amd-gpu`
+- If the AMD driver pod is in `ImagePullBackOff`, the Docker registry secret is wrong or the image wasn't pushed. Verify: `kubectl get secret my-docker-secret -n kube-amd-gpu` and re-run `make install-amd-gpu-operator`
+- `VLLM_ROCM_USE_AITER=1` is injected automatically by the AMD Helm templates. Do not set it to `0` unless debugging — it significantly reduces throughput on MI300X
+- AMD clusters use `crusoe_csi` add-on only — no `nvidia_gpu_operator` or `nvidia_network_operator`. If you accidentally create an AMD cluster with NVIDIA add-ons, recreate it
+- For MiniMax-M2 (MoE model), `--enable-expert-parallel` is required alongside `--tensor-parallel-size 8`. Without it, the model may OOM or perform poorly

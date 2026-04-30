@@ -1,0 +1,31 @@
+# -----------------------------------------------------------------------
+# Crusoe infrastructure
+# -----------------------------------------------------------------------
+project_id      = "your-project-id"
+cluster_name    = "kserve-amd-cluster"
+cluster_version = "1.33.4-cmk.43"
+location        = "us-east1-a"
+
+# AMD GPU node pool
+# Set amd_node_type to your Crusoe AMD GPU SKU
+# Find available SKUs: crusoe compute vms list-types
+amd_node_type       = ""
+amd_node_count      = 1
+amd_ib_partition_id = "your-ib-partition-id"
+
+# CPU nodes for KServe control plane
+cpu_node_count = 2
+
+# SSH public key — provisioned onto nodes at creation time (cannot be added later).
+# Set this to SSH into GPU nodes for debugging (e.g. rocm-smi, driver issues).
+ssh_public_key = "ssh-ed25519 AAAA... user@host"
+
+# -----------------------------------------------------------------------
+# Credentials
+# -----------------------------------------------------------------------
+hf_token = "hf_your_token_here"
+
+docker_username = "your-dockerhub-username"
+docker_email    = "you@example.com"
+# Use Docker PAT, not account password
+docker_password = "your-password"

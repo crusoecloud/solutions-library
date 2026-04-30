@@ -12,3 +12,7 @@ terraform/terraform.tfvars
 
 # OS
 .DS_Store
+
+env
+prometheus/prometheus.yml
+grafana/provisioning/datasources/prometheus.yml

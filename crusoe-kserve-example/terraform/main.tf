@@ -35,6 +35,10 @@ variable "hf_token" {
 variable "ssh_public_key" {
   description = "SSH public key for node pool access"
   type        = string
+  # Crusoe provisions this key onto every node at creation time — it cannot be
+  # added later without destroying and recreating the node pool. Set this to
+  # your public key (e.g. contents of ~/.ssh/id_ed25519.pub) so you can SSH
+  # directly into GPU nodes for debugging (e.g. nvidia-smi, driver issues).
 }
 
 # -----------------------------------------------------------------------------
