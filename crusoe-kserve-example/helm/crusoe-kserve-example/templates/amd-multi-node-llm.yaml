@@ -1,0 +1,80 @@
+{{- if .Values.amd.multiNode.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: {{ .Values.amd.multiNode.model.name }}-llm-multi-node-amd
+  namespace: {{ .Values.namespace }}
+spec:
+  model:
+    uri: {{ .Values.amd.multiNode.model.uri }}
+    name: {{ .Values.amd.multiNode.model.name }}
+  replicas: {{ .Values.amd.multiNode.replicas }}
+  parallelism:
+    tensor: {{ .Values.amd.multiNode.parallelism.tensor }}
+    data: {{ .Values.amd.multiNode.parallelism.data }}
+    dataLocal: {{ .Values.amd.multiNode.parallelism.dataLocal }}
+  template:
+    containers:
+      - name: main
+        image: {{ .Values.amd.image }}
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+        args:
+          - "--tensor-parallel-size"
+          - {{ .Values.amd.multiNode.parallelism.tensor | quote }}
+        resources:
+          limits:
+            amd.com/gpu: {{ .Values.amd.multiNode.resources.limits.gpu | quote }}
+            cpu: {{ .Values.amd.multiNode.resources.limits.cpu | quote }}
+            memory: {{ .Values.amd.multiNode.resources.limits.memory }}
+          requests:
+            amd.com/gpu: {{ .Values.amd.multiNode.resources.requests.gpu | quote }}
+            cpu: {{ .Values.amd.multiNode.resources.requests.cpu | quote }}
+            memory: {{ .Values.amd.multiNode.resources.requests.memory }}
+    {{- if .Values.modelStorage.enabled }}
+    volumes:
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.amd.multiNode.nodeSelector | nindent 6 }}
+  worker:
+    containers:
+      - name: main
+        image: {{ .Values.amd.image }}
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+        args:
+          - "--tensor-parallel-size"
+          - {{ .Values.amd.multiNode.parallelism.tensor | quote }}
+        resources:
+          limits:
+            amd.com/gpu: {{ .Values.amd.multiNode.resources.limits.gpu | quote }}
+            cpu: {{ .Values.amd.multiNode.resources.limits.cpu | quote }}
+            memory: {{ .Values.amd.multiNode.resources.limits.memory }}
+          requests:
+            amd.com/gpu: {{ .Values.amd.multiNode.resources.requests.gpu | quote }}
+            cpu: {{ .Values.amd.multiNode.resources.requests.cpu | quote }}
+            memory: {{ .Values.amd.multiNode.resources.requests.memory }}
+    {{- if .Values.modelStorage.enabled }}
+    volumes:
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.amd.multiNode.nodeSelector | nindent 6 }}
+  router:
+    gateway: {}
+    route: {}
+    scheduler: {}
+{{- end }}

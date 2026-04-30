@@ -56,6 +56,19 @@ response = llm.invoke("Explain MemoryAlloy inference technology in one paragraph
 
 See the [langchain-crusoe README](./langchain-crusoe/README.md) for full setup instructions and usage examples.
 
+[Serving HuggingFace Models on CMK with KServe](./crusoe-kserve-example/)
+
+Deploy open-source LLMs from HuggingFace on Crusoe Managed Kubernetes (CMK) using [KServe](https://kserve.github.io/) and [vLLM](https://docs.vllm.ai/), from a single-GPU endpoint to disaggregated prefill-decode across heterogeneous GPU pools. Supports both NVIDIA and AMD GPU clusters.
+
+Key capabilities:
+
+- **NVIDIA GPU serving** — single-GPU, multi-node tensor parallelism, and disaggregated prefill-decode across A100/H100 node pools
+- **AMD GPU serving** — single-node and multi-node serving on MI300X using ROCm-based vLLM; supports large MoE models like MiniMax-M2
+- **Model deployment** — deploy any HuggingFace model with an OpenAI-compatible `/v1/chat/completions` endpoint; large models (70B+) use persistent storage backed by the Crusoe SSD CSI driver
+- **One-command setup** — `make setup` (NVIDIA) or `make setup-amd` (AMD) provisions the CMK cluster, installs the GPU operator and KServe, and creates the model namespace end-to-end
+
+See the [crusoe-kserve-example README](./crusoe-kserve-example/README.md) for full setup instructions and usage examples.
+
 ### Storage
 
 [Shared Volumes NFS Setup](./shared-volumes-driver-setup/)
