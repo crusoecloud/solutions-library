@@ -39,12 +39,24 @@ RUN pip install --root-user-action ignore --no-cache-dir \
     boto3 \
     huggingface_hub
 
-RUN pip install --root-user-action ignore --no-cache-dir --pre torchtitan \
-    --index-url https://download.pytorch.org/whl/nightly/cu130
-
 RUN --mount=type=secret,id=hf_token \
     python scripts/download_hf_assets.py \
         --repo_id meta-llama/Llama-3.1-8B \
+        --hf_token "$(cat /run/secrets/hf_token)" \
+        --local_dir assets/hf \
+        --assets tokenizer config
+
+
+RUN --mount=type=secret,id=hf_token \
+    python scripts/download_hf_assets.py \
+        --repo_id meta-llama/Llama-3.1-70B \
+        --hf_token "$(cat /run/secrets/hf_token)" \
+        --local_dir assets/hf \
+        --assets tokenizer config
+
+RUN --mount=type=secret,id=hf_token \
+    python scripts/download_hf_assets.py \
+        --repo_id meta-llama/Llama-3.1-405B \
         --hf_token "$(cat /run/secrets/hf_token)" \
         --local_dir assets/hf \
         --assets tokenizer config

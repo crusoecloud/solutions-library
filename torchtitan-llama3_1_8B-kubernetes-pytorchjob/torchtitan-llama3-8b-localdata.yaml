@@ -147,6 +147,13 @@ spec:
               mountPath: /opt/nccl_topo
             - name: infiniband
               mountPath: /dev/infiniband
+          initContainers:
+          - name: clear-outputs
+            image: busybox
+            command: ["/bin/sh", "-c", "rm -rf /outputs/*"]
+            volumeMounts:
+            - name: outputs
+              mountPath: /outputs
           volumes:
           - name: c4-dataset
             persistentVolumeClaim:
@@ -155,7 +162,8 @@ spec:
             configMap:
               name: torchtitan-llama3-8b-config
           - name: outputs
-            emptyDir: {}
+            persistentVolumeClaim:
+              claimName: output-disk
           - name: dshm
             emptyDir:
               medium: Memory
@@ -251,7 +259,8 @@ spec:
               path: /dev/infiniband
               type: Directory
           - name: outputs
-            emptyDir: {}
+            persistentVolumeClaim:
+              claimName: output-disk
           - name: dshm
             emptyDir:
               medium: Memory
