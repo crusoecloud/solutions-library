@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: etchosts-pin
+  labels:
+    app: etchosts-pin
+spec:
+  selector:
+    matchLabels:
+      app: etchosts-pin
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: etchosts-pin
+    spec:
+      tolerations:
+        - operator: Exists
+      priorityClassName: system-node-critical
+      imagePullSecrets:
+      - name: pull-secret
+      containers:
+        - name: etchosts-pin
+          image: REGISTRY/etchosts-pin:latest
+          imagePullPolicy: Always
+          env:
+            - name: RESOLVE_HOSTNAME
+              value: "example.org"
+            # Optional overrides:
+            - name: RESOLVERS
+              value: "8.8.8.8,8.8.4.4"  # overrides /etc/resolv.conf
+            # - name: INTERVAL_SECONDS
+            #   value: "5"
+            # - name: HOSTS_FILE
+            #   value: "/etc/hosts"
+          securityContext:
+            runAsUser: 0          # root required to write /etc/hosts
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          volumeMounts:
+            - name: hosts
+              mountPath: /etc/hosts
+      volumes:
+        - name: hosts
+          hostPath:
+            path: /etc/hosts
+            type: File
