@@ -17,8 +17,13 @@ import (
 )
 
 func main() {
-	hostname := os.Getenv("RESOLVE_HOSTNAME")
-	if hostname == "" {
+	var hostnames []string
+	for _, h := range strings.Split(os.Getenv("RESOLVE_HOSTNAME"), ",") {
+		if h = strings.TrimSpace(h); h != "" {
+			hostnames = append(hostnames, h)
+		}
+	}
+	if len(hostnames) == 0 {
 		log.Fatal("RESOLVE_HOSTNAME environment variable is required")
 	}
 
@@ -41,7 +46,7 @@ func main() {
 		log.Fatalf("failed to determine nameservers: %v", err)
 	}
 
-	log.Printf("starting: hostname=%s file=%s interval=%s", hostname, hostsFile, interval)
+	log.Printf("starting: hostnames=%v file=%s interval=%s", hostnames, hostsFile, interval)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -49,21 +54,31 @@ func main() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Run immediately on start rather than waiting for the first tick.
-	if err := updateHosts(nameservers, hostname, hostsFile); err != nil {
-		log.Printf("error: %v", err)
+	updateAll := func() {
+		for _, h := range hostnames {
+			if err := updateHosts(nameservers, h, hostsFile); err != nil {
+				log.Printf("error: %v", err)
+			}
+		}
 	}
+
+	// Run immediately on start rather than waiting for the first tick.
+	updateAll()
 
 	for {
 		select {
 		case <-ticker.C:
-			if err := updateHosts(nameservers, hostname, hostsFile); err != nil {
-				log.Printf("error: %v", err)
-			}
+			updateAll()
 		case sig := <-sigCh:
 			log.Printf("received %s, cleaning up %s", sig, hostsFile)
-			if err := cleanupHosts(hostname, hostsFile); err != nil {
-				log.Printf("cleanup error: %v", err)
+			var failed bool
+			for _, h := range hostnames {
+				if err := cleanupHosts(h, hostsFile); err != nil {
+					log.Printf("cleanup error: %v", err)
+					failed = true
+				}
+			}
+			if failed {
 				os.Exit(1)
 			}
 			os.Exit(0)
@@ -199,14 +214,11 @@ func stripBlock(content, hostname string) []string {
 }
 
 func rewriteFile(f *os.File, content string) error {
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("seek: %w", err)
-	}
-	if err := f.Truncate(0); err != nil {
-		return fmt.Errorf("truncate: %w", err)
-	}
-	if _, err := f.WriteString(content); err != nil {
+	if _, err := f.WriteAt([]byte(content), 0); err != nil {
 		return fmt.Errorf("write: %w", err)
+	}
+	if err := f.Truncate(int64(len(content))); err != nil {
+		return fmt.Errorf("truncate: %w", err)
 	}
 	return nil
 }

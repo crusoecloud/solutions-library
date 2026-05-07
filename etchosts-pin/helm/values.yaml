@@ -3,10 +3,9 @@ image:
   tag: latest
   pullPolicy: Always
 
-imagePullSecrets:
-  - name: pull-secret
+imagePullSecrets: []
 
-# RESOLVE_HOSTNAME is required — set this to the hostname you want pinned.
+# RESOLVE_HOSTNAME is required — one or more hostnames to pin, comma-separated.
 resolveHostname: ""
 
 # Optional overrides

@@ -6,7 +6,7 @@ A daemon that resolves a hostname on a fixed interval and keeps the resulting A/
 
 On each tick the daemon:
 
-1. Calls `net.LookupHost` against the configured hostname.
+1. Issues a DNS query against the configured hostname.
 2. Reads the current `/etc/hosts`.
 3. Replaces its previously written block (demarcated by `BEGIN`/`END` comments) with the freshly resolved addresses.
 4. Writes the file back in place.
@@ -24,11 +24,12 @@ Records are added, updated, or removed automatically as DNS changes. If a lookup
 
 ## Environment variables
 
-| Variable           | Required | Default       | Description                        |
-|--------------------|----------|---------------|------------------------------------|
-| `RESOLVE_HOSTNAME` | yes      | —             | Hostname to resolve                |
-| `HOSTS_FILE`       | no       | `/etc/hosts`  | Path to the hosts file             |
-| `INTERVAL_SECONDS` | no       | `5`           | Polling interval in seconds        |
+| Variable           | Required | Default       | Description                                                           |
+|--------------------|----------|---------------|-----------------------------------------------------------------------|
+| `RESOLVE_HOSTNAME` | yes      | —             | Comma-delimited hostnames to resolve                                  |
+| `RESOLVERS`        | no       | —             | Comma-delimited hosts to use as resolvers instead of /etc/resolv.conf |
+| `HOSTS_FILE`       | no       | `/etc/hosts`  | Path to the hosts file                                                |
+| `INTERVAL_SECONDS` | no       | `5`           | Polling interval in seconds                                           |
 
 ## Build
 
@@ -75,13 +76,13 @@ Key values in `helm/values.yaml`:
 2. Apply:
 
 ```bash
-kubectl apply -f manifests/daemonset.yaml
+kubectl apply -n <NAMESPACE> -f manifests/daemonset.yaml
 ```
 
 ### Verify
 
 ```bash
-kubectl exec -n kube-system ds/etchosts-pin -- cat /etc/hosts
+kubectl exec -n <NAMESPACE> ds/etchosts-pin -- cat /etc/hosts
 # or on the node itself:
 cat /etc/hosts
 ```

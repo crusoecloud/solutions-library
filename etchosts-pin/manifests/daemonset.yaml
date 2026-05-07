@@ -26,7 +26,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: RESOLVE_HOSTNAME
-              value: "example.org"
+              value: "example.org,other.example.org"
             # Optional overrides:
             - name: RESOLVERS
               value: "8.8.8.8,8.8.4.4"  # overrides /etc/resolv.conf
