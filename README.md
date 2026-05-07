@@ -96,3 +96,9 @@ For your applications running on Crusoe Managed Kubernetes cluster, you can coll
 [Crusoe to Splunk HEC Log Forwarder](./crusoe-splunk-hec/README.md)
 
 Crusoe Cloud provides a 90-day history of who did what in your cloud, when, where, and with what result - also called [Crusoe Audit Logs](https://docs.crusoecloud.com/identity-and-security/audit-logs/index.html). This solution provides a sample Python tool to fetch those logs and forward them to a Splunk HTTP Event Collector (HEC). 
+
+### Networking
+
+[/etc/hosts Pin](./etchosts-pin/README.md)
+
+A daemon that resolves a hostname on a fixed interval and keeps the resulting A/AAAA records in `/etc/hosts`. Works around undesirable TTL cache values from intermediate DNS resolvers

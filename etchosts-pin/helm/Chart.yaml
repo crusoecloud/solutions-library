@@ -1,0 +1,6 @@
+apiVersion: v2
+name: etchosts-pin
+description: DaemonSet that resolves a hostname on a fixed interval and pins the results in /etc/hosts on every node
+type: application
+version: 0.1.0
+appVersion: "latest"

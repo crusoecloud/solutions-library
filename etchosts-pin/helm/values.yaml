@@ -1,0 +1,30 @@
+image:
+  repository: REGISTRY/etchosts-pin
+  tag: latest
+  pullPolicy: Always
+
+imagePullSecrets: []
+
+# RESOLVE_HOSTNAME is required — one or more hostnames to pin, comma-separated.
+resolveHostname: ""
+
+# Optional overrides
+resolvers: ""        # comma-separated list, e.g. "8.8.8.8,8.8.4.4"; defaults to /etc/resolv.conf
+intervalSeconds: ""  # polling interval in seconds; defaults to 5
+hostsFile: ""        # path to hosts file; defaults to /etc/hosts
+
+resources:
+  requests:
+    cpu: 5m
+    memory: 8Mi
+  limits:
+    cpu: 50m
+    memory: 32Mi
+
+priorityClassName: system-node-critical
+
+tolerations:
+  - operator: Exists
+
+nodeSelector: {}
+affinity: {}

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: etchosts-pin
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: RESOLVE_HOSTNAME
+              value: {{ required "resolveHostname is required" .Values.resolveHostname | quote }}
+            {{- if .Values.resolvers }}
+            - name: RESOLVERS
+              value: {{ .Values.resolvers | quote }}
+            {{- end }}
+            {{- if .Values.intervalSeconds }}
+            - name: INTERVAL_SECONDS
+              value: {{ .Values.intervalSeconds | quote }}
+            {{- end }}
+            {{- if .Values.hostsFile }}
+            - name: HOSTS_FILE
+              value: {{ .Values.hostsFile | quote }}
+            {{- end }}
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: hosts
+              mountPath: /etc/hosts
+      volumes:
+        - name: hosts
+          hostPath:
+            path: /etc/hosts
+            type: File
