@@ -22,3 +22,7 @@ namespace = "kserve-test"
 a100_node_count = 2
 h100_node_count = 1
 cpu_node_count  = 2
+
+# If node count > 0, include the Infiniband partition ID
+a100_ib_partition_id = ""
+h100_ib_partition_id = ""

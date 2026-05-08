@@ -1,0 +1,55 @@
+{{- if .Values.amd.large.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: {{ .Values.amd.large.model.name }}-llm-amd
+  namespace: {{ .Values.namespace }}
+spec:
+  model:
+    uri: {{ .Values.amd.large.model.uri }}
+    name: {{ .Values.amd.large.model.name }}
+  replicas: 1
+  template:
+    {{- if .Values.modelStorage.enabled }}
+    securityContext:
+      fsGroup: 1000
+    {{- end }}
+    containers:
+      - name: main
+        image: {{ .Values.amd.image }}
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+          - name: HF_HUB_DISABLE_XET
+            value: "1"
+          - name: VLLM_ROCM_USE_AITER
+            value: "1"
+        {{- if .Values.amd.large.args }}
+        args:
+          {{- toYaml .Values.amd.large.args | nindent 10 }}
+        {{- end }}
+        resources:
+          limits:
+            amd.com/gpu: {{ .Values.amd.large.resources.limits.gpu | quote }}
+            cpu: {{ .Values.amd.large.resources.limits.cpu | quote }}
+            memory: {{ .Values.amd.large.resources.limits.memory }}
+          requests:
+            amd.com/gpu: {{ .Values.amd.large.resources.requests.gpu | quote }}
+            cpu: {{ .Values.amd.large.resources.requests.cpu | quote }}
+            memory: {{ .Values.amd.large.resources.requests.memory }}
+    {{- if .Values.modelStorage.enabled }}
+    volumes:
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.amd.large.nodeSelector | nindent 6 }}
+  router:
+    gateway: {}
+    route: {}
+    scheduler: {}
+{{- end }}
