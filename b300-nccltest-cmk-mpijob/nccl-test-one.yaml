@@ -1,0 +1,128 @@
+apiVersion: kubeflow.org/v1
+kind: MPIJob
+metadata:
+  name: nccl-tests-gdr-8-b300
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+          - image: abesharphpe/nccl-tests-b300:latest
+            imagePullPolicy: Always
+            name: init
+            command: ["sh", "-c", "sleep 5"]
+          containers:
+          - image: abesharphpe/nccl-tests-b300:latest
+            imagePullPolicy: Always
+            name: nccl-test-launcher
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+             - name: NCCL_TOPO_FILE
+               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+             - name: UCX_RNDV_SCHEME
+               value: "get_zcopy"   # UCX memory setting
+             - name: UCX_TLS
+               value: "self,sm,cuda_copy"   # UCX memory setting
+            command:
+            - /opt/amazon/openmpi/bin/mpirun 
+            - --allow-run-as-root
+            - --tag-output
+            - -np
+            - "8"  # Total number of processes (8 GPUs per node, 2 nodes = 16 total if using 2 Worker Replicas)
+            - -N
+            - "8"
+            - -bind-to
+            - none
+            - -map-by
+            - slot
+            - -mca
+            - coll_hcoll_enable
+            - "0"
+            - -x
+            - NCCL_IB_PCI_RELAXED_ORDERING=1
+            - -x
+            - NCCL_IB_SPLIT_DATA_ON_QPS=0
+            - -x
+            - NCCL_IB_QPS_PER_CONNECTION=2
+            - -x
+            - NCCL_IB_MERGE_VFS=0
+            - -x
+            - NCCL_IB_HCA=mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12
+            - -x
+            - NCCL_IBEXT_DISABLE=1
+            - -x
+            - NCCL_TOPO_FILE
+            - -x
+            - PATH
+            - -x
+            - LD_LIBRARY_PATH
+            - -x
+            - NCCL_DEBUG=INFO
+            - -x
+            - NCCL_NVLS_ENABLE=1
+            - -x
+            - NCCL_IB_SL=1
+            - -x
+            - NCCL_DEBUG=info
+            - /opt/nccl-tests/build/all_reduce_perf
+            - -b
+            - "2G"
+            - -e
+            - "32G"
+            - -f
+            - "2"
+            - -t
+            - "1"
+            - -g
+            - "1"
+            - -c
+            - "1"
+            - -n
+            - "100"
+    Worker:
+      replicas: 1 # Specify the number of nodes in the CMK nodepool
+      template:
+        spec:
+          restartPolicy: OnFailure
+          runtimeClassName: nvidia
+          volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 64Gi
+          containers:
+          - image: abesharphpe/nccl-tests-b300:latest
+            imagePullPolicy: Always
+            name: nccl-worker
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+             - name: NCCL_TOPO_FILE
+               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+             - name: NCCL_DEBUG
+               value: INFO
+             - name: UCX_RNDV_SCHEME
+               value: "get_zcopy"   # UCX memory setting
+             - name: UCX_TLS
+               value: "self,sm,cuda_copy"   # UCX memory setting
+            volumeMounts:
+            - mountPath: /dev/shm
+              name: dshm
+            resources:
+              limits:
+                nvidia.com/gpu: 8 # 8 GPUs per node
+                nvidia.com/hostdev: 8
+                memory: 128000Mi
+              requests:
+                nvidia.com/gpu: 8 # 8 GPUs per node
+                nvidia.com/hostdev: 8
+                memory: 128000Mi
