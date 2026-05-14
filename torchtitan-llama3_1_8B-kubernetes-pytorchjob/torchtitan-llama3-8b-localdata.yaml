@@ -118,10 +118,17 @@ spec:
             - name: NCCL_IB_HCA
             # replace with value: "^mlx5_0" for H100/H200 - ibstat -v on node to confirm
               value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
-            - name: NCCL_IB_GID_INDEX
-              value: "3"
-            - name: NCCL_NET_GDR_LEVEL
-              value: "SYS"
+            # NCCL_BUFFSIZE matches the proven Crusoe Slurm reference config (2 MB ring buffer);
+            # improves throughput across all Crusoe IB SKUs (H100/H200/B200/B300).
+            - name: NCCL_BUFFSIZE
+              value: "2097152"
+            # NOTE: NCCL_IB_GID_INDEX=3 and NCCL_NET_GDR_LEVEL=SYS were previously set here
+            # by default. They are appropriate only for RoCE-v2-flavoured / Blackwell-style fabrics.
+            # On Crusoe's H100/H200 native InfiniBand they cause a ~10x MFU degradation
+            # (NCCL falls back to a slower codepath). They have been removed from the defaults.
+            # If you are on B200/B300 and see NCCL transport warnings, re-add:
+            #   - name: NCCL_IB_GID_INDEX
+            #     value: "3"
             - name: NCCL_TOPO_FILE
             # replace with correct topo file for your SKU type as found in /etc/crusoe/nccl_topo of node
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
@@ -214,10 +221,17 @@ spec:
             - name: NCCL_IB_HCA
             # replace with value: "^mlx5_0" for H100/H200 - ibstat -v on node to confirm
               value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
-            - name: NCCL_IB_GID_INDEX
-              value: "3"
-            - name: NCCL_NET_GDR_LEVEL
-              value: "SYS"
+            # NCCL_BUFFSIZE matches the proven Crusoe Slurm reference config (2 MB ring buffer);
+            # improves throughput across all Crusoe IB SKUs (H100/H200/B200/B300).
+            - name: NCCL_BUFFSIZE
+              value: "2097152"
+            # NOTE: NCCL_IB_GID_INDEX=3 and NCCL_NET_GDR_LEVEL=SYS were previously set here
+            # by default. They are appropriate only for RoCE-v2-flavoured / Blackwell-style fabrics.
+            # On Crusoe's H100/H200 native InfiniBand they cause a ~10x MFU degradation
+            # (NCCL falls back to a slower codepath). They have been removed from the defaults.
+            # If you are on B200/B300 and see NCCL transport warnings, re-add:
+            #   - name: NCCL_IB_GID_INDEX
+            #     value: "3"
             - name: NCCL_TOPO_FILE
             # replace with correct topo file for your SKU type as found in /etc/crusoe/nccl_topo of node
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml

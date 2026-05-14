@@ -150,6 +150,8 @@ Both jobs inject a TOML configuration file via a `ConfigMap`. Key training setti
 
 The two NCCL environment variables that must be tuned per SKU are `NCCL_IB_HCA` and `NCCL_TOPO_FILE`. Both appear in the `env:` block of the Master and Worker containers and must match on every replica.
 
+On **Blackwell SKUs only (B200/B300)**, you may additionally need to re-add `NCCL_IB_GID_INDEX=3` (and optionally `NCCL_NET_GDR_LEVEL=SYS`) if you see NCCL transport warnings. These variables were previously set by default but caused a **~10× MFU degradation on H100/H200 native InfiniBand**, so they have been removed from the default manifests. See the per-SKU sections below.
+
 ### `NCCL_TOPO_FILE`
 
 Crusoe nodes ship with pre-generated NCCL topology XML files under `/etc/crusoe/nccl_topo/`. The manifests mount this directory as a `hostPath` volume at `/opt/nccl_topo`. Set `NCCL_TOPO_FILE` to the correct filename for your node type. To discover available files:
@@ -178,6 +180,8 @@ Run `ibstat -v` on a node to confirm port enumeration and select the matching to
 
 **Memory:** 80 GB per GPU (640 GB per 8-GPU node). The default `local_batch_size = 1` and `seq_len = 8192` are well-suited for this SKU.
 
+**Native IB note:** the default manifests do **not** set `NCCL_IB_GID_INDEX` or `NCCL_NET_GDR_LEVEL`. Both are intentionally omitted because Crusoe H100 nodes use native InfiniBand (GID index 0), where the previously-shipped value of `NCCL_IB_GID_INDEX=3` forced a RoCE-flavoured codepath and caused a ~10× slowdown. Do not re-add them on H100.
+
 ---
 
 ### H200 (141 GB SXM5)
@@ -190,6 +194,10 @@ Run `ibstat -v` on a node to confirm port enumeration and select the matching to
 ```
 
 **Memory:** 141 GB per GPU (1.1 TB per 8-GPU node). The additional HBM3e headroom lets you increase `seq_len` (e.g. 16384 or 32768) or `local_batch_size` without triggering OOM. Consider enabling `torch.compile` (`[compile] enable = true`) and float8 FSDP all-gather (`enable_fsdp_float8_all_gather = true`) to improve throughput.
+
+**Native IB note:** same as H100 — the default manifests intentionally omit `NCCL_IB_GID_INDEX` and `NCCL_NET_GDR_LEVEL` for H200 native IB. Do not re-add them.
+
+**Sizing example for small clusters:** at 16 GPUs (2 nodes), the README's headline 53% MFU baseline is achievable with `local_batch_size = 2`, `[compile] enable = true`, and no activation checkpointing — peaks around ~52% MFU, ~8,800 tps/GPU, with HBM at ~62%. `local_batch_size = 4` requires activation checkpointing at this scale because per-GPU FSDP shards are 8× larger than the 128-GPU baseline.
 
 ---
 
@@ -204,6 +212,15 @@ Run `ibstat -v` on a node to confirm port enumeration and select the matching to
 
 **Memory:** 192 GB per GPU (1.5 TB per 8-GPU node). The explicit HCA list is used on Blackwell nodes (rather than the exclusion syntax used on Hopper). Verify the port list with `ibstat -v`. The large HBM capacity enables longer sequences and larger batches; you may also want to experiment with tensor parallelism (`tensor_parallel_degree = 2` or `4`) to better utilize NVLink bandwidth.
 
+**Blackwell GID note:** if you observe NCCL transport warnings or unexpectedly low MFU on B200, re-add the following env vars to both Master and Worker (they were removed from the defaults because they are wrong on H100/H200):
+
+```yaml
+- name: NCCL_IB_GID_INDEX
+  value: "3"
+- name: NCCL_NET_GDR_LEVEL
+  value: "SYS"
+```
+
 ---
 
 ### B300 (288 GB SXM) — default in this example
@@ -216,6 +233,8 @@ Run `ibstat -v` on a node to confirm port enumeration and select the matching to
 ```
 
 **Memory:** 288 GB per GPU (2.3 TB per 8-GPU node). The manifests in this repo are configured for B300 out of the box. The enormous HBM capacity makes it practical to train much larger models without activation checkpointing; for Llama 3.1 8B you can increase `local_batch_size` substantially or train longer sequences. Float8 linear layers (`enable_fsdp_float8_all_gather = true`, `precompute_float8_dynamic_scale_for_fsdp = true`) are recommended on Blackwell to exploit the native FP8 tensor cores.
+
+**Blackwell GID note:** same as B200 — if you observe NCCL transport warnings or unexpectedly low MFU on B300, re-add `NCCL_IB_GID_INDEX=3` and `NCCL_NET_GDR_LEVEL=SYS` to both Master and Worker. They were removed from the defaults because they cause a ~10× slowdown on H100/H200 native IB.
 
 ---
 
