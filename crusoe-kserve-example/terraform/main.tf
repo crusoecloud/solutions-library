@@ -132,20 +132,9 @@ resource "null_resource" "kserve_install" {
       echo "[4/5] Installing KServe controller..."
       kubectl apply --server-side --force-conflicts -f "$${BASE_URL}/kserve.yaml"
 
-      echo "Waiting for KServe controller to be ready..."
-      kubectl wait --for=condition=ready pod \
-        -l control-plane=kserve-controller-manager \
-        -n kserve --timeout=300s
-
-      echo "Waiting for webhook endpoint to be available..."
-      for i in $(seq 1 30); do
-        if kubectl get endpoints kserve-webhook-server-service -n kserve -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
-          echo "Webhook endpoint ready."
-          break
-        fi
-        echo "Waiting for webhook... ($${i}/30)"
-        sleep 5
-      done
+      echo "Waiting for KServe controllers to be ready..."
+      kubectl rollout status deployment/kserve-controller-manager -n kserve
+      kubectl rollout status deployment/llmisvc-controller-manager -n kserve
 
       echo "[5/5] Installing KServe cluster resources..."
       kubectl apply --server-side -f "$${BASE_URL}/kserve-cluster-resources.yaml"

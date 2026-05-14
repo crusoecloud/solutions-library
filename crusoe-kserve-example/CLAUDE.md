@@ -4,11 +4,13 @@ This project deploys open-source LLMs on Crusoe Managed Kubernetes (CMK) using K
 
 ## What This Does
 
-Provisions a CMK cluster with GPU node pools and installs KServe for LLM inference. Supports five deployment modes:
+Provisions a CMK cluster with GPU node pools and installs KServe for LLM inference. Supports six deployment modes:
 - **Basic (NVIDIA)**: Single-GPU serving (e.g., Qwen2.5-0.5B on 1x A100)
+- **Large (NVIDIA)**: Multi-GPU single-node serving (e.g., Qwen2.5-72B on 8x H100, TP=8)
 - **Multi-Node (NVIDIA)**: Tensor-parallel across multiple nodes (e.g., Qwen2.5-72B on 16 GPUs)
 - **Disaggregated Prefill-Decode**: H100 for prefill, A100 for decode (cost-optimized)
-- **Basic (AMD)**: Single-GPU or full-node serving on MI300X (e.g., MiniMax-M2 on 8x MI300X)
+- **Basic (AMD)**: Single-GPU serving on MI300X (e.g., Qwen2.5-0.5B on 1x MI300X)
+- **Large (AMD)**: Multi-GPU single-node serving on MI300X (e.g., MiniMax-M2 on 8x MI300X, TP=8)
 - **Multi-Node (AMD)**: Multi-node tensor-parallel on MI300X (e.g., MiniMax-M2 on 2x8 MI300X)
 
 ## Setup Flow
@@ -28,7 +30,7 @@ Required values the user must provide:
 - `project_id` — Crusoe project ID (get via `crusoe projects list`)
 - `hf_token` — HuggingFace API token
 - `ssh_public_key` — User's SSH public key string; provisioned onto nodes at creation time so the user can SSH in for debugging (e.g. checking driver issues, running `nvidia-smi`)
-- `a100_ib_partition_id` — InfiniBand partition ID for A100 nodes (get via `crusoe networking ib-partitions list`)
+- `a100_ib_partition_id` — InfiniBand partition ID for A100 nodes (only needed if `a100_node_count > 0`)
 - `h100_ib_partition_id` — InfiniBand partition ID for H100 nodes (only needed if `h100_node_count > 0`)
 
 To find the right IB partition, match the partition's IB network location and VM type:
@@ -54,9 +56,9 @@ This runs `terraform apply` which:
 #### 3. Deploy a Model
 
 ```bash
-make deploy-basic          # Qwen2.5-0.5B on 1x A100
-make deploy-70b            # Qwen2.5-72B on 8x A100, TP=8 (with PVC for model storage)
-make deploy-multi-node     # Qwen2.5-72B on 2x8 A100 (needs a100_node_count=2)
+make deploy-basic          # Qwen2.5-0.5B on 1x GPU (GPU type set via basic.nodeSelector in values.yaml)
+make deploy-large          # Qwen2.5-72B on 8x GPU TP=8 (GPU type set via large.nodeSelector in values.yaml)
+make deploy-multi-node     # Qwen2.5-72B on 2x8 GPU (GPU type set via multiNode.nodeSelector in values.yaml)
 make deploy-disaggregated  # Qwen2.5-72B with H100 prefill + A100 decode (needs h100_node_count=1)
 ```
 
@@ -120,18 +122,17 @@ This runs three steps:
 
 ```bash
 make deploy-amd-basic      # Qwen2.5-0.5B on 1x MI300X
-make deploy-amd-minimax    # MiniMax-M2 on 8x MI300X (TP=8, EP, 1500Gi PVC) — deletes existing PVC first
-make redeploy-amd-minimax  # Update MiniMax-M2 args WITHOUT deleting PVC (preserves downloaded model)
+make deploy-amd-large      # MiniMax-M2 on 8x MI300X (TP=8, EP, 1500Gi PVC) — deletes existing PVC first
+make redeploy-amd-large    # Update AMD large model args WITHOUT deleting PVC (preserves downloaded model)
 make deploy-amd-multi-node # MiniMax-M2 on 2x8 MI300X (TP=8, 2 replicas)
 ```
 
-**Note**: `deploy-amd-minimax` deletes the PVC before deploying. Use `redeploy-amd-minimax` to update args while preserving already-downloaded model weights.
+**Note**: `deploy-amd-large` deletes the PVC before deploying. Use `redeploy-amd-large` to update args while preserving already-downloaded model weights.
 
 #### 4. Test AMD
 
 ```bash
-make test           # Same port-forward + curl (works for any deployed model)
-make test-amd-minimax  # Test with minimax model name
+make test  # Port-forward + curl (works for any deployed model)
 ```
 
 #### 5. Benchmark AMD
@@ -148,7 +149,7 @@ The AMD templates inject these env vars automatically:
 
 ## Model Storage (PVC)
 
-Large models (70B+) exceed the node's ephemeral storage (~120GB). The `deploy-70b`, `deploy-multi-node`, and `deploy-disaggregated` targets use a PersistentVolumeClaim backed by the Crusoe SSD CSI driver (`ssd.csi.crusoe.ai`).
+Large models (70B+) exceed the node's ephemeral storage (~120GB). The `deploy-large`, `deploy-amd-large`, `deploy-multi-node`, and `deploy-disaggregated` targets use a PersistentVolumeClaim backed by the Crusoe SSD CSI driver (`ssd.csi.crusoe.ai`).
 
 This is controlled by `modelStorage.enabled` and `modelStorage.size` in values.yaml:
 ```yaml
@@ -176,11 +177,13 @@ The Terraform setup also patches the KServe `inferenceservice-config` configmap 
 - `terraform-amd/main.tf` — AMD cluster + node pools (KServe installed separately by `make setup-amd`)
 - `terraform-amd/variables.tf` — AMD Terraform variables (includes Docker Hub credentials)
 - `terraform-amd/terraform.tfvars.example` — AMD template for user configuration
-- `helm/crusoe-kserve-example/values.yaml` — All deployment mode configs (NVIDIA + AMD)
+- `helm/crusoe-kserve-example/values.yaml` — All deployment mode configs (NVIDIA + AMD); vLLM args are set via Makefile `--set` flags, not here
 - `helm/crusoe-kserve-example/templates/basic-llm.yaml` — NVIDIA single-GPU manifest
+- `helm/crusoe-kserve-example/templates/large-llm.yaml` — NVIDIA multi-GPU single-node manifest
 - `helm/crusoe-kserve-example/templates/multi-node-llm.yaml` — NVIDIA multi-node manifest
 - `helm/crusoe-kserve-example/templates/disaggregated-llm.yaml` — NVIDIA disaggregated manifest
 - `helm/crusoe-kserve-example/templates/amd-basic-llm.yaml` — AMD single-GPU manifest
+- `helm/crusoe-kserve-example/templates/amd-large-llm.yaml` — AMD multi-GPU single-node manifest
 - `helm/crusoe-kserve-example/templates/amd-multi-node-llm.yaml` — AMD multi-node manifest
 - `monitoring/docker-compose.yml` — Grafana container (port 3000)
 - `monitoring/setup.py` — Configures Grafana datasource + prints dashboard URL
@@ -228,13 +231,14 @@ vLLM image: `vllm/vllm-openai-rocm:latest`
 
 | Deployment Mode | a100_node_count | h100_node_count | cpu_node_count |
 |----------------|-----------------|-----------------|----------------|
-| Basic          | 1               | 0               | 2              |
-| Multi-Node     | 2               | 0               | 2              |
+| Basic          | 1 (or 0 if using H100) | 1 (or 0 if using A100) | 2 |
+| Large          | 1 (or 0 if using H100) | 1 (or 0 if using A100) | 2 |
+| Multi-Node     | 2 (or 0 if using H100) | 2 (or 0 if using A100) | 2 |
 | Disaggregated  | 2               | 1               | 2              |
 
 ## Performance Tuning
 
-### vLLM args (set in `values.yaml` under `basic.args`, `disaggregated.decode.args`, etc.)
+### vLLM args (set via `--set <profile>.args[N]=...` in the Makefile deploy targets)
 
 | Flag | What it does | When to use |
 |------|-------------|-------------|

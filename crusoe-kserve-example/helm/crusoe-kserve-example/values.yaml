@@ -18,12 +18,6 @@ basic:
   model:
     uri: hf://Qwen/Qwen2.5-0.5B-Instruct
     name: qwen
-  args:
-    - "--gpu-memory-utilization"
-    - "0.95"
-    - "--enable-chunked-prefill"
-    - "--max-num-batched-tokens"
-    - "4096"
   resources:
     limits:
       gpu: "1"
@@ -33,6 +27,24 @@ basic:
       gpu: "1"
       cpu: "1"
       memory: 4Gi
+  nodeSelector:
+    crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib
+
+# Large: multi-GPU single-node LLM serving (e.g., Qwen2.5-72B-Instruct on 8x H100, TP=8)
+large:
+  enabled: false
+  model:
+    uri: hf://Qwen/Qwen2.5-72B-Instruct
+    name: qwen
+  resources:
+    limits:
+      gpu: "8"
+      cpu: "64"
+      memory: 512Gi
+    requests:
+      gpu: "8"
+      cpu: "32"
+      memory: 256Gi
   nodeSelector:
     crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib
 
@@ -71,14 +83,6 @@ disaggregated:
       tensor: 8
       data: 16
       dataLocal: 8
-    args:
-      - "--model"
-      - "/mnt/models"
-      - "--tensor-parallel-size"
-      - "8"
-      - "--enforce-eager"
-      - "--gpu-memory-utilization"
-      - "0.90"
     resources:
       limits:
         gpu: "8"
@@ -92,16 +96,6 @@ disaggregated:
       crusoe.ai/accelerator: nvidia-a100-80gb-sxm-ib
   prefill:
     replicas: 1
-    args:
-      - "--model"
-      - "/mnt/models"
-      - "--tensor-parallel-size"
-      - "8"
-      - "--enable-chunked-prefill"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--gpu-memory-utilization"
-      - "0.90"
     resources:
       limits:
         gpu: "8"
@@ -124,12 +118,6 @@ amd:
     model:
       uri: hf://Qwen/Qwen2.5-0.5B-Instruct
       name: qwen
-    args:
-      - "--gpu-memory-utilization"
-      - "0.95"
-      - "--enable-chunked-prefill"
-      - "--max-num-batched-tokens"
-      - "4096"
     resources:
       limits:
         gpu: "1"
@@ -139,6 +127,24 @@ amd:
         gpu: "1"
         cpu: "1"
         memory: 4Gi
+    nodeSelector:
+      crusoe.ai/accelerator: amd-mi300x-192gb-ib
+
+  # Large: multi-GPU single-node LLM serving on AMD MI300X (e.g., MiniMax-M2 on 8x MI300X, TP=8)
+  large:
+    enabled: false
+    model:
+      uri: hf://MiniMaxAI/MiniMax-M2
+      name: minimax
+    resources:
+      limits:
+        gpu: "8"
+        cpu: "64"
+        memory: 512Gi
+      requests:
+        gpu: "8"
+        cpu: "32"
+        memory: 256Gi
     nodeSelector:
       crusoe.ai/accelerator: amd-mi300x-192gb-ib
 

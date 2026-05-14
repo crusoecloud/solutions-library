@@ -1,0 +1,51 @@
+{{- if .Values.large.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: {{ .Values.large.model.name }}-llm
+  namespace: {{ .Values.namespace }}
+spec:
+  model:
+    uri: {{ .Values.large.model.uri }}
+    name: {{ .Values.large.model.name }}
+  replicas: 1
+  template:
+    {{- if .Values.modelStorage.enabled }}
+    securityContext:
+      fsGroup: 1000
+    {{- end }}
+    containers:
+      - name: main
+        image: {{ .Values.image }}
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+        {{- if .Values.large.args }}
+        args:
+          {{- toYaml .Values.large.args | nindent 10 }}
+        {{- end }}
+        resources:
+          limits:
+            nvidia.com/gpu: {{ .Values.large.resources.limits.gpu | quote }}
+            cpu: {{ .Values.large.resources.limits.cpu | quote }}
+            memory: {{ .Values.large.resources.limits.memory }}
+          requests:
+            nvidia.com/gpu: {{ .Values.large.resources.requests.gpu | quote }}
+            cpu: {{ .Values.large.resources.requests.cpu | quote }}
+            memory: {{ .Values.large.resources.requests.memory }}
+    {{- if .Values.modelStorage.enabled }}
+    volumes:
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.large.nodeSelector | nindent 6 }}
+  router:
+    gateway: {}
+    route: {}
+    scheduler: {}
+{{- end }}

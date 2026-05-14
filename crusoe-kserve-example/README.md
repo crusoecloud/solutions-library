@@ -7,6 +7,7 @@ Deploy open-source LLMs from HuggingFace on Crusoe Managed Kubernetes (CMK) usin
 - One command for full infrastructure + KServe setup (NVIDIA or AMD)
 - One command to deploy HuggingFace model
   - Single-GPU LLM serving (Qwen2.5-0.5B on 1x H100, A100, MI300X, etc.)
+  - Single-node multi-GPU inference (Qwen2.5-72B on 8x H100, TP=8)
   - Multi-node tensor-parallel inference (Qwen2.5-72B across 16 GPUs)
   - Disaggregated prefill-decode with H100 (prefill) and A100 (decode)
 - AMD MI300X support with ROCm vLLM (MiniMax-M2)
@@ -29,11 +30,13 @@ Deploy open-source LLMs from HuggingFace on Crusoe Managed Kubernetes (CMK) usin
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
+terraform init
 ```
 Edit `terraform.tfvars` with your project ID, HuggingFace token, IB partition IDs, and node types/count.
 
 ### 2. Provision cluster + install KServe
 
+Navigate back to `crusoe-kserve-example/` and run:
 ```bash
 make setup
 ```
@@ -50,8 +53,8 @@ This single command:
 # Single-GPU (Qwen2.5-0.5B, 1x H100)
 make deploy-basic
 
-# Single-node 72B (Qwen2.5-72B, 8x H100 TP=8, with PVC storage)
-make deploy-70b
+# Large single-node (Qwen2.5-72B, 8x H100 TP=8, with PVC storage)
+make deploy-large
 
 # Multi-node (Qwen2.5-72B, 2x8 H100)
 make deploy-multi-node
@@ -60,7 +63,23 @@ make deploy-multi-node
 make deploy-disaggregated
 ```
 
-Large models (70B+) require persistent storage. `deploy-70b` automatically provisions a 250Gi SSD PVC via the Crusoe CSI driver to store model weights.
+Large models (70B+) require persistent storage. `deploy-large` automatically provisions a 250Gi SSD PVC via the Crusoe CSI driver to store model weights.
+
+> **Using a different GPU type?** The defaults in `helm/crusoe-kserve-example/values.yaml` target H100 nodes. If your cluster uses another GPU SKU, update the `nodeSelector` for the relevant profile, for example:
+> ```yaml
+> basic:
+>   nodeSelector:
+>     crusoe.ai/accelerator: nvidia-a100-80gb-sxm-ib
+> ```
+> You can print the GPU types in your node pools by running:
+> ```bash
+> kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.crusoe\.ai/accelerator}{"\n"}{end}'
+> ```
+> ```
+> np-520db221-1.us-east1-a.compute.internal       nvidia-a100-80gb-sxm-ib
+> np-59eb87e7-1.us-east1-a.compute.internal
+> np-59eb87e7-2.us-east1-a.compute.internal
+> ```
 
 ### 4. Test
 
@@ -116,8 +135,8 @@ This single command:
 # Small model (Qwen2.5-0.5B on 1x MI300X)
 make deploy-amd-basic
 
-# MiniMax-M2 on 8x MI300X — TP=8, expert parallel, 1500Gi PVC
-make deploy-amd-minimax
+# Large single-node (MiniMax-M2 on 8x MI300X — TP=8, expert parallel, 1500Gi PVC)
+make deploy-amd-large
 
 # Multi-node (MiniMax-M2 on 2x8 MI300X)
 make deploy-amd-multi-node
@@ -138,6 +157,37 @@ make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
 
 ---
 
+## Installing on an Existing Cluster
+
+If you already have a Crusoe CMK cluster with GPU node pools, skip `make setup` / `make setup-amd` and install KServe directly. The cluster must already have the correct add-ons enabled — Terraform sets these automatically, but if you created the cluster manually ensure they are present.
+
+### NVIDIA — Required Add-ons
+
+| Add-on | Purpose |
+|--------|---------|
+| `nvidia_gpu_operator` | GPU driver and device plugin (`nvidia.com/gpu` resource) |
+| `nvidia_network_operator` | RDMA / InfiniBand networking for multi-node TP |
+| `crusoe_csi` | Persistent SSD storage for large model weights |
+
+```bash
+make install-kserve HF_TOKEN=hf_...
+```
+
+### AMD — Required Add-ons
+
+| Add-on | Purpose |
+|--------|---------|
+| `crusoe_csi` | Persistent SSD storage for large model weights |
+
+```bash
+make install-amd-gpu-operator DOCKER_USERNAME=you DOCKER_EMAIL=you@example.com DOCKER_PASSWORD=...
+make install-kserve HF_TOKEN=hf_...
+```
+
+Once KServe is installed, proceed directly to the deploy commands (`make deploy-basic`, `make deploy-large`, etc.).
+
+---
+
 ## Architecture
 
 ### Deployment Modes
@@ -145,10 +195,11 @@ make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
 | Mode | GPU | Model | Use Case |
 |------|-----|-------|----------|
 | **Basic (NVIDIA)** | 1x A100 | Qwen2.5-0.5B | Dev/test, small models |
-| **70B (NVIDIA)** | 8x A100 TP=8 | Qwen2.5-72B | Single-node large model |
+| **Large (NVIDIA)** | 8x A100 TP=8 | Qwen2.5-72B | Single-node large model |
 | **Multi-Node (NVIDIA)** | 16x A100 (2 nodes) | Qwen2.5-72B | Large models exceeding single-node VRAM |
 | **Disaggregated (NVIDIA)** | 8x H100 + 16x A100 | Qwen2.5-72B | Production, cost-optimized latency |
-| **Basic (AMD)** | 8x MI300X | MiniMax-M2 | Large MoE models, high-memory serving |
+| **Basic (AMD)** | 1x MI300X | Qwen2.5-0.5B | Dev/test on AMD |
+| **Large (AMD)** | 8x MI300X TP=8 | MiniMax-M2 | Large MoE models, high-memory serving |
 | **Multi-Node (AMD)** | 16x MI300X (2 nodes) | MiniMax-M2 | Multi-node MoE on AMD |
 
 ### NVIDIA Cluster Layout
@@ -170,18 +221,27 @@ CMK Cluster (terraform-amd/)
 
 ## Customization
 
-Edit `helm/crusoe-kserve-example/values.yaml` to change models, GPU counts, or resource limits, then re-run the deploy command.
+Edit `helm/crusoe-kserve-example/values.yaml` to change models, GPU counts, or resource limits, then re-run the deploy command. vLLM args (e.g. `--tensor-parallel-size`, `--gpu-memory-utilization`) are set via `--set` flags in the Makefile deploy targets, not in `values.yaml`.
 
-For example, to serve a different model on AMD basic mode:
+### Changing the model
+
+To use a different model, update `model.uri` and `model.name` in `values.yaml` for the relevant profile:
 
 ```yaml
-amd:
-  basic:
-    enabled: true
-    model:
-      uri: hf://meta-llama/Llama-3.1-8B-Instruct
-      name: llama
+# For deploy-basic:
+basic:
+  model:
+    uri: hf://meta-llama/Llama-3.1-8B-Instruct
+    name: llama
+
+# For deploy-large:
+large:
+  model:
+    uri: hf://meta-llama/Llama-3.1-70B-Instruct
+    name: llama
 ```
+
+For `deploy-large`, also review the vLLM args in the `deploy-large` target in `Makefile` — `--tensor-parallel-size` must match the number of GPUs, and `modelStorage.size` may need adjustment depending on model weight size.
 
 ## Networking
 
@@ -216,9 +276,11 @@ crusoe-kserve-example/
 │   └── templates/
 │       ├── model-storage.yaml         # StorageClass + PVC for large models
 │       ├── basic-llm.yaml             # NVIDIA single-GPU deployment
+│       ├── large-llm.yaml             # NVIDIA multi-GPU single-node deployment
 │       ├── multi-node-llm.yaml        # NVIDIA multi-node tensor parallel
 │       ├── disaggregated-llm.yaml     # NVIDIA prefill-decode split
-│       ├── amd-basic-llm.yaml         # AMD single-node deployment
+│       ├── amd-basic-llm.yaml         # AMD single-GPU deployment
+│       ├── amd-large-llm.yaml         # AMD multi-GPU single-node deployment
 │       └── amd-multi-node-llm.yaml    # AMD multi-node tensor parallel
 └── monitoring/
     ├── docker-compose.yml             # Grafana container (port 3000)

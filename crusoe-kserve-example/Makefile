@@ -1,4 +1,4 @@
-.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-70b deploy-multi-node deploy-disaggregated deploy-2xa100 deploy-amd-basic deploy-amd-minimax redeploy-amd-minimax deploy-amd-multi-node watch watch-metrics test test-amd-minimax chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
+.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
 
 SHELL := /bin/bash
 NAMESPACE ?= kserve-test
@@ -12,7 +12,6 @@ DOCKER_USERNAME ?= $(shell grep '^docker_username' $(_AMD_TFVARS) 2>/dev/null | 
 DOCKER_EMAIL    ?= $(shell grep '^docker_email'    $(_AMD_TFVARS) 2>/dev/null | sed 's/.*= *"//;s/"//')
 DOCKER_PASSWORD  ?= $(shell grep '^docker_password' $(_AMD_TFVARS) 2>/dev/null | sed 's/.*= *"//;s/"//')
 AMD_DRIVER_IMAGE ?= docker.io/$(DOCKER_USERNAME)/amd-gpu-driver
-DRY_RUN          ?= 0
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -27,35 +26,13 @@ setup: ## Provision cluster, install KServe, create namespace (terraform apply)
 	  terraform init && \
 	  terraform apply
 
-setup-amd: ## Provision AMD cluster, install AMD GPU operator + KServe (configure terraform-amd/terraform.tfvars first) [DRY_RUN=1 to preview]
-ifeq ($(DRY_RUN),1)
-	@echo ""
-	@echo "setup-amd dry run — steps that would be executed:"
-	@echo ""
-	@echo "  [1/3] terraform apply (terraform-amd/)"
-	@echo "        Create CMK cluster (crusoe_csi add-on only)"
-	@echo "        Create AMD GPU node pool and CPU node pool"
-	@echo "        Fetch kubeconfig"
-	@echo ""
-	@echo "  [2/3] install-amd-gpu-operator"
-	@echo "        Install cert-manager v1.15.1"
-	@echo "        Install AMD GPU operator v1.4.2"
-	@echo "        Create Docker registry secret in kube-amd-gpu (user: $(DOCKER_USERNAME))"
-	@echo "        Apply AMD DeviceConfig → $(AMD_DRIVER_IMAGE)"
-	@echo ""
-	@echo "  [3/3] install-kserve"
-	@echo "        Install KServe $(KSERVE_VERSION)"
-	@echo "        Patch storage-initializer for large model downloads"
-	@echo "        Create namespace '$(NAMESPACE)' with HuggingFace secret"
-	@echo ""
-else
+setup-amd: ## Provision AMD cluster, install AMD GPU operator + KServe (configure terraform-amd/terraform.tfvars first)
 	cd terraform-amd && \
 	  cp -n terraform.tfvars.example terraform.tfvars 2>/dev/null || true && \
 	  terraform init && \
 	  terraform apply
 	$(MAKE) install-amd-gpu-operator
 	$(MAKE) install-kserve HF_TOKEN=$(AMD_HF_TOKEN)
-endif
 
 install-amd-gpu-operator: ## Install cert-manager and AMD GPU operator (requires DOCKER_USERNAME, DOCKER_EMAIL, DOCKER_PASSWORD)
 	@if [ -z "$(DOCKER_USERNAME)" ] || [ -z "$(DOCKER_EMAIL)" ] || [ -z "$(DOCKER_PASSWORD)" ]; then \
@@ -134,38 +111,36 @@ patch-storage-initializer: ## Patch storage-initializer configmap for large mode
 # Deploy (Helm)
 # ---------------------------------------------------------------------------
 
-deploy-basic: ## Deploy single-GPU LLM (Qwen2.5-0.5B on 1x A100)
-	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
-	  --set hfToken=$(HF_TOKEN) \
-	  --set basic.enabled=true \
-	  --set multiNode.enabled=false \
-	  --set disaggregated.enabled=false
-
-deploy-70b: ## Deploy Qwen2.5-72B on 8x H100 (single node, TP=8)
+deploy-basic: ## Deploy single-GPU LLM (Qwen2.5-0.5B on 1x A100 or H100)
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=true \
 	  --set multiNode.enabled=false \
 	  --set disaggregated.enabled=false \
-	  --set modelStorage.enabled=true \
-	  --set modelStorage.size=250Gi \
-	  --set basic.model.uri=hf://Qwen/Qwen2.5-72B-Instruct \
-	  --set basic.model.name=qwen \
 	  --set basic.args[0]="--gpu-memory-utilization" \
 	  --set basic.args[1]="0.95" \
-	  --set basic.args[2]="--tensor-parallel-size" \
-	  --set-string basic.args[3]="8" \
-	  --set basic.args[4]="--enable-chunked-prefill" \
-	  --set basic.args[5]="--max-num-batched-tokens" \
-	  --set-string basic.args[6]="8192" \
-	  --set basic.resources.limits.gpu="8" \
-	  --set basic.resources.limits.cpu="64" \
-	  --set basic.resources.limits.memory=512Gi \
-	  --set basic.resources.requests.gpu="8" \
-	  --set basic.resources.requests.cpu="32" \
-	  --set basic.resources.requests.memory=256Gi
+	  --set basic.args[2]="--enable-chunked-prefill" \
+	  --set basic.args[3]="--max-num-batched-tokens" \
+	  --set-string basic.args[4]="4096"
 
-deploy-multi-node: ## Deploy multi-node LLM (Qwen2.5-72B on 2x8 A100)
+deploy-large: ## Deploy large single-node LLM (Qwen2.5-72B on 8x H100, TP=8) — edit values.yaml large: to change model/resources
+	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
+	  --set hfToken=$(HF_TOKEN) \
+	  --set basic.enabled=false \
+	  --set large.enabled=true \
+	  --set multiNode.enabled=false \
+	  --set disaggregated.enabled=false \
+	  --set modelStorage.enabled=true \
+	  --set modelStorage.size=250Gi \
+	  --set large.args[0]="--gpu-memory-utilization" \
+	  --set large.args[1]="0.95" \
+	  --set large.args[2]="--tensor-parallel-size" \
+	  --set-string large.args[3]="8" \
+	  --set large.args[4]="--enable-chunked-prefill" \
+	  --set large.args[5]="--max-num-batched-tokens" \
+	  --set-string large.args[6]="8192"
+
+deploy-multi-node: ## Deploy multi-node LLM (Qwen2.5-72B on 2x8 A100 or H100)
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=false \
@@ -179,62 +154,53 @@ deploy-amd-basic: ## Deploy single-GPU LLM on AMD MI300X (Qwen2.5-0.5B)
 	  --set amd.basic.enabled=true \
 	  --set multiNode.enabled=false \
 	  --set amd.multiNode.enabled=false \
-	  --set disaggregated.enabled=false
+	  --set disaggregated.enabled=false \
+	  --set amd.basic.args[0]="--gpu-memory-utilization" \
+	  --set amd.basic.args[1]="0.95" \
+	  --set amd.basic.args[2]="--enable-chunked-prefill" \
+	  --set amd.basic.args[3]="--max-num-batched-tokens" \
+	  --set-string amd.basic.args[4]="4096"
 
-deploy-amd-minimax: ## Deploy MiniMax-M2 on 8x MI300X (TP8+EP)
+deploy-amd-large: ## Deploy large single-node LLM on AMD MI300X (MiniMax-M2 on 8x MI300X, TP=8) — edit values.yaml amd.large: to change model/resources
 	kubectl delete pvc model-storage -n $(NAMESPACE) --ignore-not-found
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=false \
-	  --set amd.basic.enabled=true \
+	  --set amd.basic.enabled=false \
+	  --set amd.large.enabled=true \
 	  --set multiNode.enabled=false \
 	  --set amd.multiNode.enabled=false \
 	  --set disaggregated.enabled=false \
 	  --set modelStorage.enabled=true \
 	  --set modelStorage.size=1500Gi \
-	  --set amd.basic.model.uri=hf://MiniMaxAI/MiniMax-M2 \
-	  --set amd.basic.model.name=minimax \
-	  --set amd.basic.args[0]="--gpu-memory-utilization" \
-	  --set amd.basic.args[1]="0.95" \
-	  --set amd.basic.args[2]="--tensor-parallel-size" \
-	  --set-string amd.basic.args[3]="8" \
-	  --set amd.basic.args[4]="--enable-expert-parallel" \
-	  --set amd.basic.args[5]="--reasoning-parser" \
-	  --set amd.basic.args[6]="minimax_m2_append_think" \
-	  --set amd.basic.args[7]="--trust-remote-code" \
-	  --set amd.basic.resources.limits.gpu="8" \
-	  --set amd.basic.resources.limits.cpu="64" \
-	  --set amd.basic.resources.limits.memory=512Gi \
-	  --set amd.basic.resources.requests.gpu="8" \
-	  --set amd.basic.resources.requests.cpu="32" \
-	  --set amd.basic.resources.requests.memory=256Gi
+	  --set amd.large.args[0]="--gpu-memory-utilization" \
+	  --set amd.large.args[1]="0.95" \
+	  --set amd.large.args[2]="--tensor-parallel-size" \
+	  --set-string amd.large.args[3]="8" \
+	  --set amd.large.args[4]="--enable-expert-parallel" \
+	  --set amd.large.args[5]="--reasoning-parser" \
+	  --set amd.large.args[6]="minimax_m2_append_think" \
+	  --set amd.large.args[7]="--trust-remote-code"
 
-redeploy-amd-minimax: ## Update MiniMax-M2 args without deleting PVC (preserves downloaded model)
+redeploy-amd-large: ## Update AMD large model args without deleting PVC (preserves downloaded model)
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=false \
-	  --set amd.basic.enabled=true \
+	  --set amd.basic.enabled=false \
+	  --set amd.large.enabled=true \
 	  --set multiNode.enabled=false \
 	  --set amd.multiNode.enabled=false \
 	  --set disaggregated.enabled=false \
 	  --set modelStorage.enabled=true \
 	  --set modelStorage.size=1500Gi \
-	  --set amd.basic.model.uri=hf://MiniMaxAI/MiniMax-M2 \
-	  --set amd.basic.model.name=minimax \
-	  --set amd.basic.args[0]="--gpu-memory-utilization" \
-	  --set amd.basic.args[1]="0.95" \
-	  --set amd.basic.args[2]="--tensor-parallel-size" \
-	  --set-string amd.basic.args[3]="8" \
-	  --set amd.basic.args[4]="--enable-expert-parallel" \
-	  --set amd.basic.args[5]="--reasoning-parser" \
-	  --set amd.basic.args[6]="minimax_m2_append_think" \
-	  --set amd.basic.args[7]="--trust-remote-code" \
-	  --set amd.basic.resources.limits.gpu="8" \
-	  --set amd.basic.resources.limits.cpu="64" \
-	  --set amd.basic.resources.limits.memory=512Gi \
-	  --set amd.basic.resources.requests.gpu="8" \
-	  --set amd.basic.resources.requests.cpu="32" \
-	  --set amd.basic.resources.requests.memory=256Gi
+	  --set amd.large.args[0]="--gpu-memory-utilization" \
+	  --set amd.large.args[1]="0.95" \
+	  --set amd.large.args[2]="--tensor-parallel-size" \
+	  --set-string amd.large.args[3]="8" \
+	  --set amd.large.args[4]="--enable-expert-parallel" \
+	  --set amd.large.args[5]="--reasoning-parser" \
+	  --set amd.large.args[6]="minimax_m2_append_think" \
+	  --set amd.large.args[7]="--trust-remote-code"
 
 deploy-amd-multi-node: ## Deploy multi-node LLM on AMD MI300X (MiniMax-M2 on 2x8)
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
@@ -250,7 +216,19 @@ deploy-disaggregated: ## Deploy disaggregated prefill-decode (H100 + A100)
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=false \
 	  --set multiNode.enabled=false \
-	  --set disaggregated.enabled=true
+	  --set disaggregated.enabled=true \
+	  --set disaggregated.decode.args[0]="--tensor-parallel-size" \
+	  --set-string disaggregated.decode.args[1]="8" \
+	  --set disaggregated.decode.args[2]="--enforce-eager" \
+	  --set disaggregated.decode.args[3]="--gpu-memory-utilization" \
+	  --set disaggregated.decode.args[4]="0.90" \
+	  --set disaggregated.prefill.args[0]="--tensor-parallel-size" \
+	  --set-string disaggregated.prefill.args[1]="8" \
+	  --set disaggregated.prefill.args[2]="--enable-chunked-prefill" \
+	  --set disaggregated.prefill.args[3]="--max-num-batched-tokens" \
+	  --set-string disaggregated.prefill.args[4]="8192" \
+	  --set disaggregated.prefill.args[5]="--gpu-memory-utilization" \
+	  --set disaggregated.prefill.args[6]="0.90"
 
 # ---------------------------------------------------------------------------
 # Test & Benchmark
