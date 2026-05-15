@@ -1,0 +1,142 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: nccl-tests-gdr-16-h100
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+          - image: public.ecr.aws/hpc-cloud/nccl-tests:latest
+            imagePullPolicy: IfNotPresent
+            name: init
+            command: ["sh", "-c", "sleep 5"]
+          volumes:
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          containers:
+          - image: public.ecr.aws/hpc-cloud/nccl-tests:latest
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            name: nccl-test-launcher
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+             - name: NCCL_TOPO_FILE
+               value: /opt/nccl_topo/h100-80gb-sxm-ib-cloud-hypervisor.xml
+             - name: UCX_RNDV_SCHEME
+               value: "get_zcopy"
+             - name: UCX_TLS
+               value: "self,sm,cuda_copy"
+            command:
+            - /opt/amazon/openmpi/bin/mpirun
+            - --allow-run-as-root
+            - --tag-output
+            - -np
+            - "16"
+            - -N
+            - "8"
+            - -bind-to
+            - none
+            - -map-by
+            - slot
+            - -mca
+            - coll_hcoll_enable
+            - "0"
+            - -x
+            - NCCL_IB_PCI_RELAXED_ORDERING=1
+            - -x
+            - NCCL_IB_SPLIT_DATA_ON_QPS=0
+            - -x
+            - NCCL_IB_QPS_PER_CONNECTION=2
+            - -x
+            - NCCL_IB_MERGE_VFS=0
+            - -x
+            - NCCL_IB_HCA=^mlx5_0:1
+            - -x
+            - NCCL_IBEXT_DISABLE=1
+            - -x
+            - NCCL_TOPO_FILE
+            - -x
+            - PATH
+            - -x
+            - LD_LIBRARY_PATH
+            - -x
+            - NCCL_DEBUG=INFO
+            - -x
+            - NCCL_NVLS_ENABLE=1
+            - -x
+            - NCCL_IB_SL=1
+            - -x
+            - NCCL_DEBUG=trace
+            - /opt/nccl-tests/build/all_reduce_perf
+            - -b
+            - "8"
+            - -e
+            - "16G"
+            - -f
+            - "2"
+            - -t
+            - "1"
+            - -g
+            - "1"
+            - -c
+            - "1"
+            - -n
+            - "100"
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          runtimeClassName: nvidia
+          volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 64Gi
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          containers:
+          - image: public.ecr.aws/hpc-cloud/nccl-tests:latest
+            imagePullPolicy: IfNotPresent
+            name: nccl-worker
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+             - name: NCCL_TOPO_FILE
+               value: /opt/nccl_topo/h100-80gb-sxm-ib-cloud-hypervisor.xml
+             - name: NCCL_DEBUG
+               value: TRACE
+             - name: UCX_RNDV_SCHEME
+               value: "get_zcopy"
+             - name: UCX_TLS
+               value: "self,sm,cuda_copy"
+            volumeMounts:
+            - mountPath: /dev/shm
+              name: dshm
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                nvidia.com/hostdev: 8
+                memory: 128000Mi
+              requests:
+                nvidia.com/gpu: 8
+                nvidia.com/hostdev: 8
+                memory: 128000Mi

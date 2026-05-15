@@ -1,0 +1,92 @@
+# 01 — NCCL all_reduce_perf bandwidth test
+
+A 5-minute multi-node NCCL test that proves the InfiniBand fabric and NCCL stack are healthy
+before you commit to a longer training-style benchmark.
+
+Built on the official Crusoe-recommended pattern documented at
+<https://support.crusoecloud.com/hc/en-us/articles/36499606523291>, adapted for multi-SKU
+use with prebuilt `public.ecr.aws/hpc-cloud/nccl-tests:latest` (no image build required).
+
+## When to run
+
+- **First** thing on a freshly provisioned CMK GPU cluster
+- **Before** running [`../02-torchtitan-llama3-8b/`](../02-torchtitan-llama3-8b/) — fabric
+  bugs (e.g. bad `NCCL_IB_GID_INDEX`, misconfigured HCAs) surface here much faster
+- **When triaging** a customer report of slow training — isolates network from app stack
+
+## Prerequisites
+
+- Kubeflow MPI Operator v0.6.0 — install with `../00-prerequisites/install-mpi-operator.sh`
+- ≥2 GPU worker nodes of the same SKU (the manifests are configured for `Worker.replicas: 2`)
+- Standard CMK add-ons present: `nvidia_gpu_operator`, `nvidia_network_operator`, `crusoe_csi`
+
+## Pick your SKU and apply
+
+| Cluster SKU | Manifest |
+|---|---|
+| H100 80GB SXM IB | `nccl-test-h100.yaml` |
+| H200 141GB SXM IB | `nccl-test-h200.yaml` |
+
+For B200/B300 today, use the sibling [`b300-nccltest-cmk-mpijob/`](../../b300-nccltest-cmk-mpijob/)
+in this repo until Blackwell variants are added here.
+
+```bash
+# 1. Create a dedicated namespace
+kubectl create namespace nccl-test
+
+# 2. Apply the manifest for your SKU
+kubectl -n nccl-test create -f nccl-test-h200.yaml
+
+# 3. Watch pods come up (image pull can take 5–10 min in some regions; first time only)
+kubectl -n nccl-test get pods -w
+
+# 4. Tail the launcher logs (bandwidth output appears here)
+kubectl -n nccl-test logs -f -l training.kubeflow.org/job-role=launcher
+```
+
+## Reading the output
+
+`all_reduce_perf` produces a 32-row table from 8 bytes to 16 GiB. The `busbw` column on the
+right side of each row is what to read — the bus bandwidth that NCCL achieved across the
+ring of GPUs.
+
+**Look for:**
+
+- `busbw at 16 GiB`: this is the asymptotic, bandwidth-dominated number. For H200 16-GPU
+  SHARP-enabled clusters, expect **~480–490 GB/s**. Significantly lower means the IB fabric
+  or NCCL config is unhealthy.
+- `# Out of bounds values : 0 OK` — must be `0`. Any nonzero is a correctness failure.
+- Latency at 8 B: should be ~25–30 µs for 16-rank all-reduce. Anomalous (>100 µs) suggests
+  IB issues.
+
+Reference run on 2× h200-141gb-sxm-ib.8x in `eu-iceland1-a` (2026-05-14):
+
+```
+   size           count   type   redop    out-of-place              in-place
+                                          time(us) algbw busbw     time(us) algbw busbw
+  17179869184   4294967296 float   sum   66197      259.5  486.6     66257     259.3  486.2
+# Out of bounds values : 0 OK
+# Avg bus bandwidth    : 137.625
+```
+
+(`Avg bus bandwidth` is averaged across the full size range and is pulled down by the
+latency-dominated small sizes — focus on the large-size busbw row.)
+
+## Cleanup
+
+```bash
+kubectl -n nccl-test delete mpijob nccl-tests-gdr-16-h200    # (or -h100)
+# Optionally tear the namespace
+kubectl delete namespace nccl-test
+```
+
+The mpi-operator install persists across runs — leave it in place for next time.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| busbw plateaus at < 50 GB/s | Wrong NCCL_IB_HCA, or `NCCL_IB_GID_INDEX=3` set on Hopper | Verify env block matches the per-SKU manifest in this directory |
+| MPIJob stuck pending | mpi-operator not running | `kubectl -n mpi-operator get pods`; re-run `00-prerequisites/install-mpi-operator.sh` |
+| Image pull > 10 min | Iceland egress slowness (known) | Wait it out; the image caches on node after first pull |
+| `Out of bounds values : N` (nonzero) | Bad GPU or memory corruption | Check `kubectl -n nccl-test logs <worker> -c nccl-worker` for hardware-level errors |
