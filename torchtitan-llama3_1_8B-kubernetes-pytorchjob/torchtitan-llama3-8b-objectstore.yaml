@@ -1,6 +1,4 @@
-# Apply setup-local-c4-datavol.yaml before first run
-# of this pytorchjob - to populate the data-disk pvc with the c4 dataset
-# dataset_path gives the path to the directory containing the 'en' directory with the webdataset files
+# This job works on the assumption that you created a bucket and populated it with the C4 dataset
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -42,12 +40,13 @@ data:
     max_norm = 1.0
     steps = 1000
     dataset = "c4"
-    dataset_path = "/data/c4"
+    dataset_path = "s3://c4-icat/"
 
     [parallelism]
     data_parallel_replicate_degree = 1
-    data_parallel_shard_degree = 16 
-    tensor_parallel_degree = 2
+    # -1 means shard across all 16 GPUs (16-way FSDP across both nodes).
+    data_parallel_shard_degree = -1
+    tensor_parallel_degree = 1
     pipeline_parallel_degree = 1
     context_parallel_degree = 1
 
@@ -126,6 +125,12 @@ spec:
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
             - name: LD_LIBRARY_PATH
               value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            - name: AWS_ACCESS_KEY_ID
+              value: "CKIAQGQ1JYJLR24V9N8N"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "civP6SOwWV70+hvSBwd1/piyqWvArdQdY+GLRyOY"
+            - name: S3_ENDPOINT_URL
+              value: "https://object.eu-iceland1-a.crusoecloudcompute.com"
             resources:
               limits:
                 nvidia.com/gpu: "8"
@@ -134,8 +139,6 @@ spec:
                 nvidia.com/gpu: "8"
                 nvidia.com/hostdev: "8"
             volumeMounts:
-            - name: c4-dataset
-              mountPath: /data
             - name: config
               mountPath: /config
             - name: outputs
@@ -154,9 +157,6 @@ spec:
             - name: outputs
               mountPath: /outputs
           volumes:
-          - name: c4-dataset
-            persistentVolumeClaim:
-              claimName: data-disk
           - name: config
             configMap:
               name: torchtitan-llama3-8b-config
@@ -222,6 +222,12 @@ spec:
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
             - name: LD_LIBRARY_PATH
               value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            - name: AWS_ACCESS_KEY_ID
+              value: "CKIAQGQ1JYJLR24V9N8N"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "civP6SOwWV70+hvSBwd1/piyqWvArdQdY+GLRyOY"
+            - name: S3_ENDPOINT_URL
+              value: "https://object.eu-iceland1-a.crusoecloudcompute.com"
             resources:
               limits:
                 nvidia.com/gpu: "8"
@@ -230,8 +236,6 @@ spec:
                 nvidia.com/gpu: "8"
                 nvidia.com/hostdev: "8"
             volumeMounts:
-            - name: c4-dataset
-              mountPath: /data
             - name: config
               mountPath: /config
             - name: outputs
@@ -243,9 +247,6 @@ spec:
             - name: infiniband
               mountPath: /dev/infiniband
           volumes:
-          - name: c4-dataset
-            persistentVolumeClaim:
-              claimName: data-disk
           - name: config
             configMap:
               name: torchtitan-llama3-8b-config
