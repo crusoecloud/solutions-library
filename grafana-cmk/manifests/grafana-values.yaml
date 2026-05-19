@@ -1,0 +1,54 @@
+# Helm values for grafana/grafana chart (chart 10.5.x, Grafana 12.x)
+#
+# Install:
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm repo update
+#   helm install grafana grafana/grafana \
+#     --namespace monitoring \
+#     --values manifests/grafana-values.yaml
+#
+# Retrieve the generated admin password after install:
+#   kubectl get secret --namespace monitoring grafana \
+#     -o jsonpath="{.data.admin-password}" | base64 --decode; echo
+
+# Use the PVC created by manifests/grafana-pvc.yaml
+persistence:
+  enabled: true
+  existingClaim: grafana-storage
+
+# Enable the k8s-sidecar to auto-load datasources and dashboards.
+# The sidecar's default RESOURCE=both means it watches ConfigMaps AND Secrets
+# in this namespace with the matching labels, provisioning them into Grafana
+# without a pod restart.
+#
+# Datasource: apply manifests/grafana-datasource-secret.yaml.example via envsubst
+# to create the crusoe-datasource Secret before or after helm install.
+# Dashboards: apply manifests/grafana-dashboards-configmap.yaml.
+sidecar:
+  datasources:
+    enabled: true
+    label: grafana_datasource
+    labelValue: "1"
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    provider:
+      name: crusoe
+      folder: "Crusoe"
+      allowUiUpdates: false
+
+# ClusterIP service — public access is provided by the separate grafana-service-lb.yaml.
+# Users who want port-forward only can skip applying grafana-service-lb.yaml.
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

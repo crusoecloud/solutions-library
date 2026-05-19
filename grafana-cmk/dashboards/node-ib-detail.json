@@ -1,0 +1,601 @@
+{
+  "uid": "crusoe-ib-node",
+  "title": "Crusoe \u2014 InfiniBand Node View",
+  "tags": [
+    "crusoe",
+    "infiniband",
+    "node"
+  ],
+  "schemaVersion": 38,
+  "version": 3,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "cluster",
+        "label": "Cluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "crusoe-telemetry"
+        },
+        "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {}
+      },
+      {
+        "name": "node",
+        "label": "Node",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "crusoe-telemetry"
+        },
+        "query": "label_values(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}, vm_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Selected Nodes RX",
+      "description": "Total RX bandwidth across selected nodes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Selected Nodes TX",
+      "description": "Total TX bandwidth across selected nodes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "RX Errors",
+      "description": "Total RX errors across selected nodes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Link Integrity Errors",
+      "description": "Local link integrity errors across selected nodes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Aggregate RX per Node",
+      "description": "Aggregate RX bandwidth per node (sum across all 8 HCAs)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+          "legendFormat": "{{vm_name}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Aggregate TX per Node",
+      "description": "Aggregate TX bandwidth per node (sum across all 8 HCAs)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+          "legendFormat": "{{vm_name}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Per-HCA RX Bandwidth",
+      "description": "RX bandwidth per HCA port for selected nodes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 8",
+          "legendFormat": "{{vm_name}} {{hca_number}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Per-HCA TX Bandwidth",
+      "description": "TX bandwidth per HCA port for selected nodes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 8",
+          "legendFormat": "{{vm_name}} {{hca_number}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Per-HCA RX Utilization %",
+      "description": "RX utilization as % of line rate per HCA",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 1e9 / ignoring(gig_bit_per_sec) crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"} * 100",
+          "legendFormat": "{{vm_name}} {{hca_number}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Per-HCA TX Utilization %",
+      "description": "TX utilization as % of line rate per HCA",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 1e9 / ignoring(gig_bit_per_sec) crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"} * 100",
+          "legendFormat": "{{vm_name}} {{hca_number}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "RX Errors (per HCA)",
+      "description": "RX error rate per HCA",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])",
+          "legendFormat": "{{vm_name}} {{hca_number}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "TX Wait / Back-pressure (per HCA)",
+      "description": "TX wait cycles per HCA \u2014 indicates congestion or flow control",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-telemetry"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "expr": "rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])",
+          "legendFormat": "{{vm_name}} {{hca_number}}"
+        }
+      ]
+    }
+  ]
+}

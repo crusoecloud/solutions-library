@@ -91,6 +91,10 @@ Crusoe Cloud GPU VMs are equipped with high-performance NVIDIA Mellanox InfiniBa
 
 For your applications running on Crusoe Managed Kubernetes cluster, you can collect, filter and ship logs using [Fluent Bit](https://fluentbit.io/) to send to a centralized location. This solution provides a set of Kubernetes manifest files needed to configure those logs to be sent to Google Cloud Logging using Fluent Bit.
 
+[Self-hosted Grafana on Crusoe Managed Kubernetes](./grafana-cmk/)
+
+A team-dedicated Grafana deployment for Crusoe Managed Kubernetes / Managed Slurm clusters. Pulls GPU, DCGM, power, and InfiniBand metrics from the Crusoe Telemetry Relay endpoint and ships pre-built dashboards (cluster GPU overview, per-node GPU detail, Xid / ECC error tracking, GPU power, and InfiniBand fabric activity). Includes a zero-dependency two-node H100 burn-in benchmark to validate the dashboards end-to-end.
+
 ### Identity & Security
 
 [Crusoe to Splunk HEC Log Forwarder](./crusoe-splunk-hec/README.md)
