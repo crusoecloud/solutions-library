@@ -67,7 +67,7 @@ What this is not: a full observability stack. Telemetry Relay currently exposes 
   ```bash
   kubectl get nodes
   ```
-- `helm` v3.x installed:
+- `helm` (v3 or v4) installed:
   ```bash
   helm version
   ```
@@ -75,13 +75,23 @@ What this is not: a full observability stack. Telemetry Relay currently exposes 
   ```bash
   crusoe projects list
   ```
+- `envsubst` (from GNU `gettext`) — used in Step 3 to expand the datasource template:
+  ```bash
+  # macOS:  brew install gettext
+  # Debian/Ubuntu: apt-get install -y gettext-base
+  envsubst --version
+  ```
+- `python3` — used in Step 5 to re-save the datasource (one-time post-install workaround for a Grafana 12.3.x quirk):
+  ```bash
+  python3 --version
+  ```
 - **Telemetry Relay enabled on your project.** This feature is currently in limited availability — contact your Crusoe account team to request enablement before proceeding.
 - **Crusoe Watch Agent installed on the cluster.** The Watch Agent collects infrastructure and DCGM metrics and forwards them to the Telemetry Relay backend. It is installed by default on Managed Slurm clusters. For CMK clusters, verify with your account team or check for the agent DaemonSet:
   ```bash
   kubectl get daemonset -A | grep -i watch
   ```
 
-  > **Note:** The Watch Agent already provides DCGM metrics. Do not install a separate DCGM exporter — you will get duplicate series.
+  > **Note:** The Watch Agent already provides DCGM metrics. If your cluster also runs `nvidia-dcgm-exporter` from the NVIDIA GPU Operator (the default on GPU CMK clusters), you will see some metric series reported twice — usually harmless for the dashboards in this repo, but worth knowing if you build alerts against a counter and see double the expected rate. To deduplicate, configure the Watch Agent to exclude DCGM or scope the exporter scrape with a `relabel_config` drop.
 
 ---
 
@@ -310,39 +320,39 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 
 ## Troubleshooting
 
-### Data source test returns 401 Unauthorized
+### "Save & test" button returns 401 Unauthorized
 
-The monitoring token is expired or was created for a different project. Create a new token:
+**This is expected and not an error.** The Grafana datasource "Save & test" button calls `/api/v1/status/buildinfo`, which the Crusoe Telemetry Relay does not implement. It returns 401 regardless of whether your token is valid. **Do not regenerate your token based on this 401 alone.**
+
+To verify the datasource actually works, open the **Crusoe** folder under **Dashboards** and check whether panels display data. If they do, the datasource is fine.
+
+### Dashboards return 401 / "Authentication to data source failed" on every panel
+
+This is the real failure mode. The token is genuinely not authenticating. Two common causes:
+
+**a. The Grafana 12.3.x secureJsonData quirk.** See [the dedicated section below](#dashboard-panels-show-authentication-to-data-source-failed-401-even-though-the-token-is-valid). If you skipped the Step 5 re-save, run it now.
+
+**b. The token is expired or scoped to a different project.** Verify the project ID matches:
+
+```bash
+crusoe projects list
+# compare to:
+kubectl get secret crusoe-monitoring-token -n monitoring \
+  -o jsonpath='{.data.PROJECT_ID}' | base64 -d; echo
+```
+
+If the project is right but you suspect token expiry, regenerate and re-apply:
 
 ```bash
 crusoe monitoring tokens create
 ```
 
-Re-apply the datasource Secret with the new token, then trigger a provisioning reload:
-
-```bash
-export MONITORING_TOKEN=<new-token>
-export PROJECT_ID=<project-id>
-envsubst < manifests/grafana-datasource-secret.yaml.example | kubectl apply -f -
-
-# Reload datasource provisioning without restarting Grafana:
-ADMIN_PASS=$(kubectl get secret grafana -n monitoring \
-  -o jsonpath="{.data.admin-password}" | base64 --decode)
-kubectl exec -n monitoring deployment/grafana -- \
-  curl -s -X POST -u "admin:${ADMIN_PASS}" \
-  http://localhost:3000/api/admin/provisioning/datasources/reload
-```
-
-Verify the project ID is correct — `PROJECT_ID` must match exactly:
-
-```bash
-crusoe projects list
-```
-
-> **Health check button shows 401 (but panels work fine).** The Grafana datasource "Save & test"
-> button calls `/api/v1/status/buildinfo` — a path that Crusoe's Telemetry Relay does not implement.
-> This causes a 401 on the test button regardless of whether the token is correct. Verify the
-> datasource is actually working by checking whether the dashboards display data.
+1. Edit `manifests/monitoring-token-secret.yaml` locally and replace `MONITORING_TOKEN` with the new value (the file uses `stringData`, so paste the raw token — no base64 required).
+2. Re-apply the secret:
+   ```bash
+   kubectl apply -f manifests/monitoring-token-secret.yaml
+   ```
+3. Re-run the [Step 5 re-save block](#step-5-log-in-and-verify) to push the new token into Grafana's `secureJsonData` (the sidecar does not automatically update `secureJsonData` when only the underlying token Secret changes).
 
 ### Dashboard panels show "Authentication to data source failed" / 401 even though the token is valid
 
@@ -455,10 +465,13 @@ kubectl describe pvc grafana-storage -n monitoring
 
 After deploying Grafana, the easiest way to confirm the GPU dashboards are wired correctly is to run a sustained multi-node training job and watch the panels populate.
 
-The [`examples/slurm-gpu-burn/`](examples/slurm-gpu-burn/) example is a zero-dependency two-node H100 synthetic training benchmark — no HuggingFace tokens, no dataset download, no `pip install`. It runs ~10–20 minutes and produces sustained DCGM metrics across SM utilization, memory, NVLink, IB, power, and temperature. See its own [README](examples/slurm-gpu-burn/README.md) for usage.
+> **Slurm cluster required for this section.** The [`examples/slurm-gpu-burn/`](examples/slurm-gpu-burn/) benchmark below is launched via `sbatch`, which assumes a Crusoe Managed Slurm cluster (or Slurm-on-CMK with Pyxis/enroot). On a plain CMK cluster without Slurm, drive the GPU dashboards with any GPU workload you already have — a long-running `kubectl run` of `nvcr.io/nvidia/pytorch:25.01-py3` running a synthetic matmul loop produces the same SM-utilization / memory / power signals.
+
+The `examples/slurm-gpu-burn/` example is a zero-dependency two-node H100 synthetic training benchmark — no HuggingFace tokens, no dataset download, no `pip install`. It runs ~10–20 minutes and produces sustained DCGM metrics across SM utilization, memory, NVLink, IB, power, and temperature. See its own [README](examples/slurm-gpu-burn/README.md) for usage.
 
 ```bash
-sbatch examples/slurm-gpu-burn/train.sbatch
+# From the Slurm login node, after copying train.py + train.sbatch to your home directory:
+sbatch train.sbatch
 ```
 
 ---
