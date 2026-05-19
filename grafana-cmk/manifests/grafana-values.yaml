@@ -16,13 +16,22 @@ persistence:
   enabled: true
   existingClaim: grafana-storage
 
+# Force Recreate rollouts: the Crusoe SSD CSI driver provisions ReadWriteOnce
+# volumes, so the default RollingUpdate strategy deadlocks ("Multi-Attach
+# error: Volume is already used by pod(s)") because Kubernetes tries to start
+# the new replica before terminating the old one. Recreate tears the old pod
+# down first, releases the PVC, then schedules the new pod.
+deploymentStrategy:
+  type: Recreate
+
 # Enable the k8s-sidecar to auto-load datasources and dashboards.
 # The sidecar's default RESOURCE=both means it watches ConfigMaps AND Secrets
 # in this namespace with the matching labels, provisioning them into Grafana
 # without a pod restart.
 #
-# Datasource: apply manifests/grafana-datasource-secret.yaml.example via envsubst
-# to create the crusoe-datasource Secret before or after helm install.
+# Datasource: apply manifests/grafana-datasource-configmap.yaml (no secrets in it;
+# the token lives in the crusoe-monitoring-token Secret and is consumed by the
+# crusoe-auth-proxy sidecar declared in extraContainers below).
 # Dashboards: apply manifests/grafana-dashboards-configmap.yaml.
 sidecar:
   datasources:
@@ -52,7 +61,71 @@ service:
 resources:
   requests:
     cpu: 200m
-    memory: 256Mi
-  limits:
-    cpu: 500m
     memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+# 512Mi memory / 500m cpu (chart default) OOMKills when rendering multiple
+# dashboards against a cluster with thousands of metric series — observed on
+# come-scale-away (~1700 DCGM series, 6 dashboards). 2Gi is comfortable for
+# both query rendering and the small Caddy sidecar.
+
+# Auth-injecting sidecar: Grafana points its datasource at http://localhost:8888
+# (no auth headers in Grafana's own config), and this Caddy sidecar adds the
+# `Authorization: Bearer <token>` header before forwarding to the Crusoe
+# Metrics endpoint. This sidesteps the Grafana 12.3.x bug where sidecar-
+# provisioned `secureJsonData.httpHeaderValue1` is not applied to outgoing
+# requests (especially on the resources-API path used for template-variable
+# label_values lookups) — see https://github.com/grafana/grafana/issues — and
+# eliminates the need to re-save the datasource via the API after every pod
+# restart. MONITORING_TOKEN and PROJECT_ID are sourced from the
+# crusoe-monitoring-token Secret applied in Step 2 of the README.
+extraContainers: |
+  - name: crusoe-auth-proxy
+    image: caddy:2-alpine
+    env:
+      - name: MONITORING_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: crusoe-monitoring-token
+            key: MONITORING_TOKEN
+      - name: PROJECT_ID
+        valueFrom:
+          secretKeyRef:
+            name: crusoe-monitoring-token
+            key: PROJECT_ID
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        cat > /tmp/Caddyfile <<'EOF'
+        {
+          admin off
+          auto_https off
+          persist_config off
+        }
+        :8888 {
+          uri replace /api/v1 /v1alpha5/projects/{$PROJECT_ID}/metrics/timeseries/api/v1
+          reverse_proxy https://api.crusoecloud.com {
+            header_up Authorization "Bearer {$MONITORING_TOKEN}"
+            header_up Host api.crusoecloud.com
+          }
+        }
+        EOF
+        exec caddy run --config /tmp/Caddyfile --adapter caddyfile
+    ports:
+      - name: auth-proxy
+        containerPort: 8888
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    livenessProbe:
+      httpGet:
+        path: /api/v1/labels
+        port: 8888
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      failureThreshold: 3
