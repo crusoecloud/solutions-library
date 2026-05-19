@@ -54,7 +54,7 @@ What this is not: a full observability stack. Telemetry Relay currently exposes 
   │  │  grafana-lb Svc  │                                    │
   │  │  (LoadBalancer)  │                                    │
   └──┴────────┬─────────┴────────────────────────────────────┘
-              │ :80
+              │ :3000
               ▼
          User Browser
 ```
@@ -212,9 +212,11 @@ Wait for an external IP to be assigned (this can take 1–2 minutes on Crusoe):
 kubectl get svc grafana-lb -n monitoring -w
 ```
 
-Once `EXTERNAL-IP` shows an IP address, Grafana is accessible at `http://<EXTERNAL-IP>`.
+Once `EXTERNAL-IP` shows an IP address, Grafana is accessible at `http://<EXTERNAL-IP>:3000`.
 
-> **Security warning:** This service exposes Grafana directly to the public internet on port 80 with no TLS. For production use, add an ingress controller with TLS termination and an authentication proxy (e.g. [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)). At minimum, restrict the LoadBalancer source ranges in `grafana-service-lb.yaml` to your IP range:
+> **Why port 3000 and not 80?** The Grafana Helm chart's ClusterIP service ends up on port 3000 on Crusoe Managed Kubernetes regardless of the `service.port` value passed in `grafana-values.yaml`, so this repo's `grafana-service-lb.yaml` exposes 3000 to match. If you need port 80 externally, add an ingress controller (recommended for production anyway).
+
+> **Security warning:** This service exposes Grafana directly to the public internet on port 3000 with no TLS. For production use, add an ingress controller with TLS termination and an authentication proxy (e.g. [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)). At minimum, restrict the LoadBalancer source ranges in `grafana-service-lb.yaml` to your IP range:
 > ```yaml
 > spec:
 >   loadBalancerSourceRanges:
@@ -223,7 +225,7 @@ Once `EXTERNAL-IP` shows an IP address, Grafana is accessible at `http://<EXTERN
 >
 > For a quick local test without a public IP, skip the LoadBalancer and use port-forward instead:
 > ```bash
-> kubectl port-forward -n monitoring svc/grafana 3000:80
+> kubectl port-forward -n monitoring svc/grafana 3000:3000
 > # Then open http://localhost:3000
 > ```
 
@@ -238,7 +240,7 @@ kubectl get secret --namespace monitoring grafana \
   -o jsonpath="{.data.admin-password}" | base64 --decode; echo
 ```
 
-Log in at `http://<EXTERNAL-IP>` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Change the password after first login.
+Log in at `http://<EXTERNAL-IP>:3000` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Change the password after first login.
 
 Re-save the datasource (one-time, required on Grafana 12.3.x):
 
@@ -393,7 +395,9 @@ This requires `editable: true` on the datasource (the default in
 `grafana-datasource-secret.yaml.example`). Re-test by reloading a dashboard — panels should now
 populate.
 
-### Data source test passes but dashboards show no data
+### Dashboards render but every panel says "No data"
+
+The datasource is reaching Crusoe (no 401), but no metrics come back. Common causes:
 
 - **Watch Agent not installed.** If no Watch Agent is running on the cluster, no metrics reach the Telemetry Relay backend. Check with your Crusoe account team.
 - **Telemetry Relay not enabled.** Even with the Watch Agent, the scrape endpoint must be enabled per-project. Contact your account team if the endpoint returns 404 or empty results.
@@ -440,7 +444,8 @@ The `grafana_dashboard: "1"` label is what the sidecar watches — without it, t
 Crusoe LoadBalancer provisioning can take 2–3 minutes. If it remains pending longer, check your project's LB quota with your account team. As a workaround, use port-forward:
 
 ```bash
-kubectl port-forward -n monitoring svc/grafana 3000:80
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+# Then open http://localhost:3000
 ```
 
 ### PVC stuck in `Pending`

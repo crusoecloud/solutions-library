@@ -38,11 +38,15 @@ sidecar:
       folder: "Crusoe"
       allowUiUpdates: false
 
-# ClusterIP service — public access is provided by the separate grafana-service-lb.yaml.
-# Users who want port-forward only can skip applying grafana-service-lb.yaml.
+# ClusterIP service on port 3000 (matches both the pod's listening port and the
+# grafana-service-lb.yaml LoadBalancer). Set explicitly to 3000 — the chart's
+# default `service.port: 80` is silently coerced to 3000 on Crusoe Managed
+# Kubernetes, so we align here to keep `kubectl port-forward svc/grafana
+# 3000:3000` working consistently. Public access is provided by the separate
+# grafana-service-lb.yaml; users who want port-forward only can skip applying it.
 service:
   type: ClusterIP
-  port: 80
+  port: 3000
   targetPort: 3000
 
 resources:
