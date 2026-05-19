@@ -1,4 +1,4 @@
-# WARNING: This service exposes Grafana directly to the public internet on port 80.
+# WARNING: This service exposes Grafana directly to the public internet on port 3000.
 # For production use, place Grafana behind an ingress controller with TLS termination
 # and an authentication proxy (e.g. oauth2-proxy). At minimum, change the Grafana
 # admin password from the generated default and restrict LoadBalancer source ranges:
@@ -8,8 +8,13 @@
 #       - "203.0.113.0/24"   # your office CIDR
 #
 # For an internal-only deployment, skip this file and use `kubectl port-forward` instead:
-#   kubectl port-forward -n monitoring svc/grafana 3000:80
+#   kubectl port-forward -n monitoring svc/grafana 3000:3000
 #
+# Note: port is 3000 (not 80) because the Grafana Helm chart's ClusterIP service
+# ends up on port 3000 on Crusoe Managed Kubernetes regardless of the
+# `service.port` value passed in `grafana-values.yaml`. Keeping both this LB and
+# the chart-created svc on port 3000 keeps `kubectl port-forward svc/grafana 3000:3000`
+# working uniformly.
 apiVersion: v1
 kind: Service
 metadata:
@@ -23,6 +28,6 @@ spec:
     app.kubernetes.io/name: grafana
   ports:
     - name: http
-      port: 80
+      port: 3000
       targetPort: 3000
       protocol: TCP

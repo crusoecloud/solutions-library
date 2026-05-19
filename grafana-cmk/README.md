@@ -7,11 +7,11 @@
 
 ![Dashboard overview](assets/dashboard-view.png)
 
-This solution deploys Grafana on a Crusoe Managed Kubernetes (CMK) cluster and configures it to pull GPU, node, and Slurm metrics from the Crusoe Telemetry Relay endpoint. You get a persistent Grafana instance you control, with pre-built dashboards for GPU utilization, per-node GPU detail, DCGM/Xid error tracking, GPU power, and InfiniBand fabric activity.
+This solution deploys Grafana on a Crusoe Managed Kubernetes (CMK) cluster and configures it to pull GPU, node, and Slurm metrics from the Crusoe Metrics endpoint. You get a persistent Grafana instance you control, with pre-built dashboards for GPU utilization, per-node GPU detail, DCGM/Xid error tracking, GPU power, and InfiniBand fabric activity.
 
 What this is: a self-managed Grafana deployment best suited for teams that want dedicated dashboards for CMK or Managed Slurm workloads. Support is best-effort. For fully managed observability, the metrics are also available in Crusoe Command Center without any setup.
 
-What this is not: a full observability stack. Telemetry Relay currently exposes infrastructure and GPU metrics only — logs and distributed traces are not available through this endpoint. Sub-minute scrape intervals are not supported. See [Limitations](#limitations-and-next-steps) for details.
+What this is not: a full observability stack. Crusoe Metrics currently exposes infrastructure and GPU metrics only — logs and distributed traces are not available through this endpoint. Sub-minute scrape intervals are not supported. See [Limitations](#limitations-and-next-steps) for details.
 
 ---
 
@@ -35,7 +35,7 @@ What this is not: a full observability stack. Telemetry Relay currently exposes 
                                      │ Prometheus-compatible query API
                                      ▼
                         ┌────────────────────────────────────┐
-                        │  Telemetry Relay Endpoint          │
+                        │  Crusoe Metrics Endpoint          │
                         │  api.crusoecloud.com/v1alpha5/...  │
                         │  .../metrics/timeseries            │
                         └────────────┬───────────────────────┘
@@ -54,7 +54,7 @@ What this is not: a full observability stack. Telemetry Relay currently exposes 
   │  │  grafana-lb Svc  │                                    │
   │  │  (LoadBalancer)  │                                    │
   └──┴────────┬─────────┴────────────────────────────────────┘
-              │ :80
+              │ :3000
               ▼
          User Browser
 ```
@@ -67,7 +67,7 @@ What this is not: a full observability stack. Telemetry Relay currently exposes 
   ```bash
   kubectl get nodes
   ```
-- `helm` v3.x installed:
+- `helm` (v3 or v4) installed:
   ```bash
   helm version
   ```
@@ -75,13 +75,23 @@ What this is not: a full observability stack. Telemetry Relay currently exposes 
   ```bash
   crusoe projects list
   ```
-- **Telemetry Relay enabled on your project.** This feature is currently in limited availability — contact your Crusoe account team to request enablement before proceeding.
-- **Crusoe Watch Agent installed on the cluster.** The Watch Agent collects infrastructure and DCGM metrics and forwards them to the Telemetry Relay backend. It is installed by default on Managed Slurm clusters. For CMK clusters, verify with your account team or check for the agent DaemonSet:
+- `envsubst` (from GNU `gettext`) — used in Step 3 to expand the datasource template:
+  ```bash
+  # macOS:  brew install gettext
+  # Debian/Ubuntu: apt-get install -y gettext-base
+  envsubst --version
+  ```
+- `python3` — used in Step 5 to re-save the datasource (one-time post-install workaround for a Grafana 12.3.x quirk):
+  ```bash
+  python3 --version
+  ```
+- **Crusoe Metrics enabled on your project.** This feature is currently in limited availability — contact your Crusoe account team to request enablement before proceeding.
+- **Crusoe Watch Agent installed on the cluster.** The Watch Agent collects infrastructure and DCGM metrics and forwards them to the Crusoe Metrics backend. It is installed by default on Managed Slurm clusters. For CMK clusters, verify with your account team or check for the agent DaemonSet:
   ```bash
   kubectl get daemonset -A | grep -i watch
   ```
 
-  > **Note:** The Watch Agent already provides DCGM metrics. Do not install a separate DCGM exporter — you will get duplicate series.
+  > **Note:** The Watch Agent already provides DCGM metrics. If your cluster also runs `nvidia-dcgm-exporter` from the NVIDIA GPU Operator (the default on GPU CMK clusters), you will see some metric series reported twice — usually harmless for the dashboards in this repo, but worth knowing if you build alerts against a counter and see double the expected rate. To deduplicate, configure the Watch Agent to exclude DCGM or scope the exporter scrape with a `relabel_config` drop.
 
 ---
 
@@ -202,9 +212,11 @@ Wait for an external IP to be assigned (this can take 1–2 minutes on Crusoe):
 kubectl get svc grafana-lb -n monitoring -w
 ```
 
-Once `EXTERNAL-IP` shows an IP address, Grafana is accessible at `http://<EXTERNAL-IP>`.
+Once `EXTERNAL-IP` shows an IP address, Grafana is accessible at `http://<EXTERNAL-IP>:3000`.
 
-> **Security warning:** This service exposes Grafana directly to the public internet on port 80 with no TLS. For production use, add an ingress controller with TLS termination and an authentication proxy (e.g. [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)). At minimum, restrict the LoadBalancer source ranges in `grafana-service-lb.yaml` to your IP range:
+> **Why port 3000 and not 80?** The Grafana Helm chart's ClusterIP service ends up on port 3000 on Crusoe Managed Kubernetes regardless of the `service.port` value passed in `grafana-values.yaml`, so this repo's `grafana-service-lb.yaml` exposes 3000 to match. If you need port 80 externally, add an ingress controller (recommended for production anyway).
+
+> **Security warning:** This service exposes Grafana directly to the public internet on port 3000 with no TLS. For production use, add an ingress controller with TLS termination and an authentication proxy (e.g. [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)). At minimum, restrict the LoadBalancer source ranges in `grafana-service-lb.yaml` to your IP range:
 > ```yaml
 > spec:
 >   loadBalancerSourceRanges:
@@ -213,7 +225,7 @@ Once `EXTERNAL-IP` shows an IP address, Grafana is accessible at `http://<EXTERN
 >
 > For a quick local test without a public IP, skip the LoadBalancer and use port-forward instead:
 > ```bash
-> kubectl port-forward -n monitoring svc/grafana 3000:80
+> kubectl port-forward -n monitoring svc/grafana 3000:3000
 > # Then open http://localhost:3000
 > ```
 
@@ -228,14 +240,42 @@ kubectl get secret --namespace monitoring grafana \
   -o jsonpath="{.data.admin-password}" | base64 --decode; echo
 ```
 
-Log in at `http://<EXTERNAL-IP>` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Change the password after first login.
+Log in at `http://<EXTERNAL-IP>:3000` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Change the password after first login.
+
+Re-save the datasource (one-time, required on Grafana 12.3.x):
+
+```bash
+TOKEN=$(kubectl get secret crusoe-monitoring-token -n monitoring \
+  -o jsonpath='{.data.MONITORING_TOKEN}' | base64 -d)
+ADMIN_PW=$(kubectl get secret -n monitoring grafana \
+  -o jsonpath='{.data.admin-password}' | base64 -d)
+
+CURRENT=$(kubectl exec -n monitoring deployment/grafana -c grafana -- \
+  curl -sS -u "admin:$ADMIN_PW" http://localhost:3000/api/datasources/uid/crusoe-metrics)
+
+PAYLOAD=$(echo "$CURRENT" | TOKEN="$TOKEN" python3 -c "
+import json, sys, os
+d = json.loads(sys.stdin.read())
+d['secureJsonData'] = {'httpHeaderValue1': 'Bearer ' + os.environ['TOKEN']}
+print(json.dumps(d))")
+
+kubectl exec -n monitoring deployment/grafana -c grafana -- env PAYLOAD="$PAYLOAD" \
+  sh -c "curl -sS -X PUT -u admin:$ADMIN_PW -H 'Content-Type: application/json' \
+  -d \"\$PAYLOAD\" http://localhost:3000/api/datasources/uid/crusoe-metrics"
+
+unset TOKEN ADMIN_PW CURRENT PAYLOAD
+```
+
+This re-encrypts the Bearer token in `secureJsonData` against Grafana's live encryption key. Sidecar-provisioned `secureJsonData` is sometimes not honored on first boot in Grafana 12.3.x — see [Troubleshooting](#troubleshooting) for symptoms.
 
 Verify the data source:
 
 1. Click **Connections** → **Data sources** in the left sidebar.
-2. Click **Crusoe Telemetry Relay**.
+2. Click **Crusoe Metrics**.
 3. Scroll to the bottom and click **Save & test**.
 4. You should see a green banner: *"Successfully queried the Prometheus API."*
+
+> The Grafana **Save & test** button calls `/api/v1/status/buildinfo`, which the Crusoe Metrics does not implement. It returns 401 regardless of token validity. The real test is whether the dashboards display data below.
 
 If the test fails, see [Troubleshooting](#troubleshooting).
 
@@ -271,7 +311,7 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 
 > **IB dashboard caveats (read before relying on absolute Gbps):**
 >
-> On Crusoe-virtualized HCAs the IB port counters surfaced through Telemetry Relay are not a faithful realtime view of the fabric. Two issues we have observed:
+> On Crusoe-virtualized HCAs the IB port counters surfaced through Crusoe Metrics are not a faithful realtime view of the fabric. Two issues we have observed:
 >
 > 1. **Sparse counter updates.** The agent appears to refresh the IB byte counters roughly every ~270 seconds even though the metric is scraped every 60s. Most `rate(...[1m])` windows therefore see no movement and return `NaN`, leaving panels blank for stretches of an otherwise busy job.
 > 2. **Magnitude is low.** Counter deltas captured during a sustained `perftest` run measured ~10× lower than the actual bandwidth `perftest` reported on the same wire. The `line_rate` label (`gig_bit_per_sec`) also reports `128` on HCAs whose `ibstat` rate is `400`, so the utilization-% panels are calibrated against the wrong denominator.
@@ -282,44 +322,85 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 
 ## Troubleshooting
 
-### Data source test returns 401 Unauthorized
+### "Save & test" button returns 401 Unauthorized
 
-The monitoring token is expired or was created for a different project. Create a new token:
+**This is expected and not an error.** The Grafana datasource "Save & test" button calls `/api/v1/status/buildinfo`, which the Crusoe Metrics does not implement. It returns 401 regardless of whether your token is valid. **Do not regenerate your token based on this 401 alone.**
+
+To verify the datasource actually works, open the **Crusoe** folder under **Dashboards** and check whether panels display data. If they do, the datasource is fine.
+
+### Dashboards return 401 / "Authentication to data source failed" on every panel
+
+This is the real failure mode. The token is genuinely not authenticating. Two common causes:
+
+**a. The Grafana 12.3.x secureJsonData quirk.** See [the dedicated section below](#dashboard-panels-show-authentication-to-data-source-failed-401-even-though-the-token-is-valid). If you skipped the Step 5 re-save, run it now.
+
+**b. The token is expired or scoped to a different project.** Verify the project ID matches:
+
+```bash
+crusoe projects list
+# compare to:
+kubectl get secret crusoe-monitoring-token -n monitoring \
+  -o jsonpath='{.data.PROJECT_ID}' | base64 -d; echo
+```
+
+If the project is right but you suspect token expiry, regenerate and re-apply:
 
 ```bash
 crusoe monitoring tokens create
 ```
 
-Re-apply the datasource Secret with the new token, then trigger a provisioning reload:
+1. Edit `manifests/monitoring-token-secret.yaml` locally and replace `MONITORING_TOKEN` with the new value (the file uses `stringData`, so paste the raw token — no base64 required).
+2. Re-apply the secret:
+   ```bash
+   kubectl apply -f manifests/monitoring-token-secret.yaml
+   ```
+3. Re-run the [Step 5 re-save block](#step-5-log-in-and-verify) to push the new token into Grafana's `secureJsonData` (the sidecar does not automatically update `secureJsonData` when only the underlying token Secret changes).
+
+### Dashboard panels show "Authentication to data source failed" / 401 even though the token is valid
+
+Symptom: every dashboard panel returns `Authentication to data source failed` and Grafana logs show
+`"code":"bad_credential"` from the upstream, but `curl -H "Authorization: Bearer <token>" <crusoe-url>`
+from your laptop (or from inside the Grafana pod) succeeds. The Grafana API shows
+`secureJsonFields.httpHeaderValue1: true`, suggesting the encrypted header value is stored — yet it
+isn't being honored on outgoing requests.
+
+This is a Grafana 12.3.x quirk with sidecar-provisioned `secureJsonData`: the encrypted Bearer
+header sometimes isn't applied to the outgoing HTTP client on first boot. The reliable fix is to
+re-save the datasource via the API, which re-encrypts the secure field against Grafana's live
+encryption key and persists across pod restarts.
 
 ```bash
-export MONITORING_TOKEN=<new-token>
-export PROJECT_ID=<project-id>
-envsubst < manifests/grafana-datasource-secret.yaml.example | kubectl apply -f -
+TOKEN=$(kubectl get secret crusoe-monitoring-token -n monitoring \
+  -o jsonpath='{.data.MONITORING_TOKEN}' | base64 -d)
+ADMIN_PW=$(kubectl get secret -n monitoring grafana \
+  -o jsonpath='{.data.admin-password}' | base64 -d)
 
-# Reload datasource provisioning without restarting Grafana:
-ADMIN_PASS=$(kubectl get secret grafana -n monitoring \
-  -o jsonpath="{.data.admin-password}" | base64 --decode)
-kubectl exec -n monitoring deployment/grafana -- \
-  curl -s -X POST -u "admin:${ADMIN_PASS}" \
-  http://localhost:3000/api/admin/provisioning/datasources/reload
+CURRENT=$(kubectl exec -n monitoring deployment/grafana -c grafana -- \
+  curl -sS -u "admin:$ADMIN_PW" http://localhost:3000/api/datasources/uid/crusoe-metrics)
+
+PAYLOAD=$(echo "$CURRENT" | TOKEN="$TOKEN" python3 -c "
+import json, sys, os
+d = json.loads(sys.stdin.read())
+d['secureJsonData'] = {'httpHeaderValue1': 'Bearer ' + os.environ['TOKEN']}
+print(json.dumps(d))")
+
+kubectl exec -n monitoring deployment/grafana -c grafana -- env PAYLOAD="$PAYLOAD" \
+  sh -c "curl -sS -X PUT -u admin:$ADMIN_PW -H 'Content-Type: application/json' \
+  -d \"\$PAYLOAD\" http://localhost:3000/api/datasources/uid/crusoe-metrics"
+
+unset TOKEN ADMIN_PW CURRENT PAYLOAD
 ```
 
-Verify the project ID is correct — `PROJECT_ID` must match exactly:
+This requires `editable: true` on the datasource (the default in
+`grafana-datasource-secret.yaml.example`). Re-test by reloading a dashboard — panels should now
+populate.
 
-```bash
-crusoe projects list
-```
+### Dashboards render but every panel says "No data"
 
-> **Health check button shows 401 (but panels work fine).** The Grafana datasource "Save & test"
-> button calls `/api/v1/status/buildinfo` — a path that Crusoe's Telemetry Relay does not implement.
-> This causes a 401 on the test button regardless of whether the token is correct. Verify the
-> datasource is actually working by checking whether the dashboards display data.
+The datasource is reaching Crusoe (no 401), but no metrics come back. Common causes:
 
-### Data source test passes but dashboards show no data
-
-- **Watch Agent not installed.** If no Watch Agent is running on the cluster, no metrics reach the Telemetry Relay backend. Check with your Crusoe account team.
-- **Telemetry Relay not enabled.** Even with the Watch Agent, the scrape endpoint must be enabled per-project. Contact your account team if the endpoint returns 404 or empty results.
+- **Watch Agent not installed.** If no Watch Agent is running on the cluster, no metrics reach the Crusoe Metrics backend. Check with your Crusoe account team.
+- **Crusoe Metrics not enabled.** Even with the Watch Agent, the scrape endpoint must be enabled per-project. Contact your account team if the endpoint returns 404 or empty results.
 - **Scrape interval.** The minimum is 60 seconds. If you see "No data" on short time ranges (e.g., last 5 minutes), widen the time range to at least last 1 hour.
 - **cluster_id label not present on GPU metrics.** The `$cluster` variable in the Cluster GPU Overview dashboard uses `label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)`. If this label is absent from GPU metrics (it is confirmed on Slurm metrics), the variable will be empty and the `{cluster_id=~"$cluster"}` filter will match nothing. In that case, remove the filter from the affected panel queries.
 
@@ -363,7 +444,8 @@ The `grafana_dashboard: "1"` label is what the sidecar watches — without it, t
 Crusoe LoadBalancer provisioning can take 2–3 minutes. If it remains pending longer, check your project's LB quota with your account team. As a workaround, use port-forward:
 
 ```bash
-kubectl port-forward -n monitoring svc/grafana 3000:80
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+# Then open http://localhost:3000
 ```
 
 ### PVC stuck in `Pending`
@@ -388,10 +470,13 @@ kubectl describe pvc grafana-storage -n monitoring
 
 After deploying Grafana, the easiest way to confirm the GPU dashboards are wired correctly is to run a sustained multi-node training job and watch the panels populate.
 
-The [`examples/slurm-gpu-burn/`](examples/slurm-gpu-burn/) example is a zero-dependency two-node H100 synthetic training benchmark — no HuggingFace tokens, no dataset download, no `pip install`. It runs ~10–20 minutes and produces sustained DCGM metrics across SM utilization, memory, NVLink, IB, power, and temperature. See its own [README](examples/slurm-gpu-burn/README.md) for usage.
+> **Slurm cluster required for this section.** The [`examples/slurm-gpu-burn/`](examples/slurm-gpu-burn/) benchmark below is launched via `sbatch`, which assumes a Crusoe Managed Slurm cluster (or Slurm-on-CMK with Pyxis/enroot). On a plain CMK cluster without Slurm, drive the GPU dashboards with any GPU workload you already have — a long-running `kubectl run` of `nvcr.io/nvidia/pytorch:25.01-py3` running a synthetic matmul loop produces the same SM-utilization / memory / power signals.
+
+The `examples/slurm-gpu-burn/` example is a zero-dependency two-node H100 synthetic training benchmark — no HuggingFace tokens, no dataset download, no `pip install`. It runs ~10–20 minutes and produces sustained DCGM metrics across SM utilization, memory, NVLink, IB, power, and temperature. See its own [README](examples/slurm-gpu-burn/README.md) for usage.
 
 ```bash
-sbatch examples/slurm-gpu-burn/train.sbatch
+# From the Slurm login node, after copying train.py + train.sbatch to your home directory:
+sbatch train.sbatch
 ```
 
 ---
@@ -409,9 +494,9 @@ This removes Grafana and all resources in the `monitoring` namespace including t
 
 ## Limitations and next steps
 
-- **Minimum query interval is 60 seconds.** The Crusoe Telemetry Relay collects metrics every 60 seconds; querying more frequently returns the same data.
-- **30-day metric retention** on the Crusoe backend. For longer retention, add a Prometheus instance that remote-writes from the Telemetry Relay into your own Thanos or Mimir.
-- **Metrics only.** Logs and distributed traces are not available via Telemetry Relay. For log aggregation on CMK, see the [CMK logs to GCP](../crusoe-managed-kubernetes-logs-to-gcp) solution in this repository.
-- **Label names.** Dashboards use the `node` label to identify nodes and the `gpu` label for GPU index. These are confirmed correct for Crusoe Telemetry Relay on Managed Slurm clusters. If variable dropdowns appear empty on a different cluster type, run the discovery curl in the Troubleshooting section to confirm the actual label names.
+- **Minimum query interval is 60 seconds.** The Crusoe Metrics collects metrics every 60 seconds; querying more frequently returns the same data.
+- **30-day metric retention** on the Crusoe backend. For longer retention, add a Prometheus instance that remote-writes from the Crusoe Metrics into your own Thanos or Mimir.
+- **Metrics only.** Logs and distributed traces are not available via Crusoe Metrics. For log aggregation on CMK, see the [CMK logs to GCP](../crusoe-managed-kubernetes-logs-to-gcp) solution in this repository.
+- **Label names.** Dashboards use the `node` label to identify nodes and the `gpu` label for GPU index. These are confirmed correct for Crusoe Metrics on Managed Slurm clusters. If variable dropdowns appear empty on a different cluster type, run the discovery curl in the Troubleshooting section to confirm the actual label names.
 - **Slurm metrics.** `slurm_*` metrics from Managed Slurm clusters (e.g. `slurm_queue_length{cluster_id="..."}`) are available via the same endpoint. Add panels for job queue depth, node state, and wait time as needed.
 - **Production hardening.** Before exposing this to a team, add TLS via cert-manager + ingress, configure LDAP or SSO in `grafana.ini`, and set `allowUiUpdates: false` on the dashboard provider (already set in `grafana-values.yaml`) to prevent in-browser changes from being overwritten on pod restart.

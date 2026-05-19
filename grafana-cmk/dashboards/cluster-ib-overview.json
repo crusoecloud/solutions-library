@@ -21,7 +21,7 @@
         "type": "query",
         "datasource": {
           "type": "prometheus",
-          "uid": "crusoe-telemetry"
+          "uid": "crusoe-metrics"
         },
         "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
         "refresh": 2,
@@ -40,7 +40,7 @@
       "description": "Number of nodes with active IB HCAs",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 0,
@@ -80,7 +80,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "count(count by (vm_name) (crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}))",
           "instant": true,
@@ -95,7 +95,7 @@
       "description": "Total IB HCA ports across the cluster",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 4,
@@ -135,7 +135,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "count(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"})",
           "instant": true,
@@ -150,7 +150,7 @@
       "description": "Total receive bandwidth across all nodes and HCAs",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 8,
@@ -190,7 +190,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
           "instant": true,
@@ -205,7 +205,7 @@
       "description": "Total transmit bandwidth across all nodes and HCAs",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 12,
@@ -245,7 +245,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
           "instant": true,
@@ -260,7 +260,7 @@
       "description": "Total receive errors across the cluster",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 16,
@@ -300,7 +300,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[$__rate_interval]))",
           "instant": true,
@@ -315,7 +315,7 @@
       "description": "Total transmit discards across the cluster",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 20,
@@ -355,7 +355,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum(increase(crusoe_ib_port_xmit_discard{cluster_id=~\"$cluster\"}[$__rate_interval]))",
           "instant": true,
@@ -370,7 +370,7 @@
       "description": "Aggregate RX bandwidth per node (all HCAs summed)",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 0,
@@ -397,7 +397,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
           "legendFormat": "{{vm_name}}"
@@ -411,7 +411,7 @@
       "description": "Aggregate TX bandwidth per node (all HCAs summed)",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 12,
@@ -438,7 +438,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
           "legendFormat": "{{vm_name}}"
@@ -452,7 +452,7 @@
       "description": "RX utilization as % of line rate per node",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 0,
@@ -479,7 +479,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 1e9 / sum by (vm_name) (crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}) * 100",
           "legendFormat": "{{vm_name}}"
@@ -493,7 +493,7 @@
       "description": "RX error rate per node",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 12,
@@ -520,7 +520,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum by (vm_name) (rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[$__rate_interval]))",
           "legendFormat": "{{vm_name}}"
@@ -534,7 +534,7 @@
       "description": "TX wait cycles \u2014 indicates back-pressure or congestion",
       "datasource": {
         "type": "prometheus",
-        "uid": "crusoe-telemetry"
+        "uid": "crusoe-metrics"
       },
       "gridPos": {
         "x": 0,
@@ -561,7 +561,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "expr": "sum by (vm_name) (rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\"}[$__rate_interval]))",
           "legendFormat": "{{vm_name}}"

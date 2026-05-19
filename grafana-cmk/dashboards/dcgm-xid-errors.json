@@ -2,8 +2,8 @@
   "__inputs": [
     {
       "name": "DS_PROMETHEUS",
-      "label": "Crusoe Telemetry Relay",
-      "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+      "label": "Crusoe Metrics",
+      "description": "Crusoe Metrics Prometheus-compatible endpoint",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -30,7 +30,7 @@
       }
     ]
   },
-  "description": "DCGM Xid errors and GPU health check failures across the cluster. Xid errors indicate GPU hardware or driver issues — see https://docs.nvidia.com/deploy/xid-errors/ for error code reference. Data sourced from Crusoe Telemetry Relay (Watch Agent provides DCGM metrics; no separate DCGM exporter installation is required).",
+  "description": "DCGM Xid errors and GPU health check failures across the cluster. Xid errors indicate GPU hardware or driver issues — see https://docs.nvidia.com/deploy/xid-errors/ for error code reference. Data sourced from Crusoe Metrics (Watch Agent provides DCGM metrics; no separate DCGM exporter installation is required).",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -51,7 +51,7 @@
   ],
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "Total Xid errors recorded across all GPUs in the last 24 hours. Any non-zero value warrants investigation.\n\nFor Xid error code meanings see: https://docs.nvidia.com/deploy/xid-errors/",
       "fieldConfig": {
         "defaults": {
@@ -83,7 +83,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "sum(increase(DCGM_FI_DEV_XID_ERRORS[24h]))",
           "instant": true,
           "legendFormat": "",
@@ -94,7 +94,7 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "Total ECC double-bit errors in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL counts volatile (since-reset) double-bit errors. Persistent non-zero values indicate failing GPU memory.",
       "fieldConfig": {
         "defaults": {
@@ -127,7 +127,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "sum(increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h]))",
           "instant": true,
           "legendFormat": "",
@@ -138,7 +138,7 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "Xid error rate per node over time. A sudden spike typically indicates a driver crash, hardware fault, or workload-induced GPU reset.\n\nFor Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
       "fieldConfig": {
         "defaults": {
@@ -184,7 +184,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "sum by (node) (increase(DCGM_FI_DEV_XID_ERRORS[5m]))",
           "legendFormat": "{{node}}",
           "refId": "A"
@@ -194,7 +194,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "Recent Xid errors grouped by node, GPU, and Xid error code. For Xid code meanings see: https://docs.nvidia.com/deploy/xid-errors/\n\nNote: the xid_id label name may differ — check the actual label names with the scrape discovery curl in the Troubleshooting section if this panel shows no data.",
       "fieldConfig": {
         "defaults": {
@@ -245,7 +245,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "sum by (node, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
           "instant": true,
           "legendFormat": "",
@@ -270,7 +270,7 @@
       "type": "table"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "DCGM GPU health failures: ECC double-bit errors and clock throttle events per node/GPU in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL is the volatile double-bit ECC error counter. DCGM_FI_DEV_CLOCK_THROTTLE_REASONS is a bitmask — any non-zero increase indicates throttling events.",
       "fieldConfig": {
         "defaults": {
@@ -322,14 +322,14 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h])) > 0",
           "instant": true,
           "legendFormat": "ECC DBE {{node}} GPU {{gpu}}",
           "refId": "A"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_CLOCK_THROTTLE_REASONS[24h])) > 0",
           "instant": true,
           "legendFormat": "Throttle {{node}} GPU {{gpu}}",

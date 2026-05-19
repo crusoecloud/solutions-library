@@ -5,8 +5,8 @@ data:
       "__inputs": [
         {
           "name": "DS_PROMETHEUS",
-          "label": "Crusoe Telemetry Relay",
-          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "label": "Crusoe Metrics",
+          "description": "Crusoe Metrics Prometheus-compatible endpoint",
           "type": "datasource",
           "pluginId": "prometheus",
           "pluginName": "Prometheus"
@@ -34,7 +34,7 @@ data:
           }
         ]
       },
-      "description": "Cluster-wide GPU utilization, memory, and power across all nodes in a Crusoe CMK or Managed Slurm cluster. Data sourced from Crusoe Telemetry Relay.",
+      "description": "Cluster-wide GPU utilization, memory, and power across all nodes in a Crusoe CMK or Managed Slurm cluster. Data sourced from Crusoe Metrics.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -42,7 +42,7 @@ data:
       "links": [],
       "panels": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Total number of GPU time series currently reporting. One time series per GPU device.",
           "fieldConfig": {
             "defaults": {
@@ -66,7 +66,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "count(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
               "instant": true,
               "legendFormat": "",
@@ -77,7 +77,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Number of distinct nodes reporting GPU metrics.\n\nThe 'node' label is the standard Prometheus scrape target label; it represents the node hostname as set by the Crusoe Watch Agent. If the variable dropdown is empty, check what labels are present on DCGM_FI_DEV_GPU_UTIL by running the scrape discovery curl in the Troubleshooting section.",
           "fieldConfig": {
             "defaults": {
@@ -101,7 +101,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "count(count by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
               "instant": true,
               "legendFormat": "",
@@ -112,7 +112,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Current cluster-wide average GPU utilization across all GPUs and all nodes.",
           "fieldConfig": {
             "defaults": {
@@ -144,7 +144,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
               "instant": true,
               "legendFormat": "Avg",
@@ -155,7 +155,7 @@ data:
           "type": "gauge"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "GPU utilization over time, averaged per node (by node label).",
           "fieldConfig": {
             "defaults": {
@@ -202,7 +202,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
               "legendFormat": "{{node}}",
               "refId": "A"
@@ -212,7 +212,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Cluster-wide GPU framebuffer memory used (stacked) vs total capacity (dashed red line). DCGM_FI_DEV_FB_USED and DCGM_FI_DEV_FB_FREE are reported in MiB.",
           "fieldConfig": {
             "defaults": {
@@ -269,13 +269,13 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"})",
               "legendFormat": "Used",
               "refId": "A"
             },
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"} + DCGM_FI_DEV_FB_FREE{cluster_id=~\"$cluster\"})",
               "legendFormat": "Total Capacity",
               "refId": "B"
@@ -285,7 +285,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Total GPU power draw per node across the cluster. DCGM_FI_DEV_POWER_USAGE is reported in watts.",
           "fieldConfig": {
             "defaults": {
@@ -331,7 +331,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "legendFormat": "{{node}}",
               "refId": "A"
@@ -341,7 +341,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Top 10 nodes by current average GPU utilization. Useful for identifying hot nodes or underutilized capacity.\n\nTODO: Verify 'node' label name.",
           "fieldConfig": {
             "defaults": {
@@ -375,7 +375,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "topk(10, avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
               "instant": true,
               "legendFormat": "{{node}}",
@@ -394,7 +394,7 @@ data:
           {
             "allValue": ".*",
             "current": {},
-            "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+            "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
             "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
             "hide": 0,
             "includeAll": true,
@@ -426,8 +426,8 @@ data:
       "__inputs": [
         {
           "name": "DS_PROMETHEUS",
-          "label": "Crusoe Telemetry Relay",
-          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "label": "Crusoe Metrics",
+          "description": "Crusoe Metrics Prometheus-compatible endpoint",
           "type": "datasource",
           "pluginId": "prometheus",
           "pluginName": "Prometheus"
@@ -454,7 +454,7 @@ data:
           }
         ]
       },
-      "description": "Aggregate GPU power draw and energy consumption across the cluster. Data sourced from Crusoe Telemetry Relay (DCGM_FI_DEV_POWER_USAGE in watts; DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION in millijoules cumulative). H100 SXM5 TDP is 700 W per GPU.",
+      "description": "Aggregate GPU power draw and energy consumption across the cluster. Data sourced from Crusoe Metrics (DCGM_FI_DEV_POWER_USAGE in watts; DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION in millijoules cumulative). H100 SXM5 TDP is 700 W per GPU.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -475,7 +475,7 @@ data:
       ],
       "panels": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Total instantaneous GPU power draw across all nodes in the cluster. Sum of DCGM_FI_DEV_POWER_USAGE for all GPUs matching the selected cluster.",
           "fieldConfig": {
             "defaults": {
@@ -506,7 +506,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "instant": true,
               "legendFormat": "",
@@ -517,7 +517,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Average instantaneous power draw per GPU across the cluster. H100 SXM5 TDP is 700 W; sustained workloads typically draw 400–650 W per GPU.",
           "fieldConfig": {
             "defaults": {
@@ -548,7 +548,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "avg(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "instant": true,
               "legendFormat": "",
@@ -559,7 +559,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Peak total cluster power draw observed within the selected time range.",
           "fieldConfig": {
             "defaults": {
@@ -590,7 +590,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "instant": false,
               "legendFormat": "",
@@ -601,7 +601,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Total GPU energy consumed across the cluster during the selected time range. Derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative millijoules) using increase() over the dashboard range.\n\nFormula: increase(mJ) ÷ 3.6×10⁹ = kWh",
           "fieldConfig": {
             "defaults": {
@@ -628,7 +628,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(increase(DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION{cluster_id=~\"$cluster\"}[$__range])) / 3600000000",
               "instant": true,
               "legendFormat": "",
@@ -639,7 +639,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Total GPU power draw across the entire cluster over time. The dashed threshold line at 11,200 W represents 100% TDP for 16× H100 SXM5 GPUs (700 W each). Adjust if your node count or GPU model differs.",
           "fieldConfig": {
             "defaults": {
@@ -691,7 +691,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "legendFormat": "Total",
               "refId": "A"
@@ -701,7 +701,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "GPU power draw per node over time. Each line is one node (sum across all GPUs on that node). Useful for comparing nodes and detecting imbalanced workloads.",
           "fieldConfig": {
             "defaults": {
@@ -747,7 +747,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "legendFormat": "{{node}}",
               "refId": "A"
@@ -757,7 +757,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Current power draw per node as a bar gauge. Max value is set to 5,600 W (8× H100 SXM5 at 700 W TDP each). Adjust if your node has a different GPU count or model.",
           "fieldConfig": {
             "defaults": {
@@ -791,7 +791,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "instant": true,
               "legendFormat": "{{node}}",
@@ -802,7 +802,7 @@ data:
           "type": "bargauge"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "GPU power draw vs GPU utilization over time, overlaid on a dual-axis chart. A flat power line with low utilization suggests idle or memory-bound work. Rising power tracking rising utilization indicates a compute-bound workload.",
           "fieldConfig": {
             "defaults": {
@@ -864,13 +864,13 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
               "legendFormat": "Total Power W",
               "refId": "A"
             },
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
               "legendFormat": "Avg Utilization %",
               "refId": "B"
@@ -887,7 +887,7 @@ data:
         "list": [
           {
             "current": {},
-            "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+            "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
             "definition": "label_values(DCGM_FI_DEV_POWER_USAGE, cluster_id)",
             "hide": 0,
             "includeAll": true,
@@ -939,7 +939,7 @@ data:
             "type": "query",
             "datasource": {
               "type": "prometheus",
-              "uid": "crusoe-telemetry"
+              "uid": "crusoe-metrics"
             },
             "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
             "refresh": 2,
@@ -958,7 +958,7 @@ data:
           "description": "Number of nodes with active IB HCAs",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -998,7 +998,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "count(count by (vm_name) (crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}))",
               "instant": true,
@@ -1013,7 +1013,7 @@ data:
           "description": "Total IB HCA ports across the cluster",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 4,
@@ -1053,7 +1053,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "count(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"})",
               "instant": true,
@@ -1068,7 +1068,7 @@ data:
           "description": "Total receive bandwidth across all nodes and HCAs",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 8,
@@ -1108,7 +1108,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
               "instant": true,
@@ -1123,7 +1123,7 @@ data:
           "description": "Total transmit bandwidth across all nodes and HCAs",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -1163,7 +1163,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
               "instant": true,
@@ -1178,7 +1178,7 @@ data:
           "description": "Total receive errors across the cluster",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 16,
@@ -1218,7 +1218,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[$__rate_interval]))",
               "instant": true,
@@ -1233,7 +1233,7 @@ data:
           "description": "Total transmit discards across the cluster",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 20,
@@ -1273,7 +1273,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(increase(crusoe_ib_port_xmit_discard{cluster_id=~\"$cluster\"}[$__rate_interval]))",
               "instant": true,
@@ -1288,7 +1288,7 @@ data:
           "description": "Aggregate RX bandwidth per node (all HCAs summed)",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -1315,7 +1315,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
               "legendFormat": "{{vm_name}}"
@@ -1329,7 +1329,7 @@ data:
           "description": "Aggregate TX bandwidth per node (all HCAs summed)",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -1356,7 +1356,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
               "legendFormat": "{{vm_name}}"
@@ -1370,7 +1370,7 @@ data:
           "description": "RX utilization as % of line rate per node",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -1397,7 +1397,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 1e9 / sum by (vm_name) (crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}) * 100",
               "legendFormat": "{{vm_name}}"
@@ -1411,7 +1411,7 @@ data:
           "description": "RX error rate per node",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -1438,7 +1438,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[$__rate_interval]))",
               "legendFormat": "{{vm_name}}"
@@ -1452,7 +1452,7 @@ data:
           "description": "TX wait cycles \u2014 indicates back-pressure or congestion",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -1479,7 +1479,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\"}[$__rate_interval]))",
               "legendFormat": "{{vm_name}}"
@@ -1493,8 +1493,8 @@ data:
       "__inputs": [
         {
           "name": "DS_PROMETHEUS",
-          "label": "Crusoe Telemetry Relay",
-          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "label": "Crusoe Metrics",
+          "description": "Crusoe Metrics Prometheus-compatible endpoint",
           "type": "datasource",
           "pluginId": "prometheus",
           "pluginName": "Prometheus"
@@ -1521,7 +1521,7 @@ data:
           }
         ]
       },
-      "description": "DCGM Xid errors and GPU health check failures across the cluster. Xid errors indicate GPU hardware or driver issues — see https://docs.nvidia.com/deploy/xid-errors/ for error code reference. Data sourced from Crusoe Telemetry Relay (Watch Agent provides DCGM metrics; no separate DCGM exporter installation is required).",
+      "description": "DCGM Xid errors and GPU health check failures across the cluster. Xid errors indicate GPU hardware or driver issues — see https://docs.nvidia.com/deploy/xid-errors/ for error code reference. Data sourced from Crusoe Metrics (Watch Agent provides DCGM metrics; no separate DCGM exporter installation is required).",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -1542,7 +1542,7 @@ data:
       ],
       "panels": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Total Xid errors recorded across all GPUs in the last 24 hours. Any non-zero value warrants investigation.\n\nFor Xid error code meanings see: https://docs.nvidia.com/deploy/xid-errors/",
           "fieldConfig": {
             "defaults": {
@@ -1574,7 +1574,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(increase(DCGM_FI_DEV_XID_ERRORS[24h]))",
               "instant": true,
               "legendFormat": "",
@@ -1585,7 +1585,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Total ECC double-bit errors in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL counts volatile (since-reset) double-bit errors. Persistent non-zero values indicate failing GPU memory.",
           "fieldConfig": {
             "defaults": {
@@ -1618,7 +1618,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum(increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h]))",
               "instant": true,
               "legendFormat": "",
@@ -1629,7 +1629,7 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Xid error rate per node over time. A sudden spike typically indicates a driver crash, hardware fault, or workload-induced GPU reset.\n\nFor Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
           "fieldConfig": {
             "defaults": {
@@ -1675,7 +1675,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum by (node) (increase(DCGM_FI_DEV_XID_ERRORS[5m]))",
               "legendFormat": "{{node}}",
               "refId": "A"
@@ -1685,7 +1685,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "Recent Xid errors grouped by node, GPU, and Xid error code. For Xid code meanings see: https://docs.nvidia.com/deploy/xid-errors/\n\nNote: the xid_id label name may differ — check the actual label names with the scrape discovery curl in the Troubleshooting section if this panel shows no data.",
           "fieldConfig": {
             "defaults": {
@@ -1736,7 +1736,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum by (node, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
               "instant": true,
               "legendFormat": "",
@@ -1761,7 +1761,7 @@ data:
           "type": "table"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "DCGM GPU health failures: ECC double-bit errors and clock throttle events per node/GPU in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL is the volatile double-bit ECC error counter. DCGM_FI_DEV_CLOCK_THROTTLE_REASONS is a bitmask — any non-zero increase indicates throttling events.",
           "fieldConfig": {
             "defaults": {
@@ -1813,14 +1813,14 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h])) > 0",
               "instant": true,
               "legendFormat": "ECC DBE {{node}} GPU {{gpu}}",
               "refId": "A"
             },
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_CLOCK_THROTTLE_REASONS[24h])) > 0",
               "instant": true,
               "legendFormat": "Throttle {{node}} GPU {{gpu}}",
@@ -1854,8 +1854,8 @@ data:
       "__inputs": [
         {
           "name": "DS_PROMETHEUS",
-          "label": "Crusoe Telemetry Relay",
-          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "label": "Crusoe Metrics",
+          "description": "Crusoe Metrics Prometheus-compatible endpoint",
           "type": "datasource",
           "pluginId": "prometheus",
           "pluginName": "Prometheus"
@@ -1880,7 +1880,7 @@ data:
           }
         ]
       },
-      "description": "Per-GPU metrics for a selected node: utilization, memory, temperature, power, and clock speeds. Data sourced from Crusoe Telemetry Relay.",
+      "description": "Per-GPU metrics for a selected node: utilization, memory, temperature, power, and clock speeds. Data sourced from Crusoe Metrics.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -1901,7 +1901,7 @@ data:
       ],
       "panels": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "GPU utilization per GPU on the selected node. Each line represents one GPU device. The 'gpu' label is the DCGM GPU index.",
           "fieldConfig": {
             "defaults": {
@@ -1948,7 +1948,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "DCGM_FI_DEV_GPU_UTIL{node=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -1958,7 +1958,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "GPU framebuffer memory used per GPU on the selected node. DCGM_FI_DEV_FB_USED is in MiB.",
           "fieldConfig": {
             "defaults": {
@@ -2004,7 +2004,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "DCGM_FI_DEV_FB_USED{node=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -2014,7 +2014,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "GPU temperature per GPU on the selected node. DCGM_FI_DEV_GPU_TEMP is in Celsius.",
           "fieldConfig": {
             "defaults": {
@@ -2069,7 +2069,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "DCGM_FI_DEV_GPU_TEMP{node=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -2079,7 +2079,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "GPU power draw per GPU on the selected node. DCGM_FI_DEV_POWER_USAGE is in watts.",
           "fieldConfig": {
             "defaults": {
@@ -2125,7 +2125,7 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "DCGM_FI_DEV_POWER_USAGE{node=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -2135,7 +2135,7 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "description": "SM clock and memory clock per GPU on the selected node. DCGM_FI_DEV_SM_CLOCK and DCGM_FI_DEV_MEM_CLOCK are in MHz. High values indicate the GPU is not being thermally throttled.",
           "fieldConfig": {
             "defaults": {
@@ -2181,13 +2181,13 @@ data:
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "DCGM_FI_DEV_SM_CLOCK{node=\"$node\"}",
               "legendFormat": "SM GPU {{gpu}}",
               "refId": "A"
             },
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
               "expr": "DCGM_FI_DEV_MEM_CLOCK{node=\"$node\"}",
               "legendFormat": "Mem GPU {{gpu}}",
               "refId": "B"
@@ -2204,7 +2204,7 @@ data:
         "list": [
           {
             "current": {},
-            "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+            "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
             "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, node)",
             "hide": 0,
             "includeAll": false,
@@ -2255,7 +2255,7 @@ data:
             "type": "query",
             "datasource": {
               "type": "prometheus",
-              "uid": "crusoe-telemetry"
+              "uid": "crusoe-metrics"
             },
             "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
             "refresh": 2,
@@ -2270,7 +2270,7 @@ data:
             "type": "query",
             "datasource": {
               "type": "prometheus",
-              "uid": "crusoe-telemetry"
+              "uid": "crusoe-metrics"
             },
             "query": "label_values(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}, vm_name)",
             "refresh": 2,
@@ -2290,7 +2290,7 @@ data:
           "description": "Total RX bandwidth across selected nodes",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -2330,7 +2330,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
               "instant": true,
@@ -2345,7 +2345,7 @@ data:
           "description": "Total TX bandwidth across selected nodes",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 6,
@@ -2385,7 +2385,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
               "instant": true,
@@ -2400,7 +2400,7 @@ data:
           "description": "Total RX errors across selected nodes",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -2440,7 +2440,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
               "instant": true,
@@ -2455,7 +2455,7 @@ data:
           "description": "Local link integrity errors across selected nodes",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 18,
@@ -2495,7 +2495,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
               "instant": true,
@@ -2510,7 +2510,7 @@ data:
           "description": "Aggregate RX bandwidth per node (sum across all 8 HCAs)",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -2537,7 +2537,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
               "legendFormat": "{{vm_name}}"
@@ -2551,7 +2551,7 @@ data:
           "description": "Aggregate TX bandwidth per node (sum across all 8 HCAs)",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -2578,7 +2578,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
               "legendFormat": "{{vm_name}}"
@@ -2592,7 +2592,7 @@ data:
           "description": "RX bandwidth per HCA port for selected nodes",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -2619,7 +2619,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 8",
               "legendFormat": "{{vm_name}} {{hca_number}}"
@@ -2633,7 +2633,7 @@ data:
           "description": "TX bandwidth per HCA port for selected nodes",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -2660,7 +2660,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 8",
               "legendFormat": "{{vm_name}} {{hca_number}}"
@@ -2674,7 +2674,7 @@ data:
           "description": "RX utilization as % of line rate per HCA",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -2701,7 +2701,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 1e9 / ignoring(gig_bit_per_sec) crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"} * 100",
               "legendFormat": "{{vm_name}} {{hca_number}}"
@@ -2715,7 +2715,7 @@ data:
           "description": "TX utilization as % of line rate per HCA",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -2742,7 +2742,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 1e9 / ignoring(gig_bit_per_sec) crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"} * 100",
               "legendFormat": "{{vm_name}} {{hca_number}}"
@@ -2756,7 +2756,7 @@ data:
           "description": "RX error rate per HCA",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
@@ -2783,7 +2783,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])",
               "legendFormat": "{{vm_name}} {{hca_number}}"
@@ -2797,7 +2797,7 @@ data:
           "description": "TX wait cycles per HCA \u2014 indicates congestion or flow control",
           "datasource": {
             "type": "prometheus",
-            "uid": "crusoe-telemetry"
+            "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
@@ -2824,7 +2824,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "crusoe-telemetry"
+                "uid": "crusoe-metrics"
               },
               "expr": "rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])",
               "legendFormat": "{{vm_name}} {{hca_number}}"
