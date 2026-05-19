@@ -230,12 +230,40 @@ kubectl get secret --namespace monitoring grafana \
 
 Log in at `http://<EXTERNAL-IP>` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Change the password after first login.
 
+Re-save the datasource (one-time, required on Grafana 12.3.x):
+
+```bash
+TOKEN=$(kubectl get secret crusoe-monitoring-token -n monitoring \
+  -o jsonpath='{.data.MONITORING_TOKEN}' | base64 -d)
+ADMIN_PW=$(kubectl get secret -n monitoring grafana \
+  -o jsonpath='{.data.admin-password}' | base64 -d)
+
+CURRENT=$(kubectl exec -n monitoring deployment/grafana -c grafana -- \
+  curl -sS -u "admin:$ADMIN_PW" http://localhost:3000/api/datasources/uid/crusoe-telemetry)
+
+PAYLOAD=$(echo "$CURRENT" | TOKEN="$TOKEN" python3 -c "
+import json, sys, os
+d = json.loads(sys.stdin.read())
+d['secureJsonData'] = {'httpHeaderValue1': 'Bearer ' + os.environ['TOKEN']}
+print(json.dumps(d))")
+
+kubectl exec -n monitoring deployment/grafana -c grafana -- env PAYLOAD="$PAYLOAD" \
+  sh -c "curl -sS -X PUT -u admin:$ADMIN_PW -H 'Content-Type: application/json' \
+  -d \"\$PAYLOAD\" http://localhost:3000/api/datasources/uid/crusoe-telemetry"
+
+unset TOKEN ADMIN_PW CURRENT PAYLOAD
+```
+
+This re-encrypts the Bearer token in `secureJsonData` against Grafana's live encryption key. Sidecar-provisioned `secureJsonData` is sometimes not honored on first boot in Grafana 12.3.x — see [Troubleshooting](#troubleshooting) for symptoms.
+
 Verify the data source:
 
 1. Click **Connections** → **Data sources** in the left sidebar.
 2. Click **Crusoe Telemetry Relay**.
 3. Scroll to the bottom and click **Save & test**.
 4. You should see a green banner: *"Successfully queried the Prometheus API."*
+
+> The Grafana **Save & test** button calls `/api/v1/status/buildinfo`, which the Crusoe Telemetry Relay does not implement. It returns 401 regardless of token validity. The real test is whether the dashboards display data below.
 
 If the test fails, see [Troubleshooting](#troubleshooting).
 
@@ -315,6 +343,45 @@ crusoe projects list
 > button calls `/api/v1/status/buildinfo` — a path that Crusoe's Telemetry Relay does not implement.
 > This causes a 401 on the test button regardless of whether the token is correct. Verify the
 > datasource is actually working by checking whether the dashboards display data.
+
+### Dashboard panels show "Authentication to data source failed" / 401 even though the token is valid
+
+Symptom: every dashboard panel returns `Authentication to data source failed` and Grafana logs show
+`"code":"bad_credential"` from the upstream, but `curl -H "Authorization: Bearer <token>" <crusoe-url>`
+from your laptop (or from inside the Grafana pod) succeeds. The Grafana API shows
+`secureJsonFields.httpHeaderValue1: true`, suggesting the encrypted header value is stored — yet it
+isn't being honored on outgoing requests.
+
+This is a Grafana 12.3.x quirk with sidecar-provisioned `secureJsonData`: the encrypted Bearer
+header sometimes isn't applied to the outgoing HTTP client on first boot. The reliable fix is to
+re-save the datasource via the API, which re-encrypts the secure field against Grafana's live
+encryption key and persists across pod restarts.
+
+```bash
+TOKEN=$(kubectl get secret crusoe-monitoring-token -n monitoring \
+  -o jsonpath='{.data.MONITORING_TOKEN}' | base64 -d)
+ADMIN_PW=$(kubectl get secret -n monitoring grafana \
+  -o jsonpath='{.data.admin-password}' | base64 -d)
+
+CURRENT=$(kubectl exec -n monitoring deployment/grafana -c grafana -- \
+  curl -sS -u "admin:$ADMIN_PW" http://localhost:3000/api/datasources/uid/crusoe-telemetry)
+
+PAYLOAD=$(echo "$CURRENT" | TOKEN="$TOKEN" python3 -c "
+import json, sys, os
+d = json.loads(sys.stdin.read())
+d['secureJsonData'] = {'httpHeaderValue1': 'Bearer ' + os.environ['TOKEN']}
+print(json.dumps(d))")
+
+kubectl exec -n monitoring deployment/grafana -c grafana -- env PAYLOAD="$PAYLOAD" \
+  sh -c "curl -sS -X PUT -u admin:$ADMIN_PW -H 'Content-Type: application/json' \
+  -d \"\$PAYLOAD\" http://localhost:3000/api/datasources/uid/crusoe-telemetry"
+
+unset TOKEN ADMIN_PW CURRENT PAYLOAD
+```
+
+This requires `editable: true` on the datasource (the default in
+`grafana-datasource-secret.yaml.example`). Re-test by reloading a dashboard — panels should now
+populate.
 
 ### Data source test passes but dashboards show no data
 
