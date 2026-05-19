@@ -1,5 +1,10 @@
 variable "ssh_public_key_path" {
-  description = "The ssh public key authorized to login to the cluster."
+  description = "The ssh public key authorized to log in to the cluster."
+  type        = string
+}
+
+variable "ssh_private_key_path" {
+  description = "The ssh private key authorized to log in to the cluster."
   type        = string
 }
 

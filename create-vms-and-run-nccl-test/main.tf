@@ -37,7 +37,7 @@ resource "local_file" "cluster_public_key" {
 
 // local files
 locals {
-  ssh_public_key = file("~/.ssh/id_ed25519.pub") # replace with path to your public SSH key if different
+  ssh_public_key = file(var.ssh_public_key_path)
 }
 
 //vms
@@ -141,7 +141,7 @@ resource "null_resource" "copy_and_run_nccltest" {
       type        = "ssh"
       user        = "ubuntu"
       host        = crusoe_compute_instance.node[0].network_interfaces[0].public_ipv4.address
-      private_key = file("~/.ssh/id_ed25519")  # Update this path if your SSH key is different
+      private_key = file(var.ssh_private_key_path)
     }
   }
 
@@ -149,20 +149,20 @@ resource "null_resource" "copy_and_run_nccltest" {
   provisioner "remote-exec" {
     inline = [
       "chmod +x /home/ubuntu/nccltest.sh",
-      "/home/ubuntu/nccltest.sh > /home/ubuntu/nccltest_output.txt 2>&1"
+      "/home/ubuntu/nccltest.sh > /home/ubuntu/nccltest_output.txt 2>&1 || true"
     ]
 
     connection {
       type        = "ssh"
       user        = "ubuntu"
       host        = crusoe_compute_instance.node[0].network_interfaces[0].public_ipv4.address
-      private_key = file("~/.ssh/id_ed25519")  # Update this path if your SSH key is different
+      private_key = file(var.ssh_private_key_path)
     }
   }
 
   # Retrieve the output file
   provisioner "local-exec" {
-    command = "scp -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 ubuntu@${crusoe_compute_instance.node[0].network_interfaces[0].public_ipv4.address}:/home/ubuntu/nccltest_output.txt ${path.module}/nccltest_output.txt"
+    command = "scp -o StrictHostKeyChecking=no -i ${var.ssh_private_key_path} ubuntu@${crusoe_compute_instance.node[0].network_interfaces[0].public_ipv4.address}:/home/ubuntu/nccltest_output.txt ${path.module}/nccltest_output.txt"
   }
 }
 
