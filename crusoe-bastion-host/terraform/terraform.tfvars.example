@@ -1,0 +1,32 @@
+# Crusoe Bastion Host Configuration
+# Copy this file to terraform.tfvars and fill in your values
+
+# Required Variables
+project_id      = "your-crusoe-project-id"
+location        = "us-east1-a"
+ssh_public_key  = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... your-email@example.com"
+
+# Optional Variables (uncomment to customize)
+
+# bastion_name = "bastion-host"
+# instance_type = "c1a.2x"
+# disk_size_gib = 32
+
+# VPC network for firewall rules (default: "default")
+# vpc_network = "default"
+
+# Restrict SSH access to specific IP ranges
+# allowed_ssh_cidrs = [
+#   "203.0.113.0/24",  # Your office IP range
+#   "198.51.100.0/24"  # Your VPN IP range
+# ]
+
+# SSH port for firewall rules
+# ssh_port = 22
+
+# High Availability Configuration
+# ha_enabled = false
+# ha_count = 2
+
+# Note: Security features (session logging, fail2ban, auto-updates) are
+# configured in the user-data.sh script and enabled by default.
