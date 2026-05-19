@@ -2,8 +2,8 @@
   "__inputs": [
     {
       "name": "DS_PROMETHEUS",
-      "label": "Crusoe Telemetry Relay",
-      "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+      "label": "Crusoe Metrics",
+      "description": "Crusoe Metrics Prometheus-compatible endpoint",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -28,7 +28,7 @@
       }
     ]
   },
-  "description": "Per-GPU metrics for a selected node: utilization, memory, temperature, power, and clock speeds. Data sourced from Crusoe Telemetry Relay.",
+  "description": "Per-GPU metrics for a selected node: utilization, memory, temperature, power, and clock speeds. Data sourced from Crusoe Metrics.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -49,7 +49,7 @@
   ],
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "GPU utilization per GPU on the selected node. Each line represents one GPU device. The 'gpu' label is the DCGM GPU index.",
       "fieldConfig": {
         "defaults": {
@@ -96,7 +96,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "DCGM_FI_DEV_GPU_UTIL{node=\"$node\"}",
           "legendFormat": "GPU {{gpu}}",
           "refId": "A"
@@ -106,7 +106,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "GPU framebuffer memory used per GPU on the selected node. DCGM_FI_DEV_FB_USED is in MiB.",
       "fieldConfig": {
         "defaults": {
@@ -152,7 +152,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "DCGM_FI_DEV_FB_USED{node=\"$node\"}",
           "legendFormat": "GPU {{gpu}}",
           "refId": "A"
@@ -162,7 +162,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "GPU temperature per GPU on the selected node. DCGM_FI_DEV_GPU_TEMP is in Celsius.",
       "fieldConfig": {
         "defaults": {
@@ -217,7 +217,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "DCGM_FI_DEV_GPU_TEMP{node=\"$node\"}",
           "legendFormat": "GPU {{gpu}}",
           "refId": "A"
@@ -227,7 +227,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "GPU power draw per GPU on the selected node. DCGM_FI_DEV_POWER_USAGE is in watts.",
       "fieldConfig": {
         "defaults": {
@@ -273,7 +273,7 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "DCGM_FI_DEV_POWER_USAGE{node=\"$node\"}",
           "legendFormat": "GPU {{gpu}}",
           "refId": "A"
@@ -283,7 +283,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
       "description": "SM clock and memory clock per GPU on the selected node. DCGM_FI_DEV_SM_CLOCK and DCGM_FI_DEV_MEM_CLOCK are in MHz. High values indicate the GPU is not being thermally throttled.",
       "fieldConfig": {
         "defaults": {
@@ -329,13 +329,13 @@
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "DCGM_FI_DEV_SM_CLOCK{node=\"$node\"}",
           "legendFormat": "SM GPU {{gpu}}",
           "refId": "A"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
           "expr": "DCGM_FI_DEV_MEM_CLOCK{node=\"$node\"}",
           "legendFormat": "Mem GPU {{gpu}}",
           "refId": "B"
@@ -352,7 +352,7 @@
     "list": [
       {
         "current": {},
-        "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+        "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
         "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, node)",
         "hide": 0,
         "includeAll": false,
