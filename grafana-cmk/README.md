@@ -244,9 +244,7 @@ Verify the data source:
 3. Scroll to the bottom and click **Save & test**.
 4. You should see a green banner: *"Successfully queried the Prometheus API."*
 
-> The Grafana **Save & test** button calls `/api/v1/status/buildinfo`, which the Crusoe Metrics does not implement. It returns 401 regardless of token validity. The real test is whether the dashboards display data below.
-
-If the test fails, see [Troubleshooting](#troubleshooting).
+If you see anything else, see [Troubleshooting](#troubleshooting).
 
 Verify the dashboards:
 
@@ -290,12 +288,6 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 ---
 
 ## Troubleshooting
-
-### "Save & test" button returns 401 Unauthorized
-
-**This is expected and not an error.** The Grafana datasource "Save & test" button calls `/api/v1/status/buildinfo`, which the Crusoe Metrics does not implement. It returns 401 regardless of whether your token is valid. **Do not regenerate your token based on this 401 alone.**
-
-To verify the datasource actually works, open the **Crusoe** folder under **Dashboards** and check whether panels display data. If they do, the datasource is fine.
 
 ### Dashboards return 401 / "Authentication to data source failed" on every panel
 
@@ -343,11 +335,11 @@ Discover the available metric names and label names by querying the API directly
 ```bash
 TOKEN=$(kubectl get secret crusoe-monitoring-token -n monitoring \
   -o jsonpath='{.data.MONITORING_TOKEN}' | base64 -d)
-PROJECT=$(kubectl get secret crusoe-monitoring-token -n monitoring \
+PROJECT_ID=$(kubectl get secret crusoe-monitoring-token -n monitoring \
   -o jsonpath='{.data.PROJECT_ID}' | base64 -d)
 
 # List available DCGM metric names
-curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT}/metrics/timeseries" \
+curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT_ID}/metrics/timeseries" \
   -H "Authorization: Bearer ${TOKEN}" \
   --data-urlencode 'query=DCGM_FI_DEV_GPU_UTIL' \
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['metric']) for r in d.get('data',{}).get('result',[])]"
@@ -422,12 +414,18 @@ kubectl delete namespace monitoring
 
 This removes Grafana and all resources in the `monitoring` namespace including the PVC. Grafana data (dashboards customized in-browser, alert rules) will be lost.
 
+The cluster-scoped `crusoe-csi-driver-ssd-sc` StorageClass survives the namespace deletion (it isn't namespaced). Only delete it if you're sure no other workload uses it:
+
+```bash
+kubectl delete storageclass crusoe-csi-driver-ssd-sc   # optional — only if nothing else references it
+```
+
 ---
 
 ## Limitations and next steps
 
-- **Minimum query interval is 60 seconds.** The Crusoe Metrics collects metrics every 60 seconds; querying more frequently returns the same data.
-- **30-day metric retention** on the Crusoe backend. For longer retention, add a Prometheus instance that remote-writes from the Crusoe Metrics into your own Thanos or Mimir.
+- **Minimum query interval is 60 seconds.** Crusoe Metrics collects samples every 60 seconds; querying more frequently returns the same data.
+- **30-day metric retention** on the Crusoe backend. For longer retention, add a Prometheus instance that remote-writes from Crusoe Metrics into your own Thanos or Mimir.
 - **Metrics only.** Logs and distributed traces are not available via Crusoe Metrics. For log aggregation on CMK, see the [CMK logs to GCP](../crusoe-managed-kubernetes-logs-to-gcp) solution in this repository.
 - **Label names.** Dashboards use the `node` label to identify nodes and the `gpu` label for GPU index. These are confirmed correct for Crusoe Metrics on Managed Slurm clusters. If variable dropdowns appear empty on a different cluster type, run the discovery curl in the Troubleshooting section to confirm the actual label names.
 - **Slurm metrics.** `slurm_*` metrics from Managed Slurm clusters (e.g. `slurm_queue_length{cluster_id="..."}`) are available via the same endpoint. Add panels for job queue depth, node state, and wait time as needed.
