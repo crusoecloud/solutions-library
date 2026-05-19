@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: c4-en-upload-s3
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: uploader
+        image: amazon/aws-cli:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          aws s3 sync /data/c4/en/ s3://${BUCKET_NAME}/c4/en/ \
+            --endpoint-url ${S3_ENDPOINT_URL} \
+            --no-progress
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          value: ""  # set your AWS access key here or use a Secret ref
+        - name: AWS_SECRET_ACCESS_KEY
+          value: ""  # set your AWS secret key here or use a Secret ref
+        - name: S3_ENDPOINT_URL
+          value: ""  # e.g. https://s3.example.com
+        - name: BUCKET_NAME
+          value: ""  # e.g. my-training-bucket
+        volumeMounts:
+        - name: data-disk
+          mountPath: /data
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "2"
+          limits:
+            memory: "4Gi"
+            cpu: "4"
+      volumes:
+      - name: data-disk
+        persistentVolumeClaim:
+          claimName: data-disk

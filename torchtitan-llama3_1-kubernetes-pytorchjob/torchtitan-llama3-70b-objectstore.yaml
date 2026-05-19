@@ -1,0 +1,266 @@
+# This job works on the assumption that you created a bucket and populated it with the C4 dataset
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: torchtitan-llama3-70b-config
+data:
+  llama3_1_70B_pvc.toml: |
+    [job]
+    dump_folder = "/outputs"
+    description = "Llama 3.1 70B training on Crusoe H100"
+
+    [profiling]
+    enable_profiling = false
+    save_traces_folder = "/outputs/profile_trace"
+    profile_freq = 100
+
+    [metrics]
+    log_freq = 10
+    enable_tensorboard = true
+    save_tb_folder = "/outputs/tb"
+
+    [model]
+    name = "llama3"
+    flavor = "70B"
+    # Tokenizer assets are built into the Docker image.
+    hf_assets_path = "/workspace/torchtitan/assets/hf/Llama-3.1-70B"
+
+    [optimizer]
+    name = "AdamW"
+    lr = 3e-4
+    eps = 1e-8
+
+    [lr_scheduler]
+    warmup_steps = 200
+
+    [training]
+    local_batch_size = 10
+    seq_len = 8192
+    max_norm = 1.0
+    steps = 1000
+    dataset = "c4"
+    dataset_path = "s3://c4-icat/"
+
+    [parallelism]
+    data_parallel_replicate_degree = 1
+    data_parallel_shard_degree = 16
+    tensor_parallel_degree = 2
+    pipeline_parallel_degree = 1
+    context_parallel_degree = 1
+
+    [checkpoint]
+    enable = true
+    folder = "/outputs/checkpoint"
+    interval = 500
+    last_save_model_only = true
+    export_dtype = "float32"
+    # Change async_mode to "disabled" if async checkpointing causes OOM crashes
+    async_mode = "async"
+
+    [compile]
+    enable = true
+    components = ["model", "loss"]
+
+    [activation_checkpoint]
+    mode = "full"
+    selective_ac_option = "op"
+
+    [quantize.linear.float8]
+    enable_fsdp_float8_all_gather = false
+    precompute_float8_dynamic_scale_for_fsdp = false
+    filter_fqns = ["output"]
+
+---
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: torchtitan-llama3-70b
+spec:
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:v15
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            workingDir: /workspace/torchtitan
+            command:
+            - /bin/bash
+            - -c
+            - |
+              torchrun \
+                --nproc_per_node=8 \
+                --nnodes=4 \
+                --node_rank=${RANK} \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                --rdzv_backend=c10d \
+                -m torchtitan.train \
+                --job.config_file /config/llama3_1_70B_pvc.toml
+            env:
+            - name: PYTORCH_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: NCCL_IB_HCA
+              value: "mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8"
+            # value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12" #for b200 and b300
+            - name: NCCL_IB_GID_INDEX
+              value: "3"
+            - name: NCCL_NET_GDR_LEVEL
+              value: "SYS"
+            - name: NCCL_TOPO_FILE
+            # replace with correct topo file for your SKU type as found in /etc/crusoe/nccl_topo of node
+              value: /opt/nccl_topo/h200-141gb-sxm-ib-cloud-hypervisor.xml
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            - name: AWS_ACCESS_KEY_ID
+              value: "CKIAQGQ1JYJLR24V9N8N"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "civP6SOwWV70+hvSBwd1/piyqWvArdQdY+GLRyOY"
+            - name: S3_ENDPOINT_URL
+              value: "https://object.eu-iceland1-a.crusoecloudcompute.com"
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+              requests:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+            volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: outputs
+              mountPath: /outputs
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            - name: infiniband
+              mountPath: /dev/infiniband
+          initContainers:
+          - name: clear-outputs
+            image: busybox
+            command: ["/bin/sh", "-c", "rm -rf /outputs/*"]
+            volumeMounts:
+            - name: outputs
+              mountPath: /outputs
+          volumes:
+          - name: config
+            configMap:
+              name: torchtitan-llama3-70b-config
+          - name: outputs
+            persistentVolumeClaim:
+              claimName: output-disk
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "20Gi"
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          - name: infiniband
+            hostPath:
+              path: /dev/infiniband
+              type: Directory
+
+    Worker:
+      replicas: 3
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:v15
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            workingDir: /workspace/torchtitan
+            command:
+            - /bin/bash
+            - -c
+            - |
+              torchrun \
+                --nproc_per_node=8 \
+                --nnodes=4 \
+                --node_rank=${RANK} \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                --rdzv_backend=c10d \
+                -m torchtitan.train \
+                --job.config_file /config/llama3_1_70B_pvc.toml
+            env:
+            - name: PYTORCH_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: NCCL_IB_HCA
+              value: "mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8"
+            # value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12" # for b200 and b300
+            - name: NCCL_IB_GID_INDEX
+              value: "3"
+            - name: NCCL_NET_GDR_LEVEL
+              value: "SYS"
+            - name: NCCL_TOPO_FILE
+            # replace with correct topo file for your SKU type as found in /etc/crusoe/nccl_topo of node
+              value: /opt/nccl_topo/h200-141gb-sxm-ib-cloud-hypervisor.xml
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            - name: AWS_ACCESS_KEY_ID
+              value: "CKIAQGQ1JYJLR24V9N8N"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "civP6SOwWV70+hvSBwd1/piyqWvArdQdY+GLRyOY"
+            - name: S3_ENDPOINT_URL
+              value: "https://object.eu-iceland1-a.crusoecloudcompute.com"
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+              requests:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+            volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: outputs
+              mountPath: /outputs
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            - name: infiniband
+              mountPath: /dev/infiniband
+          volumes:
+          - name: config
+            configMap:
+              name: torchtitan-llama3-70b-config
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          - name: infiniband
+            hostPath:
+              path: /dev/infiniband
+              type: Directory
+          - name: outputs
+            persistentVolumeClaim:
+              claimName: output-disk
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "20Gi"
