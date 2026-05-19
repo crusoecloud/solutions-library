@@ -1,0 +1,2841 @@
+apiVersion: v1
+data:
+  cluster-gpu-overview.json: |
+    {
+      "__inputs": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Crusoe Telemetry Relay",
+          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "type": "datasource",
+          "pluginId": "prometheus",
+          "pluginName": "Prometheus"
+        }
+      ],
+      "__elements": {},
+      "__requires": [
+        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
+        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+        {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+        {"type": "panel", "id": "gauge", "name": "Gauge", "version": ""},
+        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+        {"type": "panel", "id": "bargauge", "name": "Bar gauge", "version": ""}
+      ],
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "Cluster-wide GPU utilization, memory, and power across all nodes in a Crusoe CMK or Managed Slurm cluster. Data sourced from Crusoe Telemetry Relay.",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Total number of GPU time series currently reporting. One time series per GPU device.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"fixedColor": "blue", "mode": "fixed"},
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "count(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Total GPUs",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Number of distinct nodes reporting GPU metrics.\n\nThe 'node' label is the standard Prometheus scrape target label; it represents the node hostname as set by the Crusoe Watch Agent. If the variable dropdown is empty, check what labels are present on DCGM_FI_DEV_GPU_UTIL by running the scrape discovery curl in the Troubleshooting section.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"fixedColor": "blue", "mode": "fixed"},
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+          "id": 2,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "count(count by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "GPU Nodes",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Current cluster-wide average GPU utilization across all GPUs and all nodes.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [],
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 70},
+                  {"color": "red", "value": 90}
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+          "id": 3,
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+              "instant": true,
+              "legendFormat": "Avg",
+              "refId": "A"
+            }
+          ],
+          "title": "Cluster Avg GPU Utilization",
+          "type": "gauge"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "GPU utilization over time, averaged per node (by node label).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "max": 100,
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+          "id": 4,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "GPU Utilization by Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Cluster-wide GPU framebuffer memory used (stacked) vs total capacity (dashed red line). DCGM_FI_DEV_FB_USED and DCGM_FI_DEV_FB_FREE are reported in MiB.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 20,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "normal"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "mebibytes"
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Total Capacity"},
+                "properties": [
+                  {"id": "custom.stacking", "value": {"mode": "none"}},
+                  {"id": "custom.fillOpacity", "value": 0},
+                  {"id": "custom.lineStyle", "value": {"dash": [10, 10], "fill": "dash"}},
+                  {"id": "custom.lineWidth", "value": 2},
+                  {"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+          "id": 5,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"})",
+              "legendFormat": "Used",
+              "refId": "A"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"} + DCGM_FI_DEV_FB_FREE{cluster_id=~\"$cluster\"})",
+              "legendFormat": "Total Capacity",
+              "refId": "B"
+            }
+          ],
+          "title": "Cluster GPU Memory — Used vs Total",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Total GPU power draw per node across the cluster. DCGM_FI_DEV_POWER_USAGE is reported in watts.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+          "id": 6,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "GPU Power Draw by Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Top 10 nodes by current average GPU utilization. Useful for identifying hot nodes or underutilized capacity.\n\nTODO: Verify 'node' label name.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [],
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 70},
+                  {"color": "red", "value": 90}
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 32},
+          "id": 7,
+          "options": {
+            "displayMode": "gradient",
+            "minVizHeight": 10,
+            "minVizWidth": 0,
+            "namePlacement": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "showUnfilled": true,
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "topk(10, avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+              "instant": true,
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 10 Nodes by Avg GPU Utilization",
+          "type": "bargauge"
+        }
+      ],
+      "refresh": "1m",
+      "schemaVersion": 39,
+      "tags": ["crusoe", "gpu", "kubernetes"],
+      "templating": {
+        "list": [
+          {
+            "allValue": ".*",
+            "current": {},
+            "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+            "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+            "hide": 0,
+            "includeAll": true,
+            "label": "Cluster",
+            "multi": false,
+            "name": "cluster",
+            "options": [],
+            "query": {
+              "query": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 2,
+            "regex": "",
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Crusoe — Cluster GPU Overview",
+      "uid": "crusoe-cluster-gpu-overview",
+      "version": 1,
+      "weekStart": ""
+    }
+  cluster-gpu-power.json: |
+    {
+      "__inputs": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Crusoe Telemetry Relay",
+          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "type": "datasource",
+          "pluginId": "prometheus",
+          "pluginName": "Prometheus"
+        }
+      ],
+      "__elements": {},
+      "__requires": [
+        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
+        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+        {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+        {"type": "panel", "id": "bargauge", "name": "Bar gauge", "version": ""}
+      ],
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "Aggregate GPU power draw and energy consumption across the cluster. Data sourced from Crusoe Telemetry Relay (DCGM_FI_DEV_POWER_USAGE in watts; DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION in millijoules cumulative). H100 SXM5 TDP is 700 W per GPU.",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "asDropdown": false,
+          "icon": "arrow-left",
+          "includeVars": false,
+          "keepTime": true,
+          "tags": ["crusoe", "gpu"],
+          "targetBlank": false,
+          "title": "Cluster GPU Overview",
+          "tooltip": "",
+          "type": "dashboards",
+          "url": ""
+        }
+      ],
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Total instantaneous GPU power draw across all nodes in the cluster. Sum of DCGM_FI_DEV_POWER_USAGE for all GPUs matching the selected cluster.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 5600},
+                  {"color": "red", "value": 8960}
+                ]
+              },
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Cluster Power",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Average instantaneous power draw per GPU across the cluster. H100 SXM5 TDP is 700 W; sustained workloads typically draw 400–650 W per GPU.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 350},
+                  {"color": "red", "value": 560}
+                ]
+              },
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "avg(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Avg Power per GPU",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Peak total cluster power draw observed within the selected time range.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 5600},
+                  {"color": "red", "value": 8960}
+                ]
+              },
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["max"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "instant": false,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Peak Power (Time Range)",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Total GPU energy consumed across the cluster during the selected time range. Derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative millijoules) using increase() over the dashboard range.\n\nFormula: increase(mJ) ÷ 3.6×10⁹ = kWh",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "fixed", "fixedColor": "blue"},
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{"color": "blue", "value": null}]
+              },
+              "unit": "kwatth"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "id": 4,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(increase(DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION{cluster_id=~\"$cluster\"}[$__range])) / 3600000000",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Energy Consumed (Time Range)",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Total GPU power draw across the entire cluster over time. The dashed threshold line at 11,200 W represents 100% TDP for 16× H100 SXM5 GPUs (700 W each). Adjust if your node count or GPU model differs.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "dashed"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "red", "value": 11200}
+                ]
+              },
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+          "id": 5,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "legendFormat": "Total",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Cluster Power over Time",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "GPU power draw per node over time. Each line is one node (sum across all GPUs on that node). Useful for comparing nodes and detecting imbalanced workloads.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 6,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Power by Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Current power draw per node as a bar gauge. Max value is set to 5,600 W (8× H100 SXM5 at 700 W TDP each). Adjust if your node has a different GPU count or model.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [],
+              "max": 5600,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 2800},
+                  {"color": "red", "value": 4480}
+                ]
+              },
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 7,
+          "options": {
+            "displayMode": "gradient",
+            "minVizHeight": 10,
+            "minVizWidth": 0,
+            "namePlacement": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "showUnfilled": true,
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "instant": true,
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Current Power by Node",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "GPU power draw vs GPU utilization over time, overlaid on a dual-axis chart. A flat power line with low utilization suggests idle or memory-bound work. Rising power tracking rising utilization indicates a compute-bound workload.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 5,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "watt"
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Avg Utilization %"},
+                "properties": [
+                  {"id": "unit", "value": "percent"},
+                  {"id": "max", "value": 100},
+                  {"id": "custom.axisPlacement", "value": "right"},
+                  {"id": "custom.axisLabel", "value": "Utilization (%)"}
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Total Power W"},
+                "properties": [
+                  {"id": "custom.axisLabel", "value": "Power (W)"}
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
+          "id": 8,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+              "legendFormat": "Total Power W",
+              "refId": "A"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+              "legendFormat": "Avg Utilization %",
+              "refId": "B"
+            }
+          ],
+          "title": "Power vs GPU Utilization",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "1m",
+      "schemaVersion": 39,
+      "tags": ["crusoe", "gpu", "power"],
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+            "definition": "label_values(DCGM_FI_DEV_POWER_USAGE, cluster_id)",
+            "hide": 0,
+            "includeAll": true,
+            "allValue": ".*",
+            "label": "Cluster",
+            "multi": false,
+            "name": "cluster",
+            "options": [],
+            "query": {
+              "query": "label_values(DCGM_FI_DEV_POWER_USAGE, cluster_id)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 2,
+            "regex": "",
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": {"from": "now-3h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Crusoe — Cluster GPU Power",
+      "uid": "crusoe-cluster-power",
+      "version": 1,
+      "weekStart": ""
+    }
+  cluster-ib-overview.json: |-
+    {
+      "uid": "crusoe-ib-cluster",
+      "title": "Crusoe \u2014 InfiniBand Cluster View",
+      "tags": [
+        "crusoe",
+        "infiniband",
+        "cluster"
+      ],
+      "schemaVersion": 38,
+      "version": 2,
+      "refresh": "30s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-telemetry"
+            },
+            "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": false,
+            "includeAll": false,
+            "current": {}
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Active IB Nodes",
+          "description": "Number of nodes with active IB HCAs",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "count(count by (vm_name) (crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}))",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Total HCA Ports",
+          "description": "Total IB HCA ports across the cluster",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "count(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"})",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Cluster RX Bandwidth",
+          "description": "Total receive bandwidth across all nodes and HCAs",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Cluster TX Bandwidth",
+          "description": "Total transmit bandwidth across all nodes and HCAs",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Total RX Errors",
+          "description": "Total receive errors across the cluster",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Total TX Discards",
+          "description": "Total transmit discards across the cluster",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 20,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(increase(crusoe_ib_port_xmit_discard{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Per-Node Aggregate RX Bandwidth",
+          "description": "Aggregate RX bandwidth per node (all HCAs summed)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Per-Node Aggregate TX Bandwidth",
+          "description": "Aggregate TX bandwidth per node (all HCAs summed)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 8",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "RX Bandwidth Utilization % (per node)",
+          "description": "RX utilization as % of line rate per node",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[$__rate_interval])) / 1e9 / sum by (vm_name) (crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}) * 100",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "RX Errors Rate (per node)",
+          "description": "RX error rate per node",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "TX Wait (Back-pressure, per node)",
+          "description": "TX wait cycles \u2014 indicates back-pressure or congestion",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        }
+      ]
+    }
+  dcgm-xid-errors.json: |
+    {
+      "__inputs": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Crusoe Telemetry Relay",
+          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "type": "datasource",
+          "pluginId": "prometheus",
+          "pluginName": "Prometheus"
+        }
+      ],
+      "__elements": {},
+      "__requires": [
+        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
+        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+        {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+        {"type": "panel", "id": "table", "name": "Table", "version": ""}
+      ],
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "DCGM Xid errors and GPU health check failures across the cluster. Xid errors indicate GPU hardware or driver issues — see https://docs.nvidia.com/deploy/xid-errors/ for error code reference. Data sourced from Crusoe Telemetry Relay (Watch Agent provides DCGM metrics; no separate DCGM exporter installation is required).",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "asDropdown": false,
+          "icon": "arrow-left",
+          "includeVars": false,
+          "keepTime": true,
+          "tags": ["crusoe", "gpu"],
+          "targetBlank": false,
+          "title": "Cluster GPU Overview",
+          "tooltip": "",
+          "type": "dashboards",
+          "url": ""
+        }
+      ],
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Total Xid errors recorded across all GPUs in the last 24 hours. Any non-zero value warrants investigation.\n\nFor Xid error code meanings see: https://docs.nvidia.com/deploy/xid-errors/",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [
+                {"options": {"0": {"color": "green", "index": 0, "text": "0 — Clean"}}, "type": "value"}
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "red", "value": 1}
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["sum"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(increase(DCGM_FI_DEV_XID_ERRORS[24h]))",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Xid Errors (Last 24h)",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Total ECC double-bit errors in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL counts volatile (since-reset) double-bit errors. Persistent non-zero values indicate failing GPU memory.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [
+                {"options": {"0": {"color": "green", "index": 0, "text": "0 — Clean"}}, "type": "value"}
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 1},
+                  {"color": "red", "value": 10}
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["sum"], "fields": "", "values": false},
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum(increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h]))",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Total ECC Errors (Last 24h)",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Xid error rate per node over time. A sudden spike typically indicates a driver crash, hardware fault, or workload-induced GPU reset.\n\nFor Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "normal"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+          "id": 3,
+          "options": {
+            "legend": {
+              "calcs": ["sum"],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum by (node) (increase(DCGM_FI_DEV_XID_ERRORS[5m]))",
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Xid Error Rate by Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "Recent Xid errors grouped by node, GPU, and Xid error code. For Xid code meanings see: https://docs.nvidia.com/deploy/xid-errors/\n\nNote: the xid_id label name may differ — check the actual label names with the scrape discovery curl in the Troubleshooting section if this panel shows no data.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "custom": {
+                "align": "auto",
+                "cellOptions": {"type": "auto"},
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Value"},
+                "properties": [
+                  {"id": "displayName", "value": "Error Count"},
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {"mode": "basic", "type": "color-background"}
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {"color": "green", "value": null},
+                        {"color": "red", "value": 1}
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 4,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": ["sum"],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [{"desc": true, "displayName": "Error Count"}]
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum by (node, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Xid Errors by Node / GPU / Code (Last 24h)",
+          "transformations": [
+            {
+              "id": "labelsToFields",
+              "options": {"mode": "columns"}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {"Time": true},
+                "indexByName": {"node": 0, "gpu": 1, "xid_id": 2, "Value": 3},
+                "renameByName": {}
+              }
+            }
+          ],
+          "type": "table"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "DCGM GPU health failures: ECC double-bit errors and clock throttle events per node/GPU in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL is the volatile double-bit ECC error counter. DCGM_FI_DEV_CLOCK_THROTTLE_REASONS is a bitmask — any non-zero increase indicates throttling events.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "custom": {
+                "align": "auto",
+                "cellOptions": {"type": "auto"},
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Value"},
+                "properties": [
+                  {"id": "displayName", "value": "Event Count"},
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {"mode": "basic", "type": "color-background"}
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {"color": "green", "value": null},
+                        {"color": "yellow", "value": 1},
+                        {"color": "red", "value": 10}
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 5,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": ["sum"],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [{"desc": true, "displayName": "Event Count"}]
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h])) > 0",
+              "instant": true,
+              "legendFormat": "ECC DBE {{node}} GPU {{gpu}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_CLOCK_THROTTLE_REASONS[24h])) > 0",
+              "instant": true,
+              "legendFormat": "Throttle {{node}} GPU {{gpu}}",
+              "refId": "B"
+            }
+          ],
+          "title": "DCGM Health Failures (Last 24h)",
+          "transformations": [
+            {
+              "id": "labelsToFields",
+              "options": {"mode": "columns"}
+            }
+          ],
+          "type": "table"
+        }
+      ],
+      "refresh": "5m",
+      "schemaVersion": 39,
+      "tags": ["crusoe", "gpu", "dcgm", "xid"],
+      "templating": {"list": []},
+      "time": {"from": "now-24h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Crusoe — DCGM & Xid Errors",
+      "uid": "crusoe-dcgm-xid-errors",
+      "version": 1,
+      "weekStart": ""
+    }
+  node-gpu-detail.json: |
+    {
+      "__inputs": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Crusoe Telemetry Relay",
+          "description": "Crusoe Telemetry Relay Prometheus-compatible endpoint",
+          "type": "datasource",
+          "pluginId": "prometheus",
+          "pluginName": "Prometheus"
+        }
+      ],
+      "__elements": {},
+      "__requires": [
+        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
+        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""}
+      ],
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "Per-GPU metrics for a selected node: utilization, memory, temperature, power, and clock speeds. Data sourced from Crusoe Telemetry Relay.",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "asDropdown": false,
+          "icon": "arrow-left",
+          "includeVars": false,
+          "keepTime": true,
+          "tags": ["crusoe", "gpu"],
+          "targetBlank": false,
+          "title": "Cluster GPU Overview",
+          "tooltip": "",
+          "type": "dashboards",
+          "url": ""
+        }
+      ],
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "GPU utilization per GPU on the selected node. Each line represents one GPU device. The 'gpu' label is the DCGM GPU index.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "max": 100,
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "DCGM_FI_DEV_GPU_UTIL{node=\"$node\"}",
+              "legendFormat": "GPU {{gpu}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Per-GPU Utilization",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "GPU framebuffer memory used per GPU on the selected node. DCGM_FI_DEV_FB_USED is in MiB.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "mebibytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "id": 2,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "DCGM_FI_DEV_FB_USED{node=\"$node\"}",
+              "legendFormat": "GPU {{gpu}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Per-GPU Memory Used",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "GPU temperature per GPU on the selected node. DCGM_FI_DEV_GPU_TEMP is in Celsius.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {
+                  "mode": "line+area"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 75},
+                  {"color": "red", "value": 85}
+                ]
+              },
+              "unit": "celsius"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "id": 3,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "DCGM_FI_DEV_GPU_TEMP{node=\"$node\"}",
+              "legendFormat": "GPU {{gpu}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Per-GPU Temperature",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "GPU power draw per GPU on the selected node. DCGM_FI_DEV_POWER_USAGE is in watts.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "watt"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "id": 4,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "max", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "DCGM_FI_DEV_POWER_USAGE{node=\"$node\"}",
+              "legendFormat": "GPU {{gpu}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Per-GPU Power Draw",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+          "description": "SM clock and memory clock per GPU on the selected node. DCGM_FI_DEV_SM_CLOCK and DCGM_FI_DEV_MEM_CLOCK are in MHz. High values indicate the GPU is not being thermally throttled.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 5,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "megahertz"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "id": 5,
+          "options": {
+            "legend": {
+              "calcs": ["mean", "lastNotNull"],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "DCGM_FI_DEV_SM_CLOCK{node=\"$node\"}",
+              "legendFormat": "SM GPU {{gpu}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+              "expr": "DCGM_FI_DEV_MEM_CLOCK{node=\"$node\"}",
+              "legendFormat": "Mem GPU {{gpu}}",
+              "refId": "B"
+            }
+          ],
+          "title": "Per-GPU SM & Memory Clock",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "1m",
+      "schemaVersion": 39,
+      "tags": ["crusoe", "gpu", "kubernetes"],
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "datasource": {"type": "prometheus", "uid": "crusoe-telemetry"},
+            "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, node)",
+            "hide": 0,
+            "includeAll": false,
+            "label": "Node",
+            "multi": false,
+            "name": "node",
+            "options": [],
+            "query": {
+              "query": "label_values(DCGM_FI_DEV_GPU_UTIL, node)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 2,
+            "regex": "",
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Crusoe — Node GPU Detail",
+      "uid": "crusoe-node-gpu-detail",
+      "version": 1,
+      "weekStart": ""
+    }
+  node-ib-detail.json: |-
+    {
+      "uid": "crusoe-ib-node",
+      "title": "Crusoe \u2014 InfiniBand Node View",
+      "tags": [
+        "crusoe",
+        "infiniband",
+        "node"
+      ],
+      "schemaVersion": 38,
+      "version": 3,
+      "refresh": "30s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-telemetry"
+            },
+            "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": false,
+            "includeAll": false,
+            "current": {}
+          },
+          {
+            "name": "node",
+            "label": "Node",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-telemetry"
+            },
+            "query": "label_values(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}, vm_name)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".+",
+            "current": {}
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Selected Nodes RX",
+          "description": "Total RX bandwidth across selected nodes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Selected Nodes TX",
+          "description": "Total TX bandwidth across selected nodes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "RX Errors",
+          "description": "Total RX errors across selected nodes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Link Integrity Errors",
+          "description": "Local link integrity errors across selected nodes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Aggregate RX per Node",
+          "description": "Aggregate RX bandwidth per node (sum across all 8 HCAs)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Aggregate TX per Node",
+          "description": "Aggregate TX bandwidth per node (sum across all 8 HCAs)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])) / 8",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Per-HCA RX Bandwidth",
+          "description": "RX bandwidth per HCA port for selected nodes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 8",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Per-HCA TX Bandwidth",
+          "description": "TX bandwidth per HCA port for selected nodes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 8",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Per-HCA RX Utilization %",
+          "description": "RX utilization as % of line rate per HCA",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 1e9 / ignoring(gig_bit_per_sec) crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"} * 100",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Per-HCA TX Utilization %",
+          "description": "TX utilization as % of line rate per HCA",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 20,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]) / 1e9 / ignoring(gig_bit_per_sec) crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"} * 100",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "RX Errors (per HCA)",
+          "description": "RX error rate per HCA",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 28,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "TX Wait / Back-pressure (per HCA)",
+          "description": "TX wait cycles per HCA \u2014 indicates congestion or flow control",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-telemetry"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 28,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-telemetry"
+              },
+              "expr": "rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        }
+      ]
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboards
+  namespace: monitoring

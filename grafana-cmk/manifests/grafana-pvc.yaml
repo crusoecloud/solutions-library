@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-storage
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: crusoe-csi-driver-ssd-sc
+  resources:
+    requests:
+      storage: 100Gi
+  # volumeMode is intentionally Filesystem (the default), not Block.
+  # Grafana mounts the volume as a directory (/var/lib/grafana) and cannot
+  # use a raw block device. The backing storage is still NVMe SSD — Filesystem
+  # mode simply means the CSI driver formats the SSD before mounting it.

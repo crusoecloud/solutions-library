@@ -1,0 +1,28 @@
+# WARNING: This service exposes Grafana directly to the public internet on port 80.
+# For production use, place Grafana behind an ingress controller with TLS termination
+# and an authentication proxy (e.g. oauth2-proxy). At minimum, change the Grafana
+# admin password from the generated default and restrict LoadBalancer source ranges:
+#
+#   spec:
+#     loadBalancerSourceRanges:
+#       - "203.0.113.0/24"   # your office CIDR
+#
+# For an internal-only deployment, skip this file and use `kubectl port-forward` instead:
+#   kubectl port-forward -n monitoring svc/grafana 3000:80
+#
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-lb
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: grafana
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
