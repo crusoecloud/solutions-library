@@ -38,22 +38,35 @@ What this is not: a full observability stack. Crusoe Metrics currently exposes i
                         │  Crusoe Metrics Endpoint          │
                         │  api.crusoecloud.com/v1alpha5/...  │
                         │  .../metrics/timeseries            │
-                        └────────────┬───────────────────────┘
-                                     │ Bearer token, PromQL
+                        └────────────▲───────────────────────┘
+                                     │ Bearer token (injected by Caddy)
                                      │
   monitoring namespace (CMK)         │
-  ┌───────────────────────────────── ▼ ──────────────────────┐
-  │                                                           │
-  │  ┌──────────────────┐   ┌──────────────────────────────┐  │
-  │  │  Grafana (Helm)  │◀──│  Sidecar-watched resources   │  │
-  │  │  + sidecars      │   │  - Secret: datasource YAML  │  │
-  │  │  + PVC storage   │   │  - ConfigMap: dashboards    │  │
-  │  └────────┬─────────┘   └──────────────────────────────┘  │
-  │           │                                               │
-  │  ┌────────▼─────────┐                                    │
-  │  │  grafana-lb Svc  │                                    │
-  │  │  (LoadBalancer)  │                                    │
-  └──┴────────┬─────────┴────────────────────────────────────┘
+  ┌───────────────────────────────── │ ──────────────────────┐
+  │                                  │                       │
+  │  ┌──────────────────────────────────────────────────┐   │
+  │  │  Grafana pod                                      │   │
+  │  │  ┌────────────┐  http://localhost:8888           │   │
+  │  │  │  Grafana   │ ───────▶  ┌──────────────────┐   │   │
+  │  │  │  (12.x)    │           │ crusoe-auth-proxy │───┼───┘
+  │  │  │            │           │   (Caddy)        │   │
+  │  │  └────────────┘           │  reads token +   │   │
+  │  │   ▲                       │  project from    │   │
+  │  │   │ sidecar-              │  Secret env vars │   │
+  │  │   │ provisioned           └──────────────────┘   │
+  │  │   │ dashboards + datasource (no secret in DS)    │
+  │  │   │                                              │
+  │  │  ┌─┴─────────────────────────────────┐           │
+  │  │  │ grafana-sc-dashboard +            │           │
+  │  │  │ grafana-sc-datasources sidecars   │           │
+  │  │  └───────────────────────────────────┘           │
+  │  │   PVC: /var/lib/grafana                          │
+  │  └──────────────────────────────────────────────────┘
+  │           │                                            │
+  │  ┌────────▼─────────┐                                 │
+  │  │  grafana-lb Svc  │                                 │
+  │  │  (LoadBalancer)  │                                 │
+  └──┴────────┬─────────┴─────────────────────────────────┘
               │ :3000
               ▼
          User Browser
@@ -74,16 +87,6 @@ What this is not: a full observability stack. Crusoe Metrics currently exposes i
 - `crusoe` CLI installed and authenticated:
   ```bash
   crusoe projects list
-  ```
-- `envsubst` (from GNU `gettext`) — used in Step 3 to expand the datasource template:
-  ```bash
-  # macOS:  brew install gettext
-  # Debian/Ubuntu: apt-get install -y gettext-base
-  envsubst --version
-  ```
-- `python3` — used in Step 5 to re-save the datasource (one-time post-install workaround for a Grafana 12.3.x quirk):
-  ```bash
-  python3 --version
   ```
 - **Crusoe Metrics enabled on your project.** This feature is currently in limited availability — contact your Crusoe account team to request enablement before proceeding.
 - **Crusoe Watch Agent installed on the cluster.** The Watch Agent collects infrastructure and DCGM metrics and forwards them to the Crusoe Metrics backend. It is installed by default on Managed Slurm clusters. For CMK clusters, verify with your account team or check for the agent DaemonSet:
@@ -147,27 +150,16 @@ kubectl apply -f manifests/monitoring-token-secret.yaml
 
 ## Step 3: Apply the remaining manifests and install Grafana
 
-Apply the StorageClass (if not already present), the PVC, and the dashboards ConfigMap:
+Apply the StorageClass (if not already present), the PVC, the dashboards ConfigMap, and the datasource ConfigMap:
 
 ```bash
 kubectl apply -f manifests/ssd-storageclass.yaml
 kubectl apply -f manifests/grafana-pvc.yaml
 kubectl apply -f manifests/grafana-dashboards-configmap.yaml
+kubectl apply -f manifests/grafana-datasource-configmap.yaml
 ```
 
-Create the datasource Secret. The `grafana-datasource-secret.yaml.example` template contains
-`${MONITORING_TOKEN}` and `${PROJECT_ID}` placeholders that must be expanded *before* the manifest
-is applied — Grafana does not expand environment variables in `secureJsonData` provisioning fields.
-Use `envsubst` to pre-expand and apply in one step:
-
-```bash
-export MONITORING_TOKEN=<your-monitoring-token>
-export PROJECT_ID=<your-project-id>
-envsubst < manifests/grafana-datasource-secret.yaml.example | kubectl apply -f -
-```
-
-> The expanded file (`manifests/grafana-datasource-secret.yaml`) is listed in `.gitignore`.
-> Never commit a file with the real token embedded.
+> The datasource ConfigMap contains no secrets — it points Grafana at `http://localhost:8888`, which is the in-pod auth-injecting sidecar (`crusoe-auth-proxy`) defined in `grafana-values.yaml`. The sidecar reads `MONITORING_TOKEN` and `PROJECT_ID` from the Secret you applied in Step 2 and rewrites every outbound request to the Crusoe Metrics endpoint with the right `Authorization: Bearer …` header. This avoids a Grafana 12.3.x bug where `secureJsonData` headers are not consistently applied on the resources-API path, which broke template-variable label lookups.
 
 Add the Grafana Helm repository and install:
 
@@ -185,10 +177,13 @@ What `grafana-values.yaml` configures:
 | Setting | Value | Why |
 |---|---|---|
 | `persistence.existingClaim` | `grafana-storage` | Uses the PVC created above; data survives pod restarts |
+| `deploymentStrategy.type` | `Recreate` | Required for `ReadWriteOnce` PVCs — rolling updates deadlock because the new pod can't attach the same volume |
 | `sidecar.datasources.enabled` | `true` | Watches ConfigMaps and Secrets labeled `grafana_datasource=1` and auto-provisions them |
 | `sidecar.dashboards.enabled` | `true` | Watches ConfigMaps labeled `grafana_dashboard=1` and loads them into Grafana |
 | `sidecar.dashboards.provider.folder` | `Crusoe` | Puts provisioned dashboards in a "Crusoe" folder in the Grafana UI |
 | `service.type` | `ClusterIP` | External access handled separately by `grafana-service-lb.yaml` |
+| `extraContainers.crusoe-auth-proxy` | Caddy on `:8888` | Injects `Authorization: Bearer $MONITORING_TOKEN` into outbound requests to Crusoe Metrics. Reads token + project from the `crusoe-monitoring-token` Secret as env vars. Avoids Grafana 12.3.x's `secureJsonData` regression. |
+| `resources.limits.memory` | `2Gi` | Rendering many dashboards against a multi-thousand-series cluster OOMs at the chart default (512Mi) |
 
 Wait for the pod to be ready:
 
@@ -241,32 +236,6 @@ kubectl get secret --namespace monitoring grafana \
 ```
 
 Log in at `http://<EXTERNAL-IP>:3000` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Change the password after first login.
-
-Re-save the datasource (one-time, required on Grafana 12.3.x):
-
-```bash
-TOKEN=$(kubectl get secret crusoe-monitoring-token -n monitoring \
-  -o jsonpath='{.data.MONITORING_TOKEN}' | base64 -d)
-ADMIN_PW=$(kubectl get secret -n monitoring grafana \
-  -o jsonpath='{.data.admin-password}' | base64 -d)
-
-CURRENT=$(kubectl exec -n monitoring deployment/grafana -c grafana -- \
-  curl -sS -u "admin:$ADMIN_PW" http://localhost:3000/api/datasources/uid/crusoe-metrics)
-
-PAYLOAD=$(echo "$CURRENT" | TOKEN="$TOKEN" python3 -c "
-import json, sys, os
-d = json.loads(sys.stdin.read())
-d['secureJsonData'] = {'httpHeaderValue1': 'Bearer ' + os.environ['TOKEN']}
-print(json.dumps(d))")
-
-kubectl exec -n monitoring deployment/grafana -c grafana -- env PAYLOAD="$PAYLOAD" \
-  sh -c "curl -sS -X PUT -u admin:$ADMIN_PW -H 'Content-Type: application/json' \
-  -d \"\$PAYLOAD\" http://localhost:3000/api/datasources/uid/crusoe-metrics"
-
-unset TOKEN ADMIN_PW CURRENT PAYLOAD
-```
-
-This re-encrypts the Bearer token in `secureJsonData` against Grafana's live encryption key. Sidecar-provisioned `secureJsonData` is sometimes not honored on first boot in Grafana 12.3.x — see [Troubleshooting](#troubleshooting) for symptoms.
 
 Verify the data source:
 
@@ -330,70 +299,33 @@ To verify the datasource actually works, open the **Crusoe** folder under **Dash
 
 ### Dashboards return 401 / "Authentication to data source failed" on every panel
 
-This is the real failure mode. The token is genuinely not authenticating. Two common causes:
-
-**a. The Grafana 12.3.x secureJsonData quirk.** See [the dedicated section below](#dashboard-panels-show-authentication-to-data-source-failed-401-even-though-the-token-is-valid). If you skipped the Step 5 re-save, run it now.
-
-**b. The token is expired or scoped to a different project.** Verify the project ID matches:
+The auth-injecting sidecar (`crusoe-auth-proxy`) is either down or has stale credentials.
 
 ```bash
-crusoe projects list
-# compare to:
-kubectl get secret crusoe-monitoring-token -n monitoring \
-  -o jsonpath='{.data.PROJECT_ID}' | base64 -d; echo
+# 1. Sidecar healthy?
+kubectl get pod -n monitoring -l app.kubernetes.io/name=grafana \
+  -o jsonpath='{.items[*].status.containerStatuses[?(@.name=="crusoe-auth-proxy")].ready}{"\n"}'
+
+# 2. Sidecar logs — Crusoe responses should be 200, anything else points at a bad token / project
+kubectl logs -n monitoring deployment/grafana -c crusoe-auth-proxy --tail=40
 ```
 
-If the project is right but you suspect token expiry, regenerate and re-apply:
+If the token is genuinely expired or scoped to the wrong project:
 
 ```bash
 crusoe monitoring tokens create
+crusoe projects list
 ```
 
-1. Edit `manifests/monitoring-token-secret.yaml` locally and replace `MONITORING_TOKEN` with the new value (the file uses `stringData`, so paste the raw token — no base64 required).
+1. Edit `manifests/monitoring-token-secret.yaml` locally and replace `MONITORING_TOKEN` (and `PROJECT_ID` if it changed). The file uses `stringData`, so paste the raw values — no base64 required.
 2. Re-apply the secret:
    ```bash
    kubectl apply -f manifests/monitoring-token-secret.yaml
    ```
-3. Re-run the [Step 5 re-save block](#step-5-log-in-and-verify) to push the new token into Grafana's `secureJsonData` (the sidecar does not automatically update `secureJsonData` when only the underlying token Secret changes).
-
-### Dashboard panels show "Authentication to data source failed" / 401 even though the token is valid
-
-Symptom: every dashboard panel returns `Authentication to data source failed` and Grafana logs show
-`"code":"bad_credential"` from the upstream, but `curl -H "Authorization: Bearer <token>" <crusoe-url>`
-from your laptop (or from inside the Grafana pod) succeeds. The Grafana API shows
-`secureJsonFields.httpHeaderValue1: true`, suggesting the encrypted header value is stored — yet it
-isn't being honored on outgoing requests.
-
-This is a Grafana 12.3.x quirk with sidecar-provisioned `secureJsonData`: the encrypted Bearer
-header sometimes isn't applied to the outgoing HTTP client on first boot. The reliable fix is to
-re-save the datasource via the API, which re-encrypts the secure field against Grafana's live
-encryption key and persists across pod restarts.
-
-```bash
-TOKEN=$(kubectl get secret crusoe-monitoring-token -n monitoring \
-  -o jsonpath='{.data.MONITORING_TOKEN}' | base64 -d)
-ADMIN_PW=$(kubectl get secret -n monitoring grafana \
-  -o jsonpath='{.data.admin-password}' | base64 -d)
-
-CURRENT=$(kubectl exec -n monitoring deployment/grafana -c grafana -- \
-  curl -sS -u "admin:$ADMIN_PW" http://localhost:3000/api/datasources/uid/crusoe-metrics)
-
-PAYLOAD=$(echo "$CURRENT" | TOKEN="$TOKEN" python3 -c "
-import json, sys, os
-d = json.loads(sys.stdin.read())
-d['secureJsonData'] = {'httpHeaderValue1': 'Bearer ' + os.environ['TOKEN']}
-print(json.dumps(d))")
-
-kubectl exec -n monitoring deployment/grafana -c grafana -- env PAYLOAD="$PAYLOAD" \
-  sh -c "curl -sS -X PUT -u admin:$ADMIN_PW -H 'Content-Type: application/json' \
-  -d \"\$PAYLOAD\" http://localhost:3000/api/datasources/uid/crusoe-metrics"
-
-unset TOKEN ADMIN_PW CURRENT PAYLOAD
-```
-
-This requires `editable: true` on the datasource (the default in
-`grafana-datasource-secret.yaml.example`). Re-test by reloading a dashboard — panels should now
-populate.
+3. Restart Grafana so the sidecar picks up the new env values:
+   ```bash
+   kubectl rollout restart deployment/grafana -n monitoring
+   ```
 
 ### Dashboards render but every panel says "No data"
 

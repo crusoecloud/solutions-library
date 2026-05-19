@@ -1,3 +1,2 @@
 manifests/monitoring-token-secret.yaml
-manifests/grafana-datasource-secret.yaml
 .claude/

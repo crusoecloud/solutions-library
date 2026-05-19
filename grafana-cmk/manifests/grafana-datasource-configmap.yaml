@@ -1,0 +1,32 @@
+# Grafana datasource — provisioned via the k8s-sidecar (label grafana_datasource="1").
+#
+# This ConfigMap intentionally contains NO secrets. The bearer token is injected
+# at request time by the `crusoe-auth-proxy` sidecar container (see
+# grafana-values.yaml). Grafana sends plain HTTP to http://localhost:8888;
+# the sidecar adds `Authorization: Bearer $MONITORING_TOKEN` and rewrites the
+# path to the real Crusoe Metrics endpoint. Port 8888 was chosen because the
+# default k8s-sidecar healthz on 8080 already binds in this pod.
+#
+# Because there are no secrets in this YAML, it can be committed directly —
+# no envsubst pre-expansion, no .example template, no Secret to gitignore.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crusoe-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  crusoe-metrics.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Crusoe Metrics
+        type: prometheus
+        uid: crusoe-metrics
+        access: proxy
+        url: http://localhost:8888
+        isDefault: true
+        jsonData:
+          httpMethod: GET
+          timeInterval: "60s"
+        editable: false
