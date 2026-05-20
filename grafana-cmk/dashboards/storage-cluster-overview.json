@@ -1,0 +1,579 @@
+{
+  "uid": "crusoe-storage-cluster",
+  "title": "Crusoe \u2014 Shared Storage View",
+  "description": "Crusoe-provisioned block-storage (SDisk) health: per-disk capacity, throughput, IOPS, and latency. Project-scoped \u2014 all disks in the project are listed; pick one from the Crusoe SDisk (by Crusoe ID) dropdown to drill in. The bar gauge always shows every disk for context.",
+  "tags": [
+    "crusoe",
+    "storage",
+    "sdisk"
+  ],
+  "schemaVersion": 38,
+  "version": 3,
+  "refresh": "1m",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "disk_id",
+        "label": "Crusoe SDisk (by Crusoe ID)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "crusoe-metrics"
+        },
+        "query": "label_values(crusoe_sdisk_disk_capacity_used_bytes, disk_id)",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {},
+        "description": "Crusoe-side disk identifier (matches what `crusoe storage disks list` and the Crusoe Console show). The K8s PVC UID is shown as `disk_name` in the capacity bar gauge legend for translation."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total SDisks in Project",
+      "description": "Number of Crusoe block-storage disks the metrics relay sees in this project.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "count(last_over_time(crusoe_sdisk_disk_capacity_used_bytes[2m]))",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Capacity Used (all disks)",
+      "description": "Project-wide sum of capacity consumed across every Crusoe SDisk.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(last_over_time(crusoe_sdisk_disk_capacity_used_bytes[2m]))",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Selected Disk: Capacity Used",
+      "description": "Capacity used on the disk picked in the Crusoe SDisk dropdown.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "last_over_time(crusoe_sdisk_disk_capacity_used_bytes{disk_id=\"$disk_id\"}[2m])",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Selected Disk: Read BW",
+      "description": "Average read bandwidth on the selected disk over the last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_read_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Selected Disk: Write BW",
+      "description": "Average write bandwidth on the selected disk over the last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_write_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Selected Disk: Avg Read Latency",
+      "description": "Average per-operation read latency on the selected disk. 0 when the disk has no read traffic in the last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "\u00b5s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_read_latency_sum{disk_id=\"$disk_id\"}[2m])) / sum(rate(crusoe_sdisk_disk_read_latency_count{disk_id=\"$disk_id\"}[2m])) or vector(0)",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Per-Disk Capacity Used (all disks)",
+      "description": "Per-disk capacity used. Unfiltered \u2014 every Crusoe SDisk in this project is listed regardless of which disk is selected in the dropdown. Legend shows `disk_id` (Crusoe Console identifier) followed by `disk_name` (K8s PVC UID) so you can map a disk between Crusoe Console and `kubectl get pv`.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "last_over_time(crusoe_sdisk_disk_capacity_used_bytes[2m])",
+          "instant": true,
+          "legendFormat": "{{disk_id}}  ({{disk_name}})"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Selected Disk: Read / Write Throughput",
+      "description": "Per-operation read/write bandwidth on the selected disk. Histogram-sum metric \u2192 use `rate(...)` to convert cumulative to bytes/sec.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_read_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "legendFormat": "read"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_write_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "legendFormat": "write"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Selected Disk: Read / Write IOPS",
+      "description": "Read/write operations per second on the selected disk.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "iops",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_read_iops_count{disk_id=\"$disk_id\"}[2m]))",
+          "legendFormat": "read"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_write_iops_count{disk_id=\"$disk_id\"}[2m]))",
+          "legendFormat": "write"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Selected Disk: Read Latency",
+      "description": "Average per-operation read latency on the selected disk. Computed as `rate(latency_sum) / rate(latency_count)`. Falls back to 0 when the disk has no read traffic in the window \u2014 that's not a dashboard bug, just an idle disk.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "\u00b5s",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_read_latency_sum{disk_id=\"$disk_id\"}[2m])) / sum(rate(crusoe_sdisk_disk_read_latency_count{disk_id=\"$disk_id\"}[2m])) or vector(0)",
+          "legendFormat": "avg read latency"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Selected Disk: Write Latency",
+      "description": "Average per-operation write latency on the selected disk. Computed as `rate(latency_sum) / rate(latency_count)`. Falls back to 0 when the disk has no write traffic in the window.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "\u00b5s",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_sdisk_disk_write_latency_sum{disk_id=\"$disk_id\"}[2m])) / sum(rate(crusoe_sdisk_disk_write_latency_count{disk_id=\"$disk_id\"}[2m])) or vector(0)",
+          "legendFormat": "avg write latency"
+        }
+      ]
+    }
+  ]
+}
