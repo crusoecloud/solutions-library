@@ -250,7 +250,7 @@ Verify the dashboards:
 
 1. Click **Dashboards** in the left sidebar.
 2. Open the **Crusoe** folder.
-3. You should see six dashboards: Cluster GPU Overview, Node GPU Detail, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, and InfiniBand Node View.
+3. You should see seven dashboards: Cluster GPU Overview, Node GPU Detail, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, and Storage Cluster View.
 
 ---
 
@@ -289,6 +289,24 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 > 3. **No in-guest fallback.** `ibv_devinfo`, `perfquery`, and the standard `/sys/class/infiniband/.../counters/` files are not exposed inside Crusoe guest VMs, so there is no in-guest path to scrape accurate per-HCA counters today.
 >
 > Treat the IB dashboards as **diagnostic** (which HCAs are active, where errors are concentrated, when traffic stops) rather than **quantitative** (absolute Gbps / % of line rate). For ground-truth bandwidth measurements, run `perftest` from inside the workload.
+
+### Storage dashboard
+
+**Storage Cluster View (`storage-cluster-overview.json`)** — cluster-wide disk I/O across all VMs plus Crusoe block-storage health. Surfaces:
+
+- **VM disk I/O** (from `crusoe_vm_disk_*` — guest-VM kernel block-device counters): cluster-wide read/write throughput, read/write IOPS, per-node breakdown, top-10 nodes by combined I/O.
+- **Crusoe block storage / SDisks** (from `crusoe_sdisk_*` — service-side view of Crusoe-provisioned disks): per-disk capacity used (bar gauge), per-disk read/write throughput, and per-disk average read/write latency.
+- **PVCs Bound** stat counting `kube_persistentvolumeclaim_status_phase{phase="Bound"} == 1` to confirm K8s claims are healthy.
+
+A **Disk device filter** template variable defaults to `md.*|vd.*|sd.*` (logical/RAID view — what mount points see), with options to switch to `nvme.*` (per-NVMe physical view) or `nvme.*|md.*|vd.*|sd.*` (all real disks; double-counts when a RAID and its members both report).
+
+> **Storage dashboard caveats:**
+>
+> 1. **`device` label is not pre-filtered.** `crusoe_vm_disk_*` series include non-block-device names like `nvidia0..7` (GPU char devices), `ens3` / `ens7` (network interfaces), and `loop0..7` (squashfs). The dashboard's PromQL filters to `md.*|vd.*|sd.*|nvme.*`-style patterns to drop these from totals. If you want raw, unfiltered numbers, query the metric directly.
+> 2. **RAID double-counting.** On Crusoe H100/B200 nodes the 8 local NVMes are typically RAID0'd into `md127`. Aggregating both `nvme*` and `md*` double-counts the same I/O. Default filter shows the logical (RAID) view.
+> 3. **No in-volume usage.** `kubelet_volume_stats_used_bytes` is not in the Crusoe Metrics catalog, so the dashboard can show "PVC X requested 100 GiB" but not "PVC X is 80% full." For Crusoe-provisioned block storage, `crusoe_sdisk_disk_capacity_used_bytes` is available — but it's project-scoped, not joined to the K8s PV that mounts it.
+> 4. **SDisk panels are project-scoped.** The SDisk metrics aren't keyed by `cluster_id`, so the SDisk panels show every Crusoe-provisioned disk in the project regardless of which cluster is selected in the dropdown.
+> 5. **Latency unit assumed microseconds.** `crusoe_sdisk_disk_read_latency_sum` / `_count` produce an average via `rate(sum)/rate(count)`. Magnitudes (~500) match microseconds for cached SSD reads, but verify against `perftest`-style benchmarks if precision matters.
 
 ---
 
@@ -361,6 +379,7 @@ kubectl create configmap crusoe-dashboards \
   --from-file=cluster-gpu-power.json=dashboards/cluster-gpu-power.json \
   --from-file=cluster-ib-overview.json=dashboards/cluster-ib-overview.json \
   --from-file=node-ib-detail.json=dashboards/node-ib-detail.json \
+  --from-file=storage-cluster-overview.json=dashboards/storage-cluster-overview.json \
   --dry-run=client -o yaml \
   | sed 's/^metadata:$/metadata:\n  labels:\n    grafana_dashboard: "1"/' \
   | kubectl apply -f -
