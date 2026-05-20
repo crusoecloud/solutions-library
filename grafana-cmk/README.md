@@ -5,7 +5,7 @@
 
 # Self-hosted Grafana on Crusoe Managed Kubernetes
 
-![Dashboard overview](assets/dashboard-view.png)
+![Cluster GPU Power dashboard at peak load: 1.19 MW total / 1.24 MW peak / 571 kWh consumed](assets/cluster-maxpower.png)
 
 This solution deploys Grafana on a Crusoe Managed Kubernetes (CMK) cluster and configures it to pull GPU, node, and Slurm metrics from the Crusoe Metrics endpoint. You get a persistent Grafana instance you control, with pre-built dashboards for GPU utilization, per-node GPU detail, DCGM/Xid error tracking, GPU power, and InfiniBand fabric activity.
 
