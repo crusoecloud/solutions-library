@@ -260,7 +260,10 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 ### GPU dashboards
 
-**Cluster GPU Overview (`cluster-gpu-overview.json`)** — cluster-wide GPU health and utilization. Total GPUs / nodes, average utilization gauge with 70%/90% thresholds, per-node utilization time series, memory used vs total, power draw by node, top-10 nodes by utilization.
+**Cluster GPU Overview (`cluster-gpu-overview.json`, 14 panels)** — cluster-wide GPU health, utilization, and thermals.
+
+- **Utilization + capacity**: Total GPUs / nodes, average utilization gauge (70%/90% thresholds), per-node utilization time series, memory used vs total, power draw by node, top-10 nodes by utilization.
+- **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs ≥80°C, GPUs ≥85°C slowdown threshold) sourced from `DCGM_FI_DEV_GPU_TEMP`, a full-width **Top 10 Hottest Nodes** bar gauge, and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node GPU Detail dashboard.
 
 **Node GPU Detail (`node-gpu-detail.json`)** — per-GPU breakdown for one node. Utilization per device, memory used, temperature with 75 °C / 85 °C thresholds, power draw, and SM/memory clocks (useful for spotting thermal throttling).
 
