@@ -250,7 +250,7 @@ Verify the dashboards:
 
 1. Click **Dashboards** in the left sidebar.
 2. Open the **Crusoe** folder.
-3. You should see six dashboards: Cluster GPU Overview, Node GPU Detail, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, and InfiniBand Node View.
+3. You should see eight dashboards: Cluster GPU Overview, Node GPU Detail, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, and Slurm Cluster View.
 
 ---
 
@@ -289,6 +289,46 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 > 3. **No in-guest fallback.** `ibv_devinfo`, `perfquery`, and the standard `/sys/class/infiniband/.../counters/` files are not exposed inside Crusoe guest VMs, so there is no in-guest path to scrape accurate per-HCA counters today.
 >
 > Treat the IB dashboards as **diagnostic** (which HCAs are active, where errors are concentrated, when traffic stops) rather than **quantitative** (absolute Gbps / % of line rate). For ground-truth bandwidth measurements, run `perftest` from inside the workload.
+
+### Storage dashboard
+
+**Shared Storage View (`storage-cluster-overview.json`)** — per-disk view of Crusoe-provisioned block storage (`crusoe_sdisk_*` metric family). Project-scoped: the dashboard lists every Crusoe SDisk in the project and you drill into one at a time using the **Crusoe SDisk (by Crusoe ID)** dropdown.
+
+Panels:
+
+- **Top stat row** (6 cards): Total SDisks in project, Total Capacity Used across all disks, plus four "Selected Disk" cards — Capacity Used, current Read BW, current Write BW, and average Read Latency.
+- **Per-Disk Capacity Used** bar gauge — **unfiltered**, always shows every disk in the project so you keep the global view. Legend displays `disk_id` (Crusoe Console identifier) followed by `(disk_name)` in parens (the K8s PVC UID), giving you a direct map between what Crusoe Console shows and what `kubectl get pv` shows.
+- **Selected Disk** time-series rows: Read/Write Throughput, Read/Write IOPS, Read Latency, Write Latency.
+
+The dropdown is sourced from `label_values(crusoe_sdisk_disk_capacity_used_bytes, disk_id)` so it lists every disk that's reporting capacity in this project. **No cluster filter** — Crusoe SDisks are scoped to the project, not to a cluster, so cluster filtering would be misleading.
+
+> **Storage dashboard caveats:**
+>
+> 1. **Two identifiers per disk.** Each Crusoe SDisk has both a `disk_id` (Crusoe-side identifier — shown in Crusoe Console and `crusoe storage disks list`) and a `disk_name` (the K8s PVC UID once it's mounted by a CSI driver). They are *different* UUIDs. The dropdown uses `disk_id`; the capacity bar gauge displays both, e.g. `44b160b1-bc88-466a-bdb2-e518941b59f8 (1dd0fac5-44e0-4539-ad89-2924e4f1b822)`.
+> 2. **No in-volume usage.** `kubelet_volume_stats_used_bytes` is not in the Crusoe Metrics catalog, so the dashboard can't show "this disk is 80% full" — only `crusoe_sdisk_disk_capacity_used_bytes`, which is bytes consumed from the Crusoe-storage-service's vantage point.
+> 3. **Latency unit assumed microseconds.** `crusoe_sdisk_disk_read_latency_sum` / `_count` produce an average via `rate(sum)/rate(count)`. Magnitudes (~500 µs for cached SSD reads) match microseconds, but verify with `perftest`-style benchmarks if precision matters. Latency panels fall back to 0 when the disk has no traffic in the window (rather than the more confusing NaN/"No data").
+> 4. **`[2m]` rate windows.** Measured Watch Agent cadence on the SDisk metrics is ~60 s between fresh samples (with occasional 2–12 min outliers). The dashboard uses `[2m]` rate windows so panels update within ~1–2 min of the agent posting fresh data, balanced against the occasional empty point on a scrape gap.
+> 5. **VM-level disk I/O** (the `crusoe_vm_disk_*` family — guest-VM kernel block-device counters) is *not* shown on this dashboard. It's project-wide and node-aggregated rather than per-disk, so it didn't fit the "one disk at a time" focus. If you need it, file a follow-up to ship a separate VM Disk I/O dashboard.
+
+### Slurm dashboard
+
+**Slurm Cluster View (`slurm-cluster-overview.json`)** — control-plane view of a Crusoe Managed Slurm or Slurm-on-CMK cluster. Surfaces:
+
+- **Node states** as stat cards (Total / Allocated / Idle / Mixed / Down-Drained-Fail / Drain-Draining) plus a 12-state stacked time series (`alloc`, `mixed`, `idle`, `drain`, `draining`, `drained`, `down`, `fail`, `maint`, `planned`, `resv`, `unknown`).
+- **Job states** as stat cards (Running, Pending, sdiag Failed, OOM, Cancelled, Timeout, Node-Failed) plus a 9-state stacked time series.
+- **Capacity utilization**: CPU Alloc % and Memory Alloc % gauges (70%/90% thresholds), plus stacked time series of CPU alloc/idle and memory alloc/free.
+- **Scheduler health**: scheduler-cycle mean/last latency (`crusoe_slurm_sched_mean_cycle`, `crusoe_slurm_schedule_cycle_last`) and backfill activity (last cycle duration + avg queue length seen).
+- **Error stats** stat row: Cancelled, Timeout, and Node-Fail jobs.
+
+The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluster_id)` so the dropdown only lists clusters that actually publish Slurm telemetry.
+
+> **Slurm dashboard caveats:**
+>
+> 1. **Memory unit is MB.** `crusoe_slurm_node_memory_bytes` and `_memory_alloc_bytes` are exported in megabytes despite the `_bytes` suffix (Slurm's RealMemory convention). The dashboard uses Grafana's `mbytes` unit so the panel auto-scales MB → GB → TB. The `Memory Alloc %` gauge ratios the two metrics, so the unit confusion cancels.
+> 2. **Slurm node names don't match Crusoe `vm_name`.** Slurm uses canonical names like `come-scale-away-workers-0`; the Crusoe Metrics relay uses `np-…` for `vm_name`. The two surfaces can't be joined at the node level without an external mapping — so this dashboard doesn't link click-through to the GPU dashboards.
+> 3. **Not all installations expose every state.** Sparse states (`crusoe_slurm_nodes_planned`, `_resv`, `_unknown`, `_maint`) will simply not contribute to the stacked area on a cluster that never enters those states. That's expected — empty isn't broken.
+> 4. **No slurmdbd panel.** The `crusoe_slurm_slurmdbd_queue_size` metric is published but consistently reports 0 on slinky-based Slurm-on-CMK installations (no slurmdbd pod), so showing it was misleading. If your cluster runs Crusoe Managed Slurm with slurmdbd, the metric is meaningful and you can re-add the panel locally.
+> 5. **Single-cluster scope.** The dashboard intentionally surfaces only cluster-wide aggregates. Per-partition (`crusoe_slurm_partition_*`), per-user (`crusoe_slurm_user_jobs_*`), and per-account (`crusoe_slurm_account_jobs_*`) metrics are available and would make good follow-up dashboards if you need that breakdown.
 
 ---
 
@@ -361,6 +401,8 @@ kubectl create configmap crusoe-dashboards \
   --from-file=cluster-gpu-power.json=dashboards/cluster-gpu-power.json \
   --from-file=cluster-ib-overview.json=dashboards/cluster-ib-overview.json \
   --from-file=node-ib-detail.json=dashboards/node-ib-detail.json \
+  --from-file=storage-cluster-overview.json=dashboards/storage-cluster-overview.json \
+  --from-file=slurm-cluster-overview.json=dashboards/slurm-cluster-overview.json \
   --dry-run=client -o yaml \
   | sed 's/^metadata:$/metadata:\n  labels:\n    grafana_dashboard: "1"/' \
   | kubectl apply -f -

@@ -1,0 +1,1324 @@
+{
+  "uid": "crusoe-slurm-cluster",
+  "title": "Crusoe \u2014 Slurm Cluster View",
+  "description": "Slurm scheduler state: node states, job states, capacity utilization, scheduler/backfill health, error counters.",
+  "tags": [
+    "crusoe",
+    "slurm",
+    "scheduler"
+  ],
+  "schemaVersion": 38,
+  "version": 2,
+  "refresh": "1m",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "cluster",
+        "label": "Cluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "crusoe-metrics"
+        },
+        "query": "label_values(crusoe_slurm_nodes, cluster_id)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Nodes",
+      "description": "Total nodes Slurm is aware of in the selected cluster.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Allocated",
+      "description": "Nodes currently allocated to jobs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_alloc{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Idle",
+      "description": "Nodes idle and available to schedule.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_idle{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Mixed",
+      "description": "Nodes partially allocated \u2014 some CPUs in use, some idle.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_mixed{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Down / Drained / Fail",
+      "description": "Nodes currently unusable by the scheduler. Any non-zero value warrants investigation.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_down{cluster_id=~\"$cluster\"}) + sum(crusoe_slurm_nodes_drained{cluster_id=~\"$cluster\"}) + sum(crusoe_slurm_nodes_fail{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Drain / Draining",
+      "description": "Nodes flagged to drain \u2014 they finish current jobs but won't accept new ones.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_drain{cluster_id=~\"$cluster\"}) + sum(crusoe_slurm_nodes_draining{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Running Jobs",
+      "description": "Jobs currently executing on allocated nodes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_running{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Pending Jobs",
+      "description": "Jobs awaiting resources in the queue.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_pending{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "sdiag Failed",
+      "description": "Jobs that failed since slurmctld start (from sdiag). Any non-zero warrants a look at recent jobs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_sdiag_jobs_failed{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "OOM Jobs",
+      "description": "Jobs killed due to out-of-memory. Indicates resource requests need tuning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_outofmemory{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "gauge",
+      "title": "CPU Alloc %",
+      "description": "CPUs allocated vs total across all nodes. Green <70%, yellow 70-90%, red >90%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_node_cpus_alloc{cluster_id=~\"$cluster\"}) / sum(crusoe_slurm_node_cpus{cluster_id=~\"$cluster\"}) * 100",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "gauge",
+      "title": "Memory Alloc %",
+      "description": "Memory allocated vs total. Note: Slurm exports memory in MB despite the _bytes suffix on the metric name.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_node_memory_alloc_bytes{cluster_id=~\"$cluster\"}) / sum(crusoe_slurm_node_memory_bytes{cluster_id=~\"$cluster\"}) * 100",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Node State Over Time",
+      "description": "Stacked node-count per Slurm state. Watch for drained/down growing or alloc dropping unexpectedly.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 50,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_alloc{cluster_id=~\"$cluster\"})",
+          "legendFormat": "alloc"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_mixed{cluster_id=~\"$cluster\"})",
+          "legendFormat": "mixed"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_idle{cluster_id=~\"$cluster\"})",
+          "legendFormat": "idle"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_drain{cluster_id=~\"$cluster\"})",
+          "legendFormat": "drain"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_draining{cluster_id=~\"$cluster\"})",
+          "legendFormat": "draining"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_drained{cluster_id=~\"$cluster\"})",
+          "legendFormat": "drained"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_down{cluster_id=~\"$cluster\"})",
+          "legendFormat": "down"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_fail{cluster_id=~\"$cluster\"})",
+          "legendFormat": "fail"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_maint{cluster_id=~\"$cluster\"})",
+          "legendFormat": "maint"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_planned{cluster_id=~\"$cluster\"})",
+          "legendFormat": "planned"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_resv{cluster_id=~\"$cluster\"})",
+          "legendFormat": "resv"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_nodes_unknown{cluster_id=~\"$cluster\"})",
+          "legendFormat": "unknown"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Job State Over Time",
+      "description": "Stacked job-count by Slurm state. Spikes in failed/timeout/cancelled vs running can reveal scheduler or workload issues.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 50,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_running{cluster_id=~\"$cluster\"})",
+          "legendFormat": "running"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_pending{cluster_id=~\"$cluster\"})",
+          "legendFormat": "pending"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_completing{cluster_id=~\"$cluster\"})",
+          "legendFormat": "completing"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_configuring{cluster_id=~\"$cluster\"})",
+          "legendFormat": "configuring"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_suspended{cluster_id=~\"$cluster\"})",
+          "legendFormat": "suspended"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_completed{cluster_id=~\"$cluster\"})",
+          "legendFormat": "completed"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_failed{cluster_id=~\"$cluster\"})",
+          "legendFormat": "failed"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_cancelled{cluster_id=~\"$cluster\"})",
+          "legendFormat": "cancelled"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_timeout{cluster_id=~\"$cluster\"})",
+          "legendFormat": "timeout"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "CPU Allocation",
+      "description": "CPUs allocated vs idle summed across all nodes in the cluster.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 50,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_node_cpus_alloc{cluster_id=~\"$cluster\"})",
+          "legendFormat": "allocated"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_node_cpus_idle{cluster_id=~\"$cluster\"})",
+          "legendFormat": "idle"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Memory Allocation",
+      "description": "Memory allocated vs free, summed across all nodes. Slurm exports memory in MB despite the _bytes suffix on the metric \u2014 Grafana's mbytes unit auto-scales (MB\u2192GB\u2192TB).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "mbytes",
+          "custom": {
+            "fillOpacity": 50,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_node_memory_alloc_bytes{cluster_id=~\"$cluster\"})",
+          "legendFormat": "allocated"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_node_memory_free_bytes{cluster_id=~\"$cluster\"})",
+          "legendFormat": "free"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Scheduler Cycle Latency",
+      "description": "Main scheduler loop duration. Rising values mean the controller is falling behind \u2014 typically indicates queue size growth or contention.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "\u00b5s",
+          "custom": {
+            "fillOpacity": 10,
+            "lineInterpolation": "linear"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "crusoe_slurm_sched_mean_cycle{cluster_id=~\"$cluster\"}",
+          "legendFormat": "mean"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "crusoe_slurm_schedule_cycle_last{cluster_id=~\"$cluster\"}",
+          "legendFormat": "last"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Backfill Activity",
+      "description": "Backfill scheduler cycle duration and the average queue depth it observed during the cycle. Two series share an axis; the cycle is in \u00b5s, the queue length is unitless.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "lineInterpolation": "linear"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "crusoe_slurm_bf_cycle_last{cluster_id=~\"$cluster\"}",
+          "legendFormat": "last cycle (\u00b5s)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "crusoe_slurm_bf_queue_len_mean{cluster_id=~\"$cluster\"}",
+          "legendFormat": "avg queue len seen"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Cancelled Jobs",
+      "description": "Jobs in cancelled state right now.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 8,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_cancelled{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Timeout Jobs",
+      "description": "Jobs killed by Slurm wall-time limit.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 44,
+        "w": 8,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_timeout{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Node-Fail Jobs",
+      "description": "Jobs that ended due to node failure. Indicates hardware-level issues.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 44,
+        "w": 8,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(crusoe_slurm_jobs_node_failed{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    }
+  ]
+}
