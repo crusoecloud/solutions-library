@@ -278,12 +278,17 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 
 > **IB dashboard caveats (read before relying on absolute Gbps):**
 >
-> On Crusoe-virtualized HCAs the IB port counters surfaced through Crusoe Metrics are not a faithful realtime view of the fabric. Two issues we have observed:
+> On Crusoe-virtualized HCAs the IB port counters surfaced through Crusoe Metrics are not a faithful realtime view of the fabric. Three issues we have observed, all upstream of this repo:
 >
-> 1. **Sparse counter updates.** The agent appears to refresh the IB byte counters roughly every ~270 seconds even though the metric is scraped every 60s. Most `rate(...[1m])` windows therefore see no movement and return `NaN`, leaving panels blank for stretches of an otherwise busy job.
+> 1. **Slow scrape cadence.** The Watch Agent refreshes IB counters far less frequently than DCGM. Measured cadence between fresh samples on the same series:
+>     - H100 fleet (us-southcentral1-a): avg ~270 s, max ~300 s
+>     - B200 fleet (eu-norway1-a): avg ~22 minutes, max ~23 minutes
+>
+>    Because of this, every IB panel in this repo uses **`[1h]` rate windows** and the stat panels wrap bare metric references in **`last_over_time(... [1h])`**. With the typical `$__rate_interval` (~1 min) the panels would render entirely as "No data" — there are simply fewer than 2 samples per minute. The price of the wider window is temporal smoothing: a panel reading represents the average over the trailing hour, not the current second. When the Watch Agent's IB cadence drops to ≤60 s (engineering ticket open), these windows can be tightened — likely down to `$__rate_interval`.
 > 2. **Magnitude is low.** Counter deltas captured during a sustained `perftest` run measured ~10× lower than the actual bandwidth `perftest` reported on the same wire. The `line_rate` label (`gig_bit_per_sec`) also reports `128` on HCAs whose `ibstat` rate is `400`, so the utilization-% panels are calibrated against the wrong denominator.
+> 3. **No in-guest fallback.** `ibv_devinfo`, `perfquery`, and the standard `/sys/class/infiniband/.../counters/` files are not exposed inside Crusoe guest VMs, so there is no in-guest path to scrape accurate per-HCA counters today.
 >
-> Treat the IB dashboards as **diagnostic** (which HCAs are active, where errors are concentrated, when traffic stops) rather than **quantitative** (absolute Gbps / % of line rate). For ground-truth bandwidth measurements, run `perftest` from inside the workload — `ibv_devinfo`, `perfquery`, and the standard `/sys/class/infiniband/.../counters/` files are not exposed inside Crusoe guest VMs, so there is no in-guest path to scrape accurate per-HCA counters today.
+> Treat the IB dashboards as **diagnostic** (which HCAs are active, where errors are concentrated, when traffic stops) rather than **quantitative** (absolute Gbps / % of line rate). For ground-truth bandwidth measurements, run `perftest` from inside the workload.
 
 ---
 
