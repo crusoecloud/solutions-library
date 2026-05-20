@@ -486,6 +486,94 @@ kubectl delete storageclass crusoe-csi-driver-ssd-sc   # optional — only if no
 
 ---
 
+## Production hardening
+
+Before exposing this Grafana to a team or running it long-term, work through this checklist. The defaults shipped in this repo are tuned for a getting-started install, not for production.
+
+### Pinning Grafana to CPU nodes
+
+By default, Kubernetes will schedule Grafana on whatever node has capacity — including expensive GPU workers. The `grafana-values.yaml` in this repo ships with a **hard nodeAffinity** that keeps Grafana off GPU nodes:
+
+```yaml
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: nvidia.com/gpu.present   # set by NVIDIA GPU Operator on every Crusoe GPU node
+              operator: DoesNotExist
+```
+
+`required` is the right default because a soft preference (`preferredDuringSchedulingIgnoredDuringExecution`) empirically isn't strong enough to override the scheduler's image-cache and PVC-locality heuristics on Crusoe CMK — Grafana stays on whatever GPU node the PVC was last attached to, even when CPU nodes are wide open. Verified on come-scale-away: soft preference left Grafana on a B200; switching to required moved it to a `c2a` node on the next rollout.
+
+Standard Crusoe CMK installs ship with `c1a` / `c2a` CPU nodes for system pods (Slurm controllers, login, etc.), so the hard pin is safe in practice. If your cluster is **GPU-only**, swap the block for the soft-preference variant below.
+
+**Variants depending on how strict you want to be:**
+
+| Goal | Replace the `affinity:` block above with |
+|---|---|
+| Soft preference (GPU-only clusters) | `preferredDuringSchedulingIgnoredDuringExecution` with `weight: 100` and the same `matchExpressions` wrapped under a `preference:` key. Grafana ranks non-GPU nodes higher but won't refuse to schedule on a GPU node. Use only if you have no non-GPU nodes — note that on the test cluster this didn't actually move Grafana off the GPU node, so use this knowing it may be a no-op. |
+| Pin to specific Crusoe CPU instance classes | Match on `crusoe.ai/instance.class` with `operator: In` and a `values: [c1a, c2a]` list (the current Crusoe CPU classes — see the [Crusoe Cloud VM overview](https://docs.crusoecloud.com/compute/virtual-machines/overview#cpu-vms) for the up-to-date list). More explicit; needs updating when Crusoe introduces new CPU instance types. |
+| Pin to a single instance type | Set `nodeSelector: {node.kubernetes.io/instance-type: c2a.8x}` instead of `affinity`. Simplest; least flexible. |
+
+Verify after a `helm upgrade`:
+
+```bash
+kubectl get pod -n monitoring -l app.kubernetes.io/name=grafana \
+  -o jsonpath='{.items[*].spec.nodeName}{"\n"}'
+kubectl get node <node-name> -o jsonpath='{.metadata.labels.node\.kubernetes\.io/instance-type}{"\n"}'
+```
+
+Grafana's pod should land on a node whose instance type doesn't start with `b200`, `h100`, `a100`, etc.
+
+### Sizing resource requests / limits
+
+The default `resources` block in `grafana-values.yaml` (200m / 512Mi requests, 1 CPU / 2Gi limit) was tuned for the come-scale-away test cluster (~1,700 DCGM series, 8 dashboards). For other fleet sizes:
+
+| Fleet size (DCGM series) | Suggested `requests` | Suggested `limits` |
+|---|---|---|
+| < 500 (one or two GPU nodes) | `100m` / `256Mi` | `500m` / `1Gi` |
+| 500 – 2,000 (small/medium) | `200m` / `512Mi` (default) | `1` / `2Gi` (default) |
+| 2,000 – 10,000 | `500m` / `1Gi` | `2` / `4Gi` |
+| 10,000+ | `1` / `2Gi` | `4` / `8Gi`, plus consider sharding |
+
+If you don't know your series count: `count(DCGM_FI_DEV_GPU_UTIL)` from the discovery curl in Troubleshooting gives a rough scale.
+
+Watch Grafana's own resource use after a load:
+
+```bash
+kubectl top pod -n monitoring -l app.kubernetes.io/name=grafana --containers
+```
+
+The OOMKill we hit during testing at 512Mi limit / 1,700 series is the calibration point — if you see repeated container restarts or 137 exit codes in `kubectl describe pod`, double the memory limit and `helm upgrade`.
+
+### Before exposing publicly
+
+The repo ships a public LoadBalancer manifest for fast getting-started. Work through this checklist before pointing real users at it:
+
+- [ ] **TLS termination.** Install `cert-manager` and switch from the bare `grafana-lb` Service to an Ingress with a cert (Let's Encrypt or your CA). The current `grafana-service-lb.yaml` exposes plain HTTP on port 3000.
+- [ ] **Auth in front of Grafana's UI.** Three reasonable options:
+  - [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) sidecar in front of the LB. Simplest if your org uses Google/GitHub/Okta SSO.
+  - Grafana's native [OAuth integration](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/) (set `[auth.generic_oauth]` via `grafana.ini`).
+  - Grafana's native [LDAP integration](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/ldap/).
+- [ ] **Restrict the LoadBalancer source range.** Edit `manifests/grafana-service-lb.yaml`:
+  ```yaml
+  spec:
+    loadBalancerSourceRanges:
+      - "<your-office-CIDR>"
+  ```
+  Once you have an authenticated ingress, you can relax this; until then it's the only thing between Grafana and the internet.
+- [ ] **Rotate the admin password.** The auto-generated default is fine for first login; change it via Grafana UI → admin → Edit profile, or:
+  ```bash
+  kubectl exec -n monitoring deployment/grafana -c grafana -- \
+    grafana-cli admin reset-admin-password '<new-password>'
+  ```
+- [ ] **`allowUiUpdates: false`** is already set in `grafana-values.yaml` so in-browser edits to provisioned dashboards aren't persisted across pod restarts. Don't change it unless you understand the trade-off.
+- [ ] **Decide on a backup strategy for `/var/lib/grafana/grafana.db`.** The PVC is single-replica RWO — if you lose the SSD or the namespace, all dashboard tweaks, alert rules, users, and annotations are gone. The repo's dashboards re-provision from `dashboards/*.json` on the next install, but UI-side changes don't. A nightly `kubectl exec ... sqlite3 .dump` to object storage is the lightweight option; switching Grafana to an external Postgres database is the durable option.
+- [ ] **Plan for token rotation.** Monitoring tokens don't auto-expire today, but treat them as rotatable. The Troubleshooting section's token-rotation steps are tested and survive a Grafana restart.
+
+---
+
 ## Limitations and next steps
 
 - **Minimum query interval is 60 seconds.** Crusoe Metrics collects samples every 60 seconds; querying more frequently returns the same data.
@@ -493,4 +581,4 @@ kubectl delete storageclass crusoe-csi-driver-ssd-sc   # optional — only if no
 - **Metrics only.** Logs and distributed traces are not available via Crusoe Metrics. For log aggregation on CMK, see the [CMK logs to GCP](../crusoe-managed-kubernetes-logs-to-gcp) solution in this repository.
 - **Label names.** Dashboards use the `node` label to identify nodes and the `gpu` label for GPU index. These are confirmed correct for Crusoe Metrics on Managed Slurm clusters. If variable dropdowns appear empty on a different cluster type, run the discovery curl in the Troubleshooting section to confirm the actual label names.
 - **Per-partition / per-user Slurm breakdown.** The Slurm Cluster View aggregates to the cluster level. `crusoe_slurm_partition_*`, `crusoe_slurm_user_jobs_*`, and `crusoe_slurm_account_jobs_*` series are available with `partition`, `username`, and `account` labels respectively — good follow-up dashboards if you need to slice by partition, user, or accounting group.
-- **Production hardening.** Before exposing this to a team, add TLS via cert-manager + ingress, configure LDAP or SSO in `grafana.ini`, and set `allowUiUpdates: false` on the dashboard provider (already set in `grafana-values.yaml`) to prevent in-browser changes from being overwritten on pod restart.
+- **Production hardening.** See the dedicated [Production hardening](#production-hardening) section above for the full checklist: node-affinity / CPU pinning, resource sizing, TLS, SSO, source-range restriction, password rotation, and backups.

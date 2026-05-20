@@ -68,7 +68,28 @@ resources:
 # 512Mi memory / 500m cpu (chart default) OOMKills when rendering multiple
 # dashboards against a cluster with thousands of metric series — observed on
 # come-scale-away (~1700 DCGM series, 6 dashboards). 2Gi is comfortable for
-# both query rendering and the small Caddy sidecar.
+# both query rendering and the small Caddy sidecar. See README → "Production
+# hardening" for sizing guidance at other fleet sizes.
+
+# Keep Grafana off GPU worker nodes. Match key `nvidia.com/gpu.present` is set
+# by the NVIDIA GPU Operator on every Crusoe GPU node, so DoesNotExist matches
+# only CPU nodes (Slurm controllers, login nodes, etc.). This is a HARD
+# requirement — empirically a soft preference isn't strong enough to override
+# the scheduler's image-cache / PVC-locality heuristics on Crusoe CMK, so
+# Grafana stays on a GPU node even when CPU nodes are wide open.
+#
+# Required assumes your cluster always has at least one non-GPU node with
+# capacity for Grafana (~200m CPU / 512Mi memory). Every standard Crusoe CMK
+# install has c1a / c2a nodes for system pods, so this is safe in practice.
+# If your cluster is GPU-only, see README → "Production hardening" → "Pinning
+# Grafana to CPU nodes" for a soft-preference variant.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: nvidia.com/gpu.present
+              operator: DoesNotExist
 
 # Auth-injecting sidecar: Grafana points its datasource at http://localhost:8888
 # (no auth headers in Grafana's own config), and this Caddy sidecar adds the
