@@ -7,7 +7,7 @@
 
 ![Cluster GPU Power dashboard at peak load: 1.19 MW total / 1.24 MW peak / 571 kWh consumed](assets/cluster-maxpower.png)
 
-This solution deploys Grafana on a Crusoe Managed Kubernetes (CMK) cluster and configures it to pull GPU, node, and Slurm metrics from the Crusoe Metrics endpoint. You get a persistent Grafana instance you control, with pre-built dashboards for GPU utilization, per-node GPU detail, DCGM/Xid error tracking, GPU power, and InfiniBand fabric activity.
+This solution deploys Grafana on a Crusoe Managed Kubernetes (CMK) cluster and configures it to pull GPU, node, storage, and Slurm metrics from the Crusoe Metrics endpoint. You get a persistent Grafana instance you control, with pre-built dashboards for GPU utilization, per-node GPU detail, DCGM/Xid error tracking, GPU power, InfiniBand fabric activity, Crusoe Shared Storage health, and Slurm cluster state.
 
 What this is: a self-managed Grafana deployment best suited for teams that want dedicated dashboards for CMK or Managed Slurm workloads. Support is best-effort. For fully managed observability, the metrics are also available in Crusoe Command Center without any setup.
 
@@ -256,7 +256,7 @@ Verify the dashboards:
 
 ## Dashboards included
 
-All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dropdown (populated from `cluster_id`). The per-node dashboards add a **Node** dropdown for drilling in.
+All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** dropdown populated from `cluster_id` (GPU, IB, and Slurm dashboards each source it from their own primary metric so the dropdown only lists clusters that actually publish that family). Per-node and per-HCA dashboards add a **Node** dropdown; the Shared Storage View uses a single **Crusoe SDisk** dropdown instead because Crusoe block-storage disks are project-scoped, not cluster-scoped.
 
 ### GPU dashboards
 
@@ -272,9 +272,23 @@ All dashboards live in the `Crusoe` folder in Grafana and share a **Cluster** dr
 
 ### InfiniBand dashboards
 
-**InfiniBand Cluster View (`cluster-ib-overview.json`)** — fabric activity across the cluster. Active IB nodes / total HCA ports, aggregate RX / TX bandwidth, per-node aggregate bandwidth time series, per-node RX utilization %, and per-node error / TX-wait rates.
+**InfiniBand Cluster View (`cluster-ib-overview.json`, 20 panels)** — fabric activity and health for the whole cluster.
 
-**InfiniBand Node View (`node-ib-detail.json`)** — per-HCA detail for selected nodes (multi-select). Aggregate RX / TX per node, then a row of per-HCA RX / TX bandwidth, per-HCA RX / TX utilization %, and per-HCA RX errors + TX-wait.
+- **Activity stat row:** Active IB Nodes, Total HCA Ports, Cluster RX BW, Cluster TX BW, Cluster RX pps, Cluster TX pps.
+- **IB Health stat row:** Total RX Errors, Total TX Discards, Link Downed events, Link Recovery events, Remote Physical Errors, Local Link Integrity Errors. All zero on a healthy fabric, red on any non-zero — single-glance "is anything wrong?".
+- **Per-node throughput time series** (RX and TX).
+- **Per-node packet rate time series** (RX and TX pps) — pair with the BW panels to spot small-packet floods.
+- **RX Utilization %** per node + per-node RX errors rate.
+- **TX Wait (back-pressure)** per node + **Top 10 Nodes by combined RX+TX** bar gauge.
+
+**InfiniBand Node View (`node-ib-detail.json`, 14 panels)** — per-HCA detail for selected nodes (multi-select dropdown).
+
+- **Stat row:** Selected Nodes RX, TX, RX errors, link-integrity errors.
+- **Aggregate per node** RX / TX time series.
+- **Per-HCA** RX / TX bandwidth.
+- **Per-HCA** RX / TX utilization %.
+- **Per-HCA** RX / TX packet rate (pps).
+- **Per-HCA** RX errors + TX wait (back-pressure).
 
 > **IB dashboard caveats (read before relying on absolute Gbps):**
 >
@@ -371,7 +385,7 @@ The datasource is reaching Crusoe (no 401), but no metrics come back. Common cau
 - **Watch Agent not installed.** If no Watch Agent is running on the cluster, no metrics reach the Crusoe Metrics backend. Check with your Crusoe account team.
 - **Crusoe Metrics not enabled.** Even with the Watch Agent, the scrape endpoint must be enabled per-project. Contact your account team if the endpoint returns 404 or empty results.
 - **Scrape interval.** The minimum is 60 seconds. If you see "No data" on short time ranges (e.g., last 5 minutes), widen the time range to at least last 1 hour.
-- **cluster_id label not present on GPU metrics.** The `$cluster` variable in the Cluster GPU Overview dashboard uses `label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)`. If this label is absent from GPU metrics (it is confirmed on Slurm metrics), the variable will be empty and the `{cluster_id=~"$cluster"}` filter will match nothing. In that case, remove the filter from the affected panel queries.
+- **`cluster_id` label not present on the source metric.** Each dashboard's `$cluster` dropdown sources from a different metric — `DCGM_FI_DEV_GPU_UTIL` for the GPU dashboards, `crusoe_ib_port_throughput_rx` for the IB dashboards, `crusoe_slurm_nodes` for the Slurm dashboard. If the source metric has zero series (or no `cluster_id` label) on your cluster, the dropdown is empty and every `{cluster_id=~"$cluster"}` filter matches nothing. Verify with the discovery curl below and either remove the filter from affected panels or repoint the variable at a metric that does carry `cluster_id`.
 
 ### Dashboard variables are empty or panels show no data
 
@@ -475,5 +489,5 @@ kubectl delete storageclass crusoe-csi-driver-ssd-sc   # optional — only if no
 - **30-day metric retention** on the Crusoe backend. For longer retention, add a Prometheus instance that remote-writes from Crusoe Metrics into your own Thanos or Mimir.
 - **Metrics only.** Logs and distributed traces are not available via Crusoe Metrics. For log aggregation on CMK, see the [CMK logs to GCP](../crusoe-managed-kubernetes-logs-to-gcp) solution in this repository.
 - **Label names.** Dashboards use the `node` label to identify nodes and the `gpu` label for GPU index. These are confirmed correct for Crusoe Metrics on Managed Slurm clusters. If variable dropdowns appear empty on a different cluster type, run the discovery curl in the Troubleshooting section to confirm the actual label names.
-- **Slurm metrics.** `slurm_*` metrics from Managed Slurm clusters (e.g. `slurm_queue_length{cluster_id="..."}`) are available via the same endpoint. Add panels for job queue depth, node state, and wait time as needed.
+- **Per-partition / per-user Slurm breakdown.** The Slurm Cluster View aggregates to the cluster level. `crusoe_slurm_partition_*`, `crusoe_slurm_user_jobs_*`, and `crusoe_slurm_account_jobs_*` series are available with `partition`, `username`, and `account` labels respectively — good follow-up dashboards if you need to slice by partition, user, or accounting group.
 - **Production hardening.** Before exposing this to a team, add TLS via cert-manager + ingress, configure LDAP or SSO in `grafana.ini`, and set `allowUiUpdates: false` on the dashboard provider (already set in `grafana-values.yaml`) to prevent in-browser changes from being overwritten on pod restart.

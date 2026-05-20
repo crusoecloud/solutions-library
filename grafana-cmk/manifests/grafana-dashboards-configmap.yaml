@@ -919,16 +919,17 @@ data:
     {
       "uid": "crusoe-ib-cluster",
       "title": "Crusoe \u2014 InfiniBand Cluster View",
+      "description": "Cluster-wide InfiniBand fabric health and activity. All panels use [1h] rate windows due to the slow IB scrape cadence; see README for details.",
       "tags": [
         "crusoe",
         "infiniband",
         "cluster"
       ],
       "schemaVersion": 38,
-      "version": 2,
-      "refresh": "30s",
+      "version": 1,
+      "refresh": "1m",
       "time": {
-        "from": "now-1h",
+        "from": "now-3h",
         "to": "now"
       },
       "templating": {
@@ -942,11 +943,16 @@ data:
               "uid": "crusoe-metrics"
             },
             "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
-            "refresh": 2,
+            "refresh": 1,
             "sort": 1,
             "multi": false,
-            "includeAll": false,
-            "current": {}
+            "includeAll": true,
+            "allValue": ".+",
+            "current": {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            }
           }
         ]
       },
@@ -955,7 +961,7 @@ data:
           "id": 1,
           "type": "stat",
           "title": "Active IB Nodes",
-          "description": "Number of nodes with active IB HCAs",
+          "description": "Number of nodes with at least one active IB HCA series. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -973,7 +979,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -985,10 +991,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1000,7 +1002,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "count(count by (vm_name) (last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}[1h])))",
+              "expr": "(count(count by (vm_name) (last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}[1h])))) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -1010,7 +1012,7 @@ data:
           "id": 2,
           "type": "stat",
           "title": "Total HCA Ports",
-          "description": "Total IB HCA ports across the cluster",
+          "description": "Total IB HCA ports across the cluster. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -1028,7 +1030,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -1040,10 +1042,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1055,7 +1053,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "count(last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}[1h]))",
+              "expr": "(count(last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -1064,8 +1062,8 @@ data:
         {
           "id": 3,
           "type": "stat",
-          "title": "Cluster RX Bandwidth",
-          "description": "Total receive bandwidth across all nodes and HCAs",
+          "title": "Cluster RX BW",
+          "description": "Aggregate receive bandwidth across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -1083,7 +1081,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -1095,10 +1093,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1110,7 +1104,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[1h])) / 8",
+              "expr": "(sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[1h])) / 8) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -1119,8 +1113,8 @@ data:
         {
           "id": 4,
           "type": "stat",
-          "title": "Cluster TX Bandwidth",
-          "description": "Total transmit bandwidth across all nodes and HCAs",
+          "title": "Cluster TX BW",
+          "description": "Aggregate transmit bandwidth across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -1138,7 +1132,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -1150,10 +1144,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1165,7 +1155,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[1h])) / 8",
+              "expr": "(sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[1h])) / 8) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -1174,8 +1164,8 @@ data:
         {
           "id": 5,
           "type": "stat",
-          "title": "Total RX Errors",
-          "description": "Total receive errors across the cluster",
+          "title": "Cluster RX Packets/s",
+          "description": "Aggregate receive packet rate across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -1193,22 +1183,18 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "none",
+              "unit": "pps",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1220,7 +1206,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[1h]))",
+              "expr": "(sum(rate(crusoe_ib_port_packets_rx{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -1229,8 +1215,8 @@ data:
         {
           "id": 6,
           "type": "stat",
-          "title": "Total TX Discards",
-          "description": "Total transmit discards across the cluster",
+          "title": "Cluster TX Packets/s",
+          "description": "Aggregate transmit packet rate across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -1248,7 +1234,58 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "pps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum(rate(crusoe_ib_port_packets_tx{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "stat",
+          "title": "Total RX Errors",
+          "description": "Cluster-wide RX error increment over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -1263,7 +1300,7 @@ data:
                   },
                   {
                     "color": "red",
-                    "value": 80
+                    "value": 1
                   }
                 ]
               }
@@ -1275,24 +1312,299 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(increase(crusoe_ib_port_xmit_discard{cluster_id=~\"$cluster\"}[1h]))",
+              "expr": "(sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
           ]
         },
         {
-          "id": 7,
+          "id": 8,
+          "type": "stat",
+          "title": "Total TX Discards",
+          "description": "Cluster-wide TX discards over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum(increase(crusoe_ib_port_xmit_discard{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "stat",
+          "title": "Link Downed Events",
+          "description": "Cluster-wide IB link-down events. Any non-zero value warrants a look \u2014 a flapping or hard-down link affects every job on that node. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum(increase(crusoe_ib_port_link_downed{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "Link Recovery Events",
+          "description": "Cluster-wide IB link-error-recovery events. Transient recoveries can indicate cable / SerDes issues. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum(increase(crusoe_ib_port_link_error_recovery{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "stat",
+          "title": "Remote Physical Errors",
+          "description": "RX errors reported as caused by the partner side of the link. Useful for narrowing fault-isolation to switches or other endpoints. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum(increase(crusoe_ib_port_rcv_remote_physical_errors{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "type": "stat",
+          "title": "Local Link Integrity Errors",
+          "description": "Local HCA-side link-integrity errors. Often the first signal that a node's IB cable / port is degrading. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 20,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\"}[1h]))) or vector(0)",
+              "instant": true,
+              "legendFormat": "__auto"
+            }
+          ]
+        },
+        {
+          "id": 13,
           "type": "timeseries",
           "title": "Per-Node Aggregate RX Bandwidth",
-          "description": "Aggregate RX bandwidth per node (all HCAs summed)",
+          "description": "Per-node aggregate RX bandwidth (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
-            "y": 4,
+            "y": 8,
             "w": 12,
             "h": 8
           },
@@ -1307,7 +1619,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "Bps"
+              "unit": "Bps",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -1323,17 +1638,17 @@ data:
           ]
         },
         {
-          "id": 8,
+          "id": 14,
           "type": "timeseries",
           "title": "Per-Node Aggregate TX Bandwidth",
-          "description": "Aggregate TX bandwidth per node (all HCAs summed)",
+          "description": "Per-node aggregate TX bandwidth (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
-            "y": 4,
+            "y": 8,
             "w": 12,
             "h": 8
           },
@@ -1348,7 +1663,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "Bps"
+              "unit": "Bps",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -1364,17 +1682,17 @@ data:
           ]
         },
         {
-          "id": 9,
+          "id": 15,
           "type": "timeseries",
-          "title": "RX Bandwidth Utilization % (per node)",
-          "description": "RX utilization as % of line rate per node",
+          "title": "Per-Node RX Packets/s",
+          "description": "Per-node aggregate RX packet rate (sum across HCAs). Pair with the BW panel above to spot small-packet floods. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
-            "y": 12,
+            "y": 16,
             "w": 12,
             "h": 8
           },
@@ -1389,7 +1707,98 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "percent"
+              "unit": "pps",
+              "custom": {
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_packets_rx{cluster_id=~\"$cluster\"}[1h]))",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "type": "timeseries",
+          "title": "Per-Node TX Packets/s",
+          "description": "Per-node aggregate TX packet rate (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 16,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "pps",
+              "custom": {
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (vm_name) (rate(crusoe_ib_port_packets_tx{cluster_id=~\"$cluster\"}[1h]))",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 17,
+          "type": "timeseries",
+          "title": "RX Bandwidth Utilization % (per node)",
+          "description": "Per-node aggregate RX utilization as % of total line rate. NOTE: line_rate label reports gig_bit_per_sec=128 on HCAs whose ibstat rate is 400 (NDR), so the denominator is off by ~3\u00d7. Treat as relative not absolute. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 24,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -1405,17 +1814,17 @@ data:
           ]
         },
         {
-          "id": 10,
+          "id": 18,
           "type": "timeseries",
           "title": "RX Errors Rate (per node)",
-          "description": "RX error rate per node",
+          "description": "Per-node RX error rate (events/sec). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
-            "y": 12,
+            "y": 24,
             "w": 12,
             "h": 8
           },
@@ -1430,7 +1839,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -1446,17 +1858,17 @@ data:
           ]
         },
         {
-          "id": 11,
+          "id": 19,
           "type": "timeseries",
           "title": "TX Wait (Back-pressure, per node)",
-          "description": "TX wait cycles \u2014 indicates back-pressure or congestion",
+          "description": "Per-node TX-wait increment rate \u2014 indicates congestion or flow control. Rising values mean transmitter is waiting for credits. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
-            "y": 20,
+            "y": 32,
             "w": 12,
             "h": 8
           },
@@ -1471,7 +1883,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -1482,6 +1897,48 @@ data:
                 "uid": "crusoe-metrics"
               },
               "expr": "sum by (vm_name) (rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\"}[1h]))",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 20,
+          "type": "bargauge",
+          "title": "Top 10 Nodes by Combined RX+TX",
+          "description": "Top 10 nodes by combined RX+TX bandwidth right now. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 32,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(10, sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[1h]) + rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[1h])) / 8)",
+              "instant": true,
               "legendFormat": "{{vm_name}}"
             }
           ]
@@ -2235,16 +2692,17 @@ data:
     {
       "uid": "crusoe-ib-node",
       "title": "Crusoe \u2014 InfiniBand Node View",
+      "description": "Per-HCA InfiniBand detail for selected nodes. All panels use [1h] rate windows due to the slow IB scrape cadence; see README for details.",
       "tags": [
         "crusoe",
         "infiniband",
         "node"
       ],
       "schemaVersion": 38,
-      "version": 3,
-      "refresh": "30s",
+      "version": 1,
+      "refresh": "1m",
       "time": {
-        "from": "now-1h",
+        "from": "now-3h",
         "to": "now"
       },
       "templating": {
@@ -2258,11 +2716,16 @@ data:
               "uid": "crusoe-metrics"
             },
             "query": "label_values(crusoe_ib_port_throughput_rx, cluster_id)",
-            "refresh": 2,
+            "refresh": 1,
             "sort": 1,
             "multi": false,
-            "includeAll": false,
-            "current": {}
+            "includeAll": true,
+            "allValue": ".+",
+            "current": {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            }
           },
           {
             "name": "node",
@@ -2273,12 +2736,16 @@ data:
               "uid": "crusoe-metrics"
             },
             "query": "label_values(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}, vm_name)",
-            "refresh": 2,
+            "refresh": 1,
             "sort": 1,
             "multi": true,
             "includeAll": true,
             "allValue": ".+",
-            "current": {}
+            "current": {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            }
           }
         ]
       },
@@ -2287,7 +2754,7 @@ data:
           "id": 1,
           "type": "stat",
           "title": "Selected Nodes RX",
-          "description": "Total RX bandwidth across selected nodes",
+          "description": "Aggregate RX bandwidth across the selected nodes. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2305,7 +2772,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -2317,10 +2784,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -2332,7 +2795,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8",
+              "expr": "(sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -2342,7 +2805,7 @@ data:
           "id": 2,
           "type": "stat",
           "title": "Selected Nodes TX",
-          "description": "Total TX bandwidth across selected nodes",
+          "description": "Aggregate TX bandwidth across the selected nodes. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2360,7 +2823,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -2372,10 +2835,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -2387,7 +2846,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8",
+              "expr": "(sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -2397,7 +2856,7 @@ data:
           "id": 3,
           "type": "stat",
           "title": "RX Errors",
-          "description": "Total RX errors across selected nodes",
+          "description": "RX errors on selected nodes over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2415,7 +2874,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -2430,7 +2889,7 @@ data:
                   },
                   {
                     "color": "red",
-                    "value": 80
+                    "value": 1
                   }
                 ]
               }
@@ -2442,7 +2901,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]))",
+              "expr": "(sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]))) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -2452,7 +2911,7 @@ data:
           "id": 4,
           "type": "stat",
           "title": "Link Integrity Errors",
-          "description": "Local link integrity errors across selected nodes",
+          "description": "Local link-integrity errors on selected nodes over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2470,7 +2929,7 @@ data:
               ]
             },
             "colorMode": "value",
-            "graphMode": "none",
+            "graphMode": "area",
             "textMode": "auto"
           },
           "fieldConfig": {
@@ -2485,7 +2944,7 @@ data:
                   },
                   {
                     "color": "red",
-                    "value": 80
+                    "value": 1
                   }
                 ]
               }
@@ -2497,7 +2956,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]))",
+              "expr": "(sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]))) or vector(0)",
               "instant": true,
               "legendFormat": "__auto"
             }
@@ -2507,7 +2966,7 @@ data:
           "id": 5,
           "type": "timeseries",
           "title": "Aggregate RX per Node",
-          "description": "Aggregate RX bandwidth per node (sum across all 8 HCAs)",
+          "description": "Aggregate RX bandwidth per node (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2529,7 +2988,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "Bps"
+              "unit": "Bps",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -2548,7 +3010,7 @@ data:
           "id": 6,
           "type": "timeseries",
           "title": "Aggregate TX per Node",
-          "description": "Aggregate TX bandwidth per node (sum across all 8 HCAs)",
+          "description": "Aggregate TX bandwidth per node (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2570,7 +3032,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "Bps"
+              "unit": "Bps",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -2589,7 +3054,7 @@ data:
           "id": 7,
           "type": "timeseries",
           "title": "Per-HCA RX Bandwidth",
-          "description": "RX bandwidth per HCA port for selected nodes",
+          "description": "Per-HCA RX bandwidth. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2611,7 +3076,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "Bps"
+              "unit": "Bps",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -2630,7 +3098,7 @@ data:
           "id": 8,
           "type": "timeseries",
           "title": "Per-HCA TX Bandwidth",
-          "description": "TX bandwidth per HCA port for selected nodes",
+          "description": "Per-HCA TX bandwidth. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2652,7 +3120,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "Bps"
+              "unit": "Bps",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -2671,7 +3142,7 @@ data:
           "id": 9,
           "type": "timeseries",
           "title": "Per-HCA RX Utilization %",
-          "description": "RX utilization as % of line rate per HCA",
+          "description": "Per-HCA RX utilization as % of line rate. NOTE: line_rate's gig_bit_per_sec label reports 128 on HCAs whose ibstat rate is 400 \u2014 denominator off by ~3\u00d7, treat as relative. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2693,7 +3164,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "percent"
+              "unit": "percent",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -2712,7 +3186,7 @@ data:
           "id": 10,
           "type": "timeseries",
           "title": "Per-HCA TX Utilization %",
-          "description": "TX utilization as % of line rate per HCA",
+          "description": "Per-HCA TX utilization as % of line rate. Same denominator caveat as the RX panel. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2734,7 +3208,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "percent"
+              "unit": "percent",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -2752,8 +3229,8 @@ data:
         {
           "id": 11,
           "type": "timeseries",
-          "title": "RX Errors (per HCA)",
-          "description": "RX error rate per HCA",
+          "title": "Per-HCA RX Packets/s",
+          "description": "Per-HCA RX packet rate. Pair with the BW panel to spot small-packet floods. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2775,7 +3252,10 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
+              "unit": "pps",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
@@ -2785,7 +3265,7 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
+              "expr": "rate(crusoe_ib_port_packets_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
               "legendFormat": "{{vm_name}} {{hca_number}}"
             }
           ]
@@ -2793,8 +3273,8 @@ data:
         {
           "id": 12,
           "type": "timeseries",
-          "title": "TX Wait / Back-pressure (per HCA)",
-          "description": "TX wait cycles per HCA \u2014 indicates congestion or flow control",
+          "title": "Per-HCA TX Packets/s",
+          "description": "Per-HCA TX packet rate. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2816,7 +3296,98 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
+              "unit": "pps",
+              "custom": {
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_ib_port_packets_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "type": "timeseries",
+          "title": "RX Errors (per HCA)",
+          "description": "Per-HCA RX error rate (events/sec). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 36,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
+              "legendFormat": "{{vm_name}} {{hca_number}}"
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "type": "timeseries",
+          "title": "TX Wait / Back-pressure (per HCA)",
+          "description": "Per-HCA TX-wait rate \u2014 indicates congestion or flow control. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 36,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10
+              }
             },
             "overrides": []
           },
