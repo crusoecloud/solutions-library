@@ -1,3 +1,5 @@
+# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.
+#
 # Helm values for grafana/grafana chart (chart 10.5.x, Grafana 12.x)
 #
 # Install:

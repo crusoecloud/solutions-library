@@ -539,13 +539,21 @@ The default `resources` block in `grafana-values.yaml` (200m / 512Mi requests, 1
 
 If you don't know your series count: `count(DCGM_FI_DEV_GPU_UTIL)` from the discovery curl in Troubleshooting gives a rough scale.
 
-Watch Grafana's own resource use after a load:
+Watch Grafana's own resource use after a load. Crusoe Managed Kubernetes does **not** ship a metrics-server by default, so `kubectl top` is unavailable. Two alternatives:
 
 ```bash
-kubectl top pod -n monitoring -l app.kubernetes.io/name=grafana --containers
+# 1. Read live cgroup stats from inside the Grafana container (no metrics-server needed):
+kubectl exec -n monitoring deployment/grafana -c grafana -- sh -c \
+  'echo "rss bytes: $(cat /sys/fs/cgroup/memory.current 2>/dev/null || cat /sys/fs/cgroup/memory/memory.usage_in_bytes)"'
+
+# 2. Or check the pod's last termination state for OOMKill evidence:
+kubectl get pod -n monitoring -l app.kubernetes.io/name=grafana \
+  -o jsonpath='{range .items[*].status.containerStatuses[?(@.name=="grafana")]}restartCount={.restartCount} lastReason={.lastState.terminated.reason} exitCode={.lastState.terminated.exitCode}{"\n"}{end}'
 ```
 
-The OOMKill we hit during testing at 512Mi limit / 1,700 series is the calibration point — if you see repeated container restarts or 137 exit codes in `kubectl describe pod`, double the memory limit and `helm upgrade`.
+The OOMKill we hit during testing at 512Mi limit / 1,700 series is the calibration point — if you see `lastReason=OOMKilled` or `exitCode=137` in the second command, or a non-zero `restartCount`, double the memory limit and `helm upgrade`.
+
+If you want `kubectl top` long-term, install the [metrics-server](https://github.com/kubernetes-sigs/metrics-server) yourself; it's not part of the Crusoe Managed Kubernetes default stack.
 
 ### Before exposing publicly
 
@@ -571,6 +579,12 @@ The repo ships a public LoadBalancer manifest for fast getting-started. Work thr
 - [ ] **`allowUiUpdates: false`** is already set in `grafana-values.yaml` so in-browser edits to provisioned dashboards aren't persisted across pod restarts. Don't change it unless you understand the trade-off.
 - [ ] **Decide on a backup strategy for `/var/lib/grafana/grafana.db`.** The PVC is single-replica RWO — if you lose the SSD or the namespace, all dashboard tweaks, alert rules, users, and annotations are gone. The repo's dashboards re-provision from `dashboards/*.json` on the next install, but UI-side changes don't. A nightly `kubectl exec ... sqlite3 .dump` to object storage is the lightweight option; switching Grafana to an external Postgres database is the durable option.
 - [ ] **Plan for token rotation.** Monitoring tokens don't auto-expire today, but treat them as rotatable. The Troubleshooting section's token-rotation steps are tested and survive a Grafana restart.
+
+---
+
+## Disclaimer
+
+This solution is provided **AS IS, WITHOUT WARRANTY OF ANY KIND**, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. The manifests, dashboards, scripts, and documentation in this directory are reference implementations intended to help you get started — they are not a supported Crusoe product and may not be appropriate for every deployment without customization. Use at your own risk; review the manifests against your security and operational requirements before applying them to production clusters.
 
 ---
 
