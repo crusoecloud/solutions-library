@@ -11,18 +11,51 @@
   ],
   "__elements": {},
   "__requires": [
-    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
-    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
-    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
-    {"type": "panel", "id": "gauge", "name": "Gauge", "version": ""},
-    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
-    {"type": "panel", "id": "bargauge", "name": "Bar gauge", "version": ""}
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    }
   ],
   "annotations": {
     "list": [
       {
         "builtIn": 1,
-        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -39,31 +72,59 @@
   "links": [],
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Total number of GPU time series currently reporting. One time series per GPU device.",
       "fieldConfig": {
         "defaults": {
-          "color": {"fixedColor": "blue", "mode": "fixed"},
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          },
           "mappings": [],
-          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "count(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "",
@@ -74,31 +135,59 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Number of distinct nodes reporting GPU metrics.\n\nThe 'node' label is the standard Prometheus scrape target label; it represents the node hostname as set by the Crusoe Watch Agent. If the variable dropdown is empty, check what labels are present on DCGM_FI_DEV_GPU_UTIL by running the scrape discovery curl in the Troubleshooting section.",
       "fieldConfig": {
         "defaults": {
-          "color": {"fixedColor": "blue", "mode": "fixed"},
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          },
           "mappings": [],
-          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
       "id": 2,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "count(count by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
           "instant": true,
           "legendFormat": "",
@@ -109,39 +198,67 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Current cluster-wide average GPU utilization across all GPUs and all nodes.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "max": 100,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 70},
-              {"color": "red", "value": 90}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
       "id": 3,
       "options": {
         "minVizHeight": 75,
         "minVizWidth": 75,
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showThresholdLabels": false,
         "showThresholdMarkers": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "Avg",
@@ -152,11 +269,16 @@
       "type": "gauge"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "GPU utilization over time, averaged per node (by node label).",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -167,39 +289,73 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": true,
-            "stacking": {"group": "A", "mode": "none"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "max": 100,
           "min": 0,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "id": 4,
       "options": {
         "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{node}}",
           "refId": "A"
@@ -209,11 +365,16 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Cluster-wide GPU framebuffer memory used (stacked) vs total capacity (dashed red line). DCGM_FI_DEV_FB_USED and DCGM_FI_DEV_FB_FREE are reported in MiB.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -224,69 +385,140 @@
             "drawStyle": "line",
             "fillOpacity": 20,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": true,
-            "stacking": {"group": "A", "mode": "normal"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "min": 0,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "unit": "mebibytes"
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "Total Capacity"},
+            "matcher": {
+              "id": "byName",
+              "options": "Total Capacity"
+            },
             "properties": [
-              {"id": "custom.stacking", "value": {"mode": "none"}},
-              {"id": "custom.fillOpacity", "value": 0},
-              {"id": "custom.lineStyle", "value": {"dash": [10, 10], "fill": "dash"}},
-              {"id": "custom.lineWidth", "value": 2},
-              {"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
             ]
           }
         ]
       },
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"})",
           "legendFormat": "Used",
           "refId": "A"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"} + DCGM_FI_DEV_FB_FREE{cluster_id=~\"$cluster\"})",
           "legendFormat": "Total Capacity",
           "refId": "B"
         }
       ],
-      "title": "Cluster GPU Memory — Used vs Total",
+      "title": "Cluster GPU Memory \u2014 Used vs Total",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Total GPU power draw per node across the cluster. DCGM_FI_DEV_POWER_USAGE is reported in watts.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -297,38 +529,72 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": true,
-            "stacking": {"group": "A", "mode": "none"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "min": 0,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "unit": "watt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
       "id": 6,
       "options": {
         "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{node}}",
           "refId": "A"
@@ -338,27 +604,46 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Top 10 nodes by current average GPU utilization. Useful for identifying hot nodes or underutilized capacity.\n\nTODO: Verify 'node' label name.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "max": 100,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 70},
-              {"color": "red", "value": 90}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 32},
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
       "id": 7,
       "options": {
         "displayMode": "gradient",
@@ -366,13 +651,22 @@
         "minVizWidth": 0,
         "namePlacement": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true,
         "valueMode": "color"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "topk(10, avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
           "instant": true,
           "legendFormat": "{{node}}",
@@ -381,17 +675,381 @@
       ],
       "title": "Top 10 Nodes by Avg GPU Utilization",
       "type": "bargauge"
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Hottest GPU Right Now",
+      "description": "Maximum GPU die temperature across every GPU in the selected cluster right now. Green <70\u00b0C, yellow 70-80\u00b0C, red \u226580\u00b0C.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "max(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "gauge",
+      "title": "Cluster Avg GPU Temp",
+      "description": "Average GPU die temperature across every GPU. Gauge with thresholds: green <70\u00b0C, yellow 70-80\u00b0C, red \u226580\u00b0C.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 42,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "avg(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "GPUs \u2265 80\u00b0C",
+      "description": "Number of GPUs currently at or above 80\u00b0C. Worth a look on any non-zero \u2014 80\u00b0C is the typical caution threshold; sustained operation above will start affecting boost behavior.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "(count(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 80)) or vector(0)",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "GPUs \u2265 85\u00b0C (slowdown)",
+      "description": "Number of GPUs currently at or above 85\u00b0C \u2014 the typical thermal-slowdown threshold on H100/B200 SXM. Any non-zero value means GPUs are throttling and your job throughput is impacted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 42,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "(count(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 85)) or vector(0)",
+          "instant": true,
+          "legendFormat": "__auto"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "bargauge",
+      "title": "Top 10 Hottest Nodes (max GPU temp)",
+      "description": "Ten nodes whose hottest GPU is currently warmest. The bar value is the max die temp on that node \u2014 useful for narrowing thermal pressure to specific nodes vs the whole cluster.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "topk(10, max by (node) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
+          "instant": true,
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Per-Node Max GPU Temp Over Time",
+      "description": "Max GPU die temperature per node over time. Hot lines visually pop above the cluster norm. Legend hidden to handle large fleets \u2014 click a line to identify the node.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "fillOpacity": 10,
+            "thresholdsStyle": {
+              "mode": "area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "max by (node) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "legendFormat": "{{node}}"
+        }
+      ]
     }
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["crusoe", "gpu", "kubernetes"],
+  "tags": [
+    "crusoe",
+    "gpu",
+    "kubernetes"
+  ],
   "templating": {
     "list": [
       {
         "allValue": ".*",
-        "current": {},
-        "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": true
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "crusoe-metrics"
+        },
         "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
         "hide": 0,
         "includeAll": true,
@@ -410,11 +1068,14 @@
       }
     ]
   },
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Crusoe — Cluster GPU Overview",
+  "title": "Crusoe \u2014 Cluster GPU Overview",
   "uid": "crusoe-cluster-gpu-overview",
-  "version": 1,
+  "version": 5,
   "weekStart": ""
 }

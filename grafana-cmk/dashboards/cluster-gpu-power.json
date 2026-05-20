@@ -11,17 +11,45 @@
   ],
   "__elements": {},
   "__requires": [
-    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
-    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
-    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
-    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
-    {"type": "panel", "id": "bargauge", "name": "Bar gauge", "version": ""}
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    }
   ],
   "annotations": {
     "list": [
       {
         "builtIn": 1,
-        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -41,7 +69,10 @@
       "icon": "arrow-left",
       "includeVars": false,
       "keepTime": true,
-      "tags": ["crusoe", "gpu"],
+      "tags": [
+        "crusoe",
+        "gpu"
+      ],
       "targetBlank": false,
       "title": "Cluster GPU Overview",
       "tooltip": "",
@@ -51,38 +82,66 @@
   ],
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Total instantaneous GPU power draw across all nodes in the cluster. Sum of DCGM_FI_DEV_POWER_USAGE for all GPUs matching the selected cluster.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 5600},
-              {"color": "red", "value": 8960}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5600
+              },
+              {
+                "color": "red",
+                "value": 8960
+              }
             ]
           },
           "unit": "watt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "",
@@ -93,38 +152,66 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-      "description": "Average instantaneous power draw per GPU across the cluster. H100 SXM5 TDP is 700 W; sustained workloads typically draw 400–650 W per GPU.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "description": "Average instantaneous power draw per GPU across the cluster. H100 SXM5 TDP is 700 W; sustained workloads typically draw 400\u2013650 W per GPU.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 350},
-              {"color": "red", "value": 560}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 350
+              },
+              {
+                "color": "red",
+                "value": 560
+              }
             ]
           },
           "unit": "watt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "id": 2,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "avg(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "",
@@ -135,38 +222,66 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "Peak total cluster power draw observed within the selected time range.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 5600},
-              {"color": "red", "value": 8960}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5600
+              },
+              {
+                "color": "red",
+                "value": 8960
+              }
             ]
           },
           "unit": "watt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "id": 3,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["max"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": false,
           "legendFormat": "",
@@ -177,34 +292,59 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-      "description": "Total GPU energy consumed across the cluster during the selected time range. Derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative millijoules) using increase() over the dashboard range.\n\nFormula: increase(mJ) ÷ 3.6×10⁹ = kWh",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "description": "Total GPU energy consumed across the cluster during the selected time range. Derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative millijoules) using increase() over the dashboard range.\n\nFormula: increase(mJ) \u00f7 3.6\u00d710\u2079 = kWh",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "fixed", "fixedColor": "blue"},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{"color": "blue", "value": null}]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
           "unit": "kwatth"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "id": 4,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum(increase(DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION{cluster_id=~\"$cluster\"}[$__range])) / 3600000000",
           "instant": true,
           "legendFormat": "",
@@ -215,11 +355,16 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-      "description": "Total GPU power draw across the entire cluster over time. The dashed threshold line at 11,200 W represents 100% TDP for 16× H100 SXM5 GPUs (700 W each). Adjust if your node count or GPU model differs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "description": "Total GPU power draw across the entire cluster over time. The dashed threshold line at 11,200 W represents 100% TDP for 16\u00d7 H100 SXM5 GPUs (700 W each). Adjust if your node count or GPU model differs.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -230,44 +375,76 @@
             "drawStyle": "line",
             "fillOpacity": 15,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 2,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": true,
-            "stacking": {"group": "A", "mode": "none"},
-            "thresholdsStyle": {"mode": "dashed"}
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
           },
           "mappings": [],
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "red", "value": 11200}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 11200
+              }
             ]
           },
           "unit": "watt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "Total",
           "refId": "A"
@@ -277,11 +454,16 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "GPU power draw per node over time. Each line is one node (sum across all GPUs on that node). Useful for comparing nodes and detecting imbalanced workloads.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -292,38 +474,72 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": true,
-            "stacking": {"group": "A", "mode": "none"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "min": 0,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "unit": "watt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
       "id": 6,
       "options": {
         "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{node}}",
           "refId": "A"
@@ -333,27 +549,46 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-      "description": "Current power draw per node as a bar gauge. Max value is set to 5,600 W (8× H100 SXM5 at 700 W TDP each). Adjust if your node has a different GPU count or model.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "description": "Current power draw per node as a bar gauge. Max value is set to 5,600 W (8\u00d7 H100 SXM5 at 700 W TDP each). Adjust if your node has a different GPU count or model.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "max": 5600,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 2800},
-              {"color": "red", "value": 4480}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2800
+              },
+              {
+                "color": "red",
+                "value": 4480
+              }
             ]
           },
           "unit": "watt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
       "id": 7,
       "options": {
         "displayMode": "gradient",
@@ -361,13 +596,22 @@
         "minVizWidth": 0,
         "namePlacement": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true,
         "valueMode": "color"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "{{node}}",
@@ -378,11 +622,16 @@
       "type": "bargauge"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
       "description": "GPU power draw vs GPU utilization over time, overlaid on a dual-axis chart. A flat power line with low utilization suggests idle or memory-bound work. Rising power tracking rising utilization indicates a compute-bound workload.",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -393,60 +642,117 @@
             "drawStyle": "line",
             "fillOpacity": 5,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": true,
-            "stacking": {"group": "A", "mode": "none"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "min": 0,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "unit": "watt"
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "Avg Utilization %"},
+            "matcher": {
+              "id": "byName",
+              "options": "Avg Utilization %"
+            },
             "properties": [
-              {"id": "unit", "value": "percent"},
-              {"id": "max", "value": 100},
-              {"id": "custom.axisPlacement", "value": "right"},
-              {"id": "custom.axisLabel", "value": "Utilization (%)"}
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Utilization (%)"
+              }
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "Total Power W"},
+            "matcher": {
+              "id": "byName",
+              "options": "Total Power W"
+            },
             "properties": [
-              {"id": "custom.axisLabel", "value": "Power (W)"}
+              {
+                "id": "custom.axisLabel",
+                "value": "Power (W)"
+              }
             ]
           }
         ]
       },
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
       "id": 8,
       "options": {
         "legend": {
-          "calcs": ["mean", "lastNotNull"],
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "Total Power W",
           "refId": "A"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "legendFormat": "Avg Utilization %",
           "refId": "B"
@@ -458,12 +764,23 @@
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["crusoe", "gpu", "power"],
+  "tags": [
+    "crusoe",
+    "gpu",
+    "power"
+  ],
   "templating": {
     "list": [
       {
-        "current": {},
-        "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": true
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "crusoe-metrics"
+        },
         "definition": "label_values(DCGM_FI_DEV_POWER_USAGE, cluster_id)",
         "hide": 0,
         "includeAll": true,
@@ -483,11 +800,14 @@
       }
     ]
   },
-  "time": {"from": "now-3h", "to": "now"},
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Crusoe — Cluster GPU Power",
+  "title": "Crusoe \u2014 Cluster GPU Power",
   "uid": "crusoe-cluster-power",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
