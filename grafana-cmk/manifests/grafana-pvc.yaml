@@ -1,3 +1,5 @@
+# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.
+#
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

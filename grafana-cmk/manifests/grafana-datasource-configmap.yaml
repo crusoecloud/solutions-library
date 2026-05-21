@@ -1,3 +1,5 @@
+# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.
+#
 # Grafana datasource — provisioned via the k8s-sidecar (label grafana_datasource="1").
 #
 # This ConfigMap intentionally contains NO secrets. The bearer token is injected
