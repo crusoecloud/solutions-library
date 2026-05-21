@@ -88,13 +88,12 @@ What this is not: a full observability stack. Crusoe Metrics currently exposes i
   ```bash
   crusoe projects list
   ```
-- **Crusoe Metrics enabled on your project.** This feature is currently in limited availability — contact your Crusoe account team to request enablement before proceeding.
+- **Crusoe Metrics enabled on your project.** This feature is now GA and installed on all CMK clusters by default. If you wish to query metrics from standalone VMs, you will have to opt in to include the metrics agent during VM creation. 
 - **Crusoe Watch Agent installed on the cluster.** The Watch Agent collects infrastructure and DCGM metrics and forwards them to the Crusoe Metrics backend. It is installed by default on Managed Slurm clusters. For CMK clusters, verify with your account team or check for the agent DaemonSet:
   ```bash
   kubectl get daemonset -A | grep -i watch
   ```
 
-  > **Note:** The Watch Agent already provides DCGM metrics. If your cluster also runs `nvidia-dcgm-exporter` from the NVIDIA GPU Operator (the default on GPU CMK clusters), you will see some metric series reported twice — usually harmless for the dashboards in this repo, but worth knowing if you build alerts against a counter and see double the expected rate. To deduplicate, configure the Watch Agent to exclude DCGM or scope the exporter scrape with a `relabel_config` drop.
 
 ---
 
@@ -159,7 +158,7 @@ kubectl apply -f manifests/grafana-dashboards-configmap.yaml
 kubectl apply -f manifests/grafana-datasource-configmap.yaml
 ```
 
-> The datasource ConfigMap contains no secrets — it points Grafana at `http://localhost:8888`, which is the in-pod auth-injecting sidecar (`crusoe-auth-proxy`) defined in `grafana-values.yaml`. The sidecar reads `MONITORING_TOKEN` and `PROJECT_ID` from the Secret you applied in Step 2 and rewrites every outbound request to the Crusoe Metrics endpoint with the right `Authorization: Bearer …` header. This avoids a Grafana 12.3.x bug where `secureJsonData` headers are not consistently applied on the resources-API path, which broke template-variable label lookups.
+> The datasource ConfigMap contains no secrets — it points Grafana at `http://localhost:8888`, which is the in-pod auth-injecting sidecar (`crusoe-auth-proxy`) defined in `grafana-values.yaml`. The sidecar reads `MONITORING_TOKEN` and `PROJECT_ID` from the Secret you applied in Step 2 and rewrites every outbound request to the Crusoe Metrics endpoint with the right `Authorization: Bearer …` header. 
 
 Add the Grafana Helm repository and install:
 
@@ -298,9 +297,8 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 > On Crusoe-virtualized HCAs the IB port counters surfaced through Crusoe Metrics are not a faithful realtime view of the fabric. Three issues we have observed, all upstream of this repo:
 >
 > 1. **Slow scrape cadence.** The Watch Agent refreshes IB counters far less frequently than DCGM. Measured cadence between fresh samples on the same series:
->     - H100 fleet (us-southcentral1-a): avg ~270 s, max ~300 s
->     - B200 fleet (eu-norway1-a): avg ~22 minutes, max ~23 minutes
->
+
+
 >    Because of this, every IB panel in this repo uses **`[1h]` rate windows** and the stat panels wrap bare metric references in **`last_over_time(... [1h])`**. With the typical `$__rate_interval` (~1 min) the panels would render entirely as "No data" — there are simply fewer than 2 samples per minute. The price of the wider window is temporal smoothing: a panel reading represents the average over the trailing hour, not the current second. When the Watch Agent's IB cadence drops to ≤60 s (engineering ticket open), these windows can be tightened — likely down to `$__rate_interval`.
 > 2. **Magnitude is low.** Counter deltas captured during a sustained `perftest` run measured ~10× lower than the actual bandwidth `perftest` reported on the same wire. The `line_rate` label (`gig_bit_per_sec`) also reports `128` on HCAs whose `ibstat` rate is `400`, so the utilization-% panels are calibrated against the wrong denominator.
 > 3. **No in-guest fallback.** `ibv_devinfo`, `perfquery`, and the standard `/sys/class/infiniband/.../counters/` files are not exposed inside Crusoe guest VMs, so there is no in-guest path to scrape accurate per-HCA counters today.
@@ -325,7 +323,6 @@ The dropdown is sourced from `label_values(crusoe_sdisk_disk_capacity_used_bytes
 > 2. **No in-volume usage.** `kubelet_volume_stats_used_bytes` is not in the Crusoe Metrics catalog, so the dashboard can't show "this disk is 80% full" — only `crusoe_sdisk_disk_capacity_used_bytes`, which is bytes consumed from the Crusoe-storage-service's vantage point.
 > 3. **Latency unit assumed microseconds.** `crusoe_sdisk_disk_read_latency_sum` / `_count` produce an average via `rate(sum)/rate(count)`. Magnitudes (~500 µs for cached SSD reads) match microseconds, but verify with `perftest`-style benchmarks if precision matters. Latency panels fall back to 0 when the disk has no traffic in the window (rather than the more confusing NaN/"No data").
 > 4. **`[2m]` rate windows.** Measured Watch Agent cadence on the SDisk metrics is ~60 s between fresh samples (with occasional 2–12 min outliers). The dashboard uses `[2m]` rate windows so panels update within ~1–2 min of the agent posting fresh data, balanced against the occasional empty point on a scrape gap.
-> 5. **VM-level disk I/O** (the `crusoe_vm_disk_*` family — guest-VM kernel block-device counters) is *not* shown on this dashboard. It's project-wide and node-aggregated rather than per-disk, so it didn't fit the "one disk at a time" focus. If you need it, file a follow-up to ship a separate VM Disk I/O dashboard.
 
 ### Slurm dashboard
 
@@ -345,7 +342,7 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 > 2. **Slurm node names don't match Crusoe `vm_name`.** Slurm uses canonical names like `come-scale-away-workers-0`; the Crusoe Metrics relay uses `np-…` for `vm_name`. The two surfaces can't be joined at the node level without an external mapping — so this dashboard doesn't link click-through to the GPU dashboards.
 > 3. **Not all installations expose every state.** Sparse states (`crusoe_slurm_nodes_planned`, `_resv`, `_unknown`, `_maint`) will simply not contribute to the stacked area on a cluster that never enters those states. That's expected — empty isn't broken.
 > 4. **No slurmdbd panel.** The `crusoe_slurm_slurmdbd_queue_size` metric is published but consistently reports 0 on slinky-based Slurm-on-CMK installations (no slurmdbd pod), so showing it was misleading. If your cluster runs Crusoe Managed Slurm with slurmdbd, the metric is meaningful and you can re-add the panel locally.
-> 5. **Single-cluster scope.** The dashboard intentionally surfaces only cluster-wide aggregates. Per-partition (`crusoe_slurm_partition_*`), per-user (`crusoe_slurm_user_jobs_*`), and per-account (`crusoe_slurm_account_jobs_*`) metrics are available and would make good follow-up dashboards if you need that breakdown.
+> 5. **Single-cluster scope.** The dashboard intentionally surfaces only cluster-wide aggregates. Per-partition (`crusoe_slurm_partition_*`), per-user (`crusoe_slurm_user_jobs_*`), and per-account (`crusoe_slurm_account_jobs_*`) metrics are available.
 
 ### Network dashboards
 
@@ -531,7 +528,6 @@ affinity:
               operator: DoesNotExist
 ```
 
-`required` is the right default because a soft preference (`preferredDuringSchedulingIgnoredDuringExecution`) empirically isn't strong enough to override the scheduler's image-cache and PVC-locality heuristics on Crusoe CMK — Grafana stays on whatever GPU node the PVC was last attached to, even when CPU nodes are wide open. Verified on come-scale-away: soft preference left Grafana on a B200; switching to required moved it to a `c2a` node on the next rollout.
 
 Standard Crusoe CMK installs ship with `c1a` / `c2a` CPU nodes for system pods (Slurm controllers, login, etc.), so the hard pin is safe in practice. If your cluster is **GPU-only**, swap the block for the soft-preference variant below.
 
@@ -578,7 +574,6 @@ kubectl get pod -n monitoring -l app.kubernetes.io/name=grafana \
   -o jsonpath='{range .items[*].status.containerStatuses[?(@.name=="grafana")]}restartCount={.restartCount} lastReason={.lastState.terminated.reason} exitCode={.lastState.terminated.exitCode}{"\n"}{end}'
 ```
 
-The OOMKill we hit during testing at 512Mi limit / 1,700 series is the calibration point — if you see `lastReason=OOMKilled` or `exitCode=137` in the second command, or a non-zero `restartCount`, double the memory limit and `helm upgrade`.
 
 If you want `kubectl top` long-term, install the [metrics-server](https://github.com/kubernetes-sigs/metrics-server) yourself; it's not part of the Crusoe Managed Kubernetes default stack.
 

@@ -188,7 +188,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(count by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+          "expr": "count(count by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -356,8 +356,8 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
-          "legendFormat": "{{node}}",
+          "expr": "avg by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
@@ -595,8 +595,8 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
-          "legendFormat": "{{node}}",
+          "expr": "sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
@@ -608,7 +608,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Top 10 nodes by current average GPU utilization. Useful for identifying hot nodes or underutilized capacity.\n\nTODO: Verify 'node' label name.",
+      "description": "Top 10 nodes by current average GPU utilization. Useful for identifying hot nodes or underutilized capacity.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -667,9 +667,9 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(10, avg by (node) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(10, avg by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
           "instant": true,
-          "legendFormat": "{{node}}",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
@@ -1033,8 +1033,8 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (node) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
-          "legendFormat": "{{node}}"
+          "expr": "max by (vm_name) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "legendFormat": "{{vm_name}}"
         }
       ]
     }
