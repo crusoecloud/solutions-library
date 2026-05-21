@@ -611,7 +611,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Top 10 nodes by current average GPU utilization. Useful for identifying hot nodes or underutilized capacity.\n\nTODO: Verify 'node' label name.",
+          "description": "Top 10 nodes by current average GPU utilization. Useful for identifying hot nodes or underutilized capacity.",
           "fieldConfig": {
             "defaults": {
               "color": {
