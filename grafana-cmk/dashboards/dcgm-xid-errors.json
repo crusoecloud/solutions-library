@@ -185,8 +185,8 @@
       "targets": [
         {
           "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-          "expr": "sum by (node) (increase(DCGM_FI_DEV_XID_ERRORS[5m]))",
-          "legendFormat": "{{node}}",
+          "expr": "sum by (vm_name) (increase(DCGM_FI_DEV_XID_ERRORS[5m]))",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
@@ -246,7 +246,7 @@
       "targets": [
         {
           "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-          "expr": "sum by (node, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
+          "expr": "sum by (vm_name, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -323,16 +323,16 @@
       "targets": [
         {
           "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-          "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h])) > 0",
+          "expr": "sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h])) > 0",
           "instant": true,
-          "legendFormat": "ECC DBE {{node}} GPU {{gpu}}",
+          "legendFormat": "ECC DBE {{vm_name}} GPU {{gpu}}",
           "refId": "A"
         },
         {
           "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-          "expr": "sum by (node, gpu) (increase(DCGM_FI_DEV_CLOCK_THROTTLE_REASONS[24h])) > 0",
+          "expr": "sum by (vm_name, gpu) (increase(DCGM_FI_DEV_CLOCK_THROTTLE_REASONS[24h])) > 0",
           "instant": true,
-          "legendFormat": "Throttle {{node}} GPU {{gpu}}",
+          "legendFormat": "Throttle {{vm_name}} GPU {{gpu}}",
           "refId": "B"
         }
       ],
