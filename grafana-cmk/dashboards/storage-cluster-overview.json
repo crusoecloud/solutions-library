@@ -1,6 +1,6 @@
 {
   "uid": "crusoe-storage-cluster",
-  "title": "Crusoe \u2014 Shared Storage View",
+  "title": "Shared Storage View",
   "description": "Crusoe-provisioned block-storage (SDisk) health: per-disk capacity, throughput, IOPS, and latency. Project-scoped \u2014 all disks in the project are listed; pick one from the Crusoe SDisk (by Crusoe ID) dropdown to drill in. The bar gauge always shows every disk for context.",
   "tags": [
     "crusoe",

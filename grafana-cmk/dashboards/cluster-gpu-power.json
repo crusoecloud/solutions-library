@@ -806,7 +806,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Crusoe \u2014 Cluster GPU Power",
+  "title": "Cluster GPU Power",
   "uid": "crusoe-cluster-power",
   "version": 2,
   "weekStart": ""

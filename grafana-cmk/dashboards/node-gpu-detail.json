@@ -374,7 +374,7 @@
   "time": {"from": "now-6h", "to": "now"},
   "timepicker": {},
   "timezone": "browser",
-  "title": "Crusoe — Node GPU Detail",
+  "title": "Node GPU Detail",
   "uid": "crusoe-node-gpu-detail",
   "version": 1,
   "weekStart": ""

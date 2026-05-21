@@ -1,6 +1,6 @@
 {
   "uid": "crusoe-ib-cluster",
-  "title": "Crusoe \u2014 InfiniBand Cluster View",
+  "title": "InfiniBand Cluster View",
   "description": "Cluster-wide InfiniBand fabric health and activity. All panels use [1h] rate windows due to the slow IB scrape cadence; see README for details.",
   "tags": [
     "crusoe",

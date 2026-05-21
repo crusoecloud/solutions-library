@@ -353,7 +353,7 @@
   "time": {"from": "now-24h", "to": "now"},
   "timepicker": {},
   "timezone": "browser",
-  "title": "Crusoe — DCGM & Xid Errors",
+  "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
   "version": 1,
   "weekStart": ""

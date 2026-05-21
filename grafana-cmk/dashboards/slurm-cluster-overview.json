@@ -1,6 +1,6 @@
 {
   "uid": "crusoe-slurm-cluster",
-  "title": "Crusoe \u2014 Slurm Cluster View",
+  "title": "Slurm Cluster View",
   "description": "Slurm scheduler state: node states, job states, capacity utilization, scheduler/backfill health, error counters.",
   "tags": [
     "crusoe",
