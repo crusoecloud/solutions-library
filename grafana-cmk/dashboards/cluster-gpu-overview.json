@@ -907,9 +907,9 @@
     },
     {
       "id": 13,
-      "type": "bargauge",
-      "title": "Top 10 Hottest Nodes (max GPU temp)",
-      "description": "Ten nodes whose hottest GPU is currently warmest. The bar value is the max die temp on that node \u2014 useful for narrowing thermal pressure to specific nodes vs the whole cluster.",
+      "type": "stat",
+      "title": "Top 3 Hottest Nodes (max GPU temp)",
+      "description": "The three nodes with the hottest GPU right now (max across all GPUs per node). Cards display node-name + temp, ordered hottest \u2192 coolest left-to-right. Thresholds: green <70\u00b0C / yellow 70\u201380\u00b0C / red \u226580\u00b0C.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -918,21 +918,28 @@
         "x": 0,
         "y": 46,
         "w": 24,
-        "h": 10
+        "h": 4
       },
       "options": {
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
+          ],
+          "fields": "",
+          "values": true
         },
         "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -950,7 +957,8 @@
               }
             ]
           }
-        }
+        },
+        "overrides": []
       },
       "targets": [
         {
@@ -958,9 +966,10 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(10, max by (node) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(3, max by (vm_name) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
+          "legendFormat": "{{vm_name}}",
           "instant": true,
-          "legendFormat": "{{node}}"
+          "refId": "A"
         }
       ]
     },
@@ -975,7 +984,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 50,
         "w": 24,
         "h": 8
       },
@@ -1076,6 +1085,6 @@
   "timezone": "browser",
   "title": "Crusoe \u2014 Cluster GPU Overview",
   "uid": "crusoe-cluster-gpu-overview",
-  "version": 5,
+  "version": 8,
   "weekStart": ""
 }

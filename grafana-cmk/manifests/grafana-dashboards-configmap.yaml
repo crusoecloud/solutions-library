@@ -910,9 +910,9 @@ data:
         },
         {
           "id": 13,
-          "type": "bargauge",
-          "title": "Top 10 Hottest Nodes (max GPU temp)",
-          "description": "Ten nodes whose hottest GPU is currently warmest. The bar value is the max die temp on that node \u2014 useful for narrowing thermal pressure to specific nodes vs the whole cluster.",
+          "type": "stat",
+          "title": "Top 3 Hottest Nodes (max GPU temp)",
+          "description": "The three nodes with the hottest GPU right now (max across all GPUs per node). Cards display node-name + temp, ordered hottest \u2192 coolest left-to-right. Thresholds: green <70\u00b0C / yellow 70\u201380\u00b0C / red \u226580\u00b0C.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -921,21 +921,28 @@ data:
             "x": 0,
             "y": 46,
             "w": 24,
-            "h": 10
+            "h": 4
           },
           "options": {
             "reduceOptions": {
               "calcs": [
                 "lastNotNull"
-              ]
+              ],
+              "fields": "",
+              "values": true
             },
             "orientation": "horizontal",
-            "displayMode": "gradient",
-            "showUnfilled": true
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto"
           },
           "fieldConfig": {
             "defaults": {
               "unit": "celsius",
+              "color": {
+                "mode": "thresholds"
+              },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -953,7 +960,8 @@ data:
                   }
                 ]
               }
-            }
+            },
+            "overrides": []
           },
           "targets": [
             {
@@ -961,9 +969,10 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "topk(10, max by (node) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
+              "expr": "topk(3, max by (vm_name) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
+              "legendFormat": "{{vm_name}}",
               "instant": true,
-              "legendFormat": "{{node}}"
+              "refId": "A"
             }
           ]
         },
@@ -978,7 +987,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 56,
+            "y": 50,
             "w": 24,
             "h": 8
           },
@@ -1079,7 +1088,7 @@ data:
       "timezone": "browser",
       "title": "Crusoe \u2014 Cluster GPU Overview",
       "uid": "crusoe-cluster-gpu-overview",
-      "version": 5,
+      "version": 8,
       "weekStart": ""
     }
   cluster-gpu-power.json: |-
@@ -3287,6 +3296,1378 @@ data:
       "version": 1,
       "weekStart": ""
     }
+  network-cluster-overview.json: |-
+    {
+      "uid": "crusoe-network-cluster",
+      "title": "Crusoe \u2014 Network Cluster View",
+      "tags": [
+        "crusoe",
+        "network",
+        "frontend",
+        "elb"
+      ],
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 1,
+      "fiscalYearStartMonth": 0,
+      "liveNow": false,
+      "weekStart": "",
+      "annotations": {
+        "list": []
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-metrics"
+            },
+            "query": {
+              "query": "label_values(crusoe_vm_network_receive_bytes_total, cluster_id)",
+              "refId": "A"
+            },
+            "definition": "label_values(crusoe_vm_network_receive_bytes_total, cluster_id)",
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".+",
+            "current": {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            },
+            "options": [],
+            "refresh": 1,
+            "regex": "",
+            "sort": 1,
+            "hide": 0,
+            "skipUrlSync": false
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Cluster Frontend RX",
+          "description": "Aggregate frontend ethernet RX across all VMs in the selected cluster. NOTE: GPU-to-GPU collective traffic uses InfiniBand (see IB dashboards); the frontend NIC carries storage pulls, container images, control plane, and SSH.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Cluster Frontend TX",
+          "description": "Aggregate frontend ethernet TX across all VMs in the selected cluster.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_vm_network_transmit_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "VMs With Traffic",
+          "description": "Count of VMs with non-zero RX rate in the current interval. Baseline ~all VMs; idle bandwidth is dominated by kubelet/control-plane chatter.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "count(rate(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]) > 0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Frontend NIC Count",
+          "description": "Number of VM-device pairs reporting frontend NIC counters. B200 workers have ens7; CPU workers/login have ens3.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "count(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Cluster Frontend Bandwidth Over Time (RX + TX)",
+          "description": "Total RX + TX across the cluster's frontend NIC. Use to spot storage/checkpoint stampedes or unexpected egress.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 24,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "RX (in)"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_vm_network_transmit_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "TX (out)"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "bargauge",
+          "title": "Top 10 Nodes by Total Frontend Bandwidth (RX+TX)",
+          "description": "Per-VM frontend NIC throughput, sum of RX and TX. Storage hotspots and checkpoint-pull outliers will surface here. Drill into Node Network Detail to see RX/TX split for a specific node.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 13,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "valueMode": "color",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 104857600
+                  },
+                  {
+                    "color": "red",
+                    "value": 1073741824
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(10, (rate(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]) + rate(crusoe_vm_network_transmit_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval])))",
+              "legendFormat": "{{vm_name}} ({{nodepool_name}})"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "RX+TX by Nodepool",
+          "description": "Frontend NIC bandwidth grouped by Kubernetes nodepool. Useful for distinguishing GPU-worker storage activity from login-node SSH / API traffic.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 13,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 30,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (nodepool_name) (rate(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]) + rate(crusoe_vm_network_transmit_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "{{nodepool_name}}"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Frontend RX+TX by Rail Pod (pod_id)",
+          "description": "Aggregate frontend NIC bandwidth per rail pod (set of nodes on the same InfiniBand switch in the rail-optimized topology). One rail pod spiking on the frontend usually indicates storage activity concentrated on that switch's nodes, not collective traffic \u2014 collectives stay on IB.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 23,
+            "w": 24,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 30,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (pod_id) (rate(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]) + rate(crusoe_vm_network_transmit_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "{{pod_id}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "bargauge",
+          "title": "Top 10 Egress (TX) Nodes",
+          "description": "Nodes pushing the most data out via frontend NIC \u2014 typical sources: checkpoint uploads, log shippers, S3 pushes, egress to external services.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 32,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "valueMode": "color",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 104857600
+                  },
+                  {
+                    "color": "red",
+                    "value": 1073741824
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(10, rate(crusoe_vm_network_transmit_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "{{vm_name}} ({{nodepool_name}})"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "bargauge",
+          "title": "Top 10 Ingress (RX) Nodes",
+          "description": "Nodes pulling the most data in via frontend NIC \u2014 typical sources: container image pulls, dataset/checkpoint downloads, S3 pulls.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 32,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "valueMode": "color",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 104857600
+                  },
+                  {
+                    "color": "red",
+                    "value": 1073741824
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(10, rate(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}[$__rate_interval]))",
+              "legendFormat": "{{vm_name}} ({{nodepool_name}})"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "row",
+          "title": "Load Balancer (ELB)",
+          "gridPos": {
+            "x": 0,
+            "y": 42,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "id": 12,
+          "type": "stat",
+          "title": "Active ELBs (project)",
+          "description": "Number of distinct Crusoe Elastic Load Balancers reporting metrics in this project. ELB metrics do NOT carry a cluster_id label \u2014 this section shows project-wide LB activity, regardless of the $cluster filter above.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 43,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "count(count by (elb_name) (crusoe_elb_bytes_in))",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "type": "stat",
+          "title": "ELB Aggregate RX (in)",
+          "description": "Sum of LB ingress traffic across all ELBs in this project.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 43,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_elb_bytes_in[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "type": "stat",
+          "title": "ELB Aggregate TX (out)",
+          "description": "Sum of LB egress traffic across all ELBs in this project.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 43,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_elb_bytes_out[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "type": "stat",
+          "title": "ELB Active Flows",
+          "description": "Concurrent flows tracked across all ELBs.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 43,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(crusoe_elb_active_flows)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "type": "timeseries",
+          "title": "ELB Bandwidth In by elb_name",
+          "description": "Per-LB ingress bandwidth. Hover legend to identify each LB (slurm-login, grafana, etc.).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 47,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (elb_name) (rate(crusoe_elb_bytes_in[$__rate_interval]))",
+              "legendFormat": "{{elb_name}}"
+            }
+          ]
+        },
+        {
+          "id": 17,
+          "type": "timeseries",
+          "title": "ELB Bandwidth Out by elb_name",
+          "description": "Per-LB egress bandwidth.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 47,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (elb_name) (rate(crusoe_elb_bytes_out[$__rate_interval]))",
+              "legendFormat": "{{elb_name}}"
+            }
+          ]
+        },
+        {
+          "id": 18,
+          "type": "timeseries",
+          "title": "ELB Packets In by elb_name",
+          "description": "Per-LB inbound packet rate. Helps spot small-packet floods that may not show on bytes alone.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 57,
+            "w": 12,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "pps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (elb_name) (rate(crusoe_elb_in_packets[$__rate_interval]))",
+              "legendFormat": "{{elb_name}}"
+            }
+          ]
+        },
+        {
+          "id": 19,
+          "type": "timeseries",
+          "title": "ELB Packets Out by elb_name",
+          "description": "Per-LB outbound packet rate.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 57,
+            "w": 12,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "pps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (elb_name) (rate(crusoe_elb_out_packets[$__rate_interval]))",
+              "legendFormat": "{{elb_name}}"
+            }
+          ]
+        },
+        {
+          "id": 20,
+          "type": "timeseries",
+          "title": "ELB Active Flows by elb_name",
+          "description": "Concurrent flow count per LB. Spikes correlate with new client sessions or long-lived connection bursts.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 66,
+            "w": 12,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (elb_name) (crusoe_elb_active_flows)",
+              "legendFormat": "{{elb_name}}"
+            }
+          ]
+        },
+        {
+          "id": 21,
+          "type": "timeseries",
+          "title": "ELB New Flows Rate by elb_name",
+          "description": "New flows per second arriving at each LB \u2014 connection-setup pressure indicator.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 66,
+            "w": 12,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (elb_name) (rate(crusoe_elb_new_flows[$__rate_interval]))",
+              "legendFormat": "{{elb_name}}"
+            }
+          ]
+        },
+        {
+          "id": 22,
+          "type": "bargauge",
+          "title": "Top ELBs by Total Bandwidth (In+Out)",
+          "description": "LBs ranked by total bandwidth. Legend shows the VIP port and protocol so you can tell e.g. SSH (22/tcp) from API (3000/tcp).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 75,
+            "w": 24,
+            "h": 8
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "valueMode": "color",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 104857600
+                  },
+                  {
+                    "color": "red",
+                    "value": 1073741824
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(10, sum by (elb_name, vip_port, proto) (rate(crusoe_elb_bytes_in[$__rate_interval]) + rate(crusoe_elb_bytes_out[$__rate_interval])))",
+              "legendFormat": "{{elb_name}} :{{vip_port}}/{{proto}}"
+            }
+          ]
+        }
+      ],
+      "description": "Frontend ethernet RX/TX and ELB stats. Frontend NIC is `ens7` on B200 workers, `ens3` on CPU/login. ELBs are project-scoped \u2014 no cluster filter applies to them. GPU collective traffic is on the IB fabric (see IB dashboards), not here."
+    }
   node-gpu-detail.json: |
     {
       "__inputs": [
@@ -4384,6 +5765,706 @@ data:
           ]
         }
       ]
+    }
+  node-network-detail.json: |-
+    {
+      "uid": "crusoe-node-network-detail",
+      "title": "Crusoe \u2014 Node Network Detail",
+      "tags": [
+        "crusoe",
+        "network",
+        "node",
+        "frontend"
+      ],
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 1,
+      "fiscalYearStartMonth": 0,
+      "liveNow": false,
+      "weekStart": "",
+      "annotations": {
+        "list": []
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-metrics"
+            },
+            "query": {
+              "query": "label_values(crusoe_vm_network_receive_bytes_total, cluster_id)",
+              "refId": "A"
+            },
+            "definition": "label_values(crusoe_vm_network_receive_bytes_total, cluster_id)",
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".+",
+            "current": {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            },
+            "options": [],
+            "refresh": 1,
+            "regex": "",
+            "sort": 1,
+            "hide": 0,
+            "skipUrlSync": false
+          },
+          {
+            "name": "node",
+            "label": "Node",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-metrics"
+            },
+            "query": {
+              "query": "label_values(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}, vm_name)",
+              "refId": "B"
+            },
+            "definition": "label_values(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}, vm_name)",
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".+",
+            "current": {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            },
+            "options": [],
+            "refresh": 2,
+            "regex": "",
+            "sort": 1,
+            "hide": 0,
+            "skipUrlSync": false
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Selected RX (current)",
+          "description": "Current aggregate RX across the selected vm_name(s). If multiple nodes are selected, this is the sum.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval]))",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Selected TX (current)",
+          "description": "Current aggregate TX across the selected vm_name(s).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval]))",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Lifetime RX (counter)",
+          "description": "Total bytes received over the lifetime of the underlying counter (resets on host reboot or counter wraparound).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"})",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Lifetime TX (counter)",
+          "description": "Total bytes transmitted over the lifetime of the underlying counter.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"})",
+              "legendFormat": ""
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "RX by Node",
+          "description": "Per-node receive bandwidth. One line per selected vm_name; legend includes the interface device (ens7 on B200 workers, ens3 on CPU/login).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 12,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+              "legendFormat": "{{vm_name}} ({{device}})"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "TX by Node",
+          "description": "Per-node transmit bandwidth.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 12,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+              "legendFormat": "{{vm_name}} ({{device}})"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "RX + TX Combined by Node (stacked)",
+          "description": "Stacked view of RX and TX per selected node, useful when you want to see total NIC pressure including both directions.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 13,
+            "w": 24,
+            "h": 9
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 30,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+              "legendFormat": "RX {{vm_name}}"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+              "legendFormat": "TX {{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "RX bytes increase (last 1h)",
+          "description": "Bytes received in trailing 1h windows. Smoother than rate() \u2014 useful when correlating with longer-running activity like a checkpoint pull.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 22,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "increase(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[1h])",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "TX bytes increase (last 1h)",
+          "description": "Bytes transmitted in trailing 1h windows.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 22,
+            "w": 12,
+            "h": 8
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "increase(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[1h])",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "table",
+          "title": "Per-Node Bandwidth Table",
+          "description": "Snapshot table of currently-selected nodes with their RX+TX rate. Columns: vm_name, device, nodepool_name, pod_id, value (Bps). Sort and resize columns as needed.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 30,
+            "w": 24,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(50, sort_desc(rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval]) + rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval])))",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Per-node frontend ethernet detail. Use the $node dropdown to filter to one or many vm_names; defaults to All. To see a high-traffic node, hop here from the Top-N panel on Network Cluster View by clicking the legend entry."
     }
   slurm-cluster-overview.json: |-
     {

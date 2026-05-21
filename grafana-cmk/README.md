@@ -250,7 +250,7 @@ Verify the dashboards:
 
 1. Click **Dashboards** in the left sidebar.
 2. Open the **Crusoe** folder.
-3. You should see eight dashboards: Cluster GPU Overview, Node GPU Detail, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, and Slurm Cluster View.
+3. You should see ten dashboards: Cluster GPU Overview, Node GPU Detail, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
 
 ---
 
@@ -263,7 +263,7 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 **Cluster GPU Overview (`cluster-gpu-overview.json`, 13 panels)** — cluster-wide GPU health, utilization, and thermals.
 
 - **Utilization + capacity**: Total GPUs / nodes, average utilization gauge (70%/90% thresholds), per-node utilization time series, memory used vs total, power draw by node, top-10 nodes by utilization.
-- **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs ≥80°C, GPUs ≥85°C slowdown threshold) sourced from `DCGM_FI_DEV_GPU_TEMP`, a full-width **Top 10 Hottest Nodes** bar gauge, and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node GPU Detail dashboard.
+- **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs ≥80°C, GPUs ≥85°C slowdown threshold) sourced from `DCGM_FI_DEV_GPU_TEMP`, a compact **Top 3 Hottest Nodes** card row (node-name + temp), and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node GPU Detail dashboard.
 
 **Node GPU Detail (`node-gpu-detail.json`)** — per-GPU breakdown for one node. Utilization per device, memory used, temperature with 75 °C / 85 °C thresholds, power draw, and SM/memory clocks (useful for spotting thermal throttling).
 
@@ -347,6 +347,31 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 > 4. **No slurmdbd panel.** The `crusoe_slurm_slurmdbd_queue_size` metric is published but consistently reports 0 on slinky-based Slurm-on-CMK installations (no slurmdbd pod), so showing it was misleading. If your cluster runs Crusoe Managed Slurm with slurmdbd, the metric is meaningful and you can re-add the panel locally.
 > 5. **Single-cluster scope.** The dashboard intentionally surfaces only cluster-wide aggregates. Per-partition (`crusoe_slurm_partition_*`), per-user (`crusoe_slurm_user_jobs_*`), and per-account (`crusoe_slurm_account_jobs_*`) metrics are available and would make good follow-up dashboards if you need that breakdown.
 
+### Network dashboards
+
+**Network Cluster View (`network-cluster-overview.json`)** — frontend ethernet RX/TX across the cluster plus Elastic Load Balancer (ELB) stats.
+
+- **Header stats**: cluster-wide RX / TX rate, count of VMs with active traffic, count of frontend NICs reporting.
+- **Cluster bandwidth over time**: RX and TX time series, side by side.
+- **Top-N nodes**: bar gauges for top 10 nodes by total bandwidth, top 10 egress (TX), and top 10 ingress (RX) — color-stepped at 100 MB/s yellow and 1 GB/s red.
+- **Per-nodepool breakdown**: stacked time series so worker / login / controller pools are distinguishable.
+- **Per-rail-pod breakdown**: stacked time series grouped by `pod_id` (Crusoe rail pod — the set of nodes connected to a single InfiniBand switch). One pod spiking on the frontend usually means storage activity concentrated on those nodes; collectives stay on IB.
+- **ELB section**: aggregate in/out bandwidth and active-flow counts plus per-LB time series of bytes (in/out), packets (in/out), active flows, and new-flows rate. A `Top ELBs by Total Bandwidth (In+Out)` bar gauge labels each row with `{elb_name} :{vip_port}/{proto}` so it's easy to tell e.g. SSH (`22/tcp`) from a Grafana LB (`3000/tcp`).
+
+**Node Network Detail (`node-network-detail.json`)** — drill-in for one or many nodes via a multi-select `$node` dropdown.
+
+- Stat header: current RX, current TX, lifetime RX (counter total), lifetime TX (counter total) for the current selection.
+- Side-by-side per-node RX and TX time series, plus a stacked combined RX+TX view.
+- `increase()` over 1h windows for retrospective bandwidth-volume analysis.
+- Snapshot table of the currently-selected nodes with their RX+TX rate, sortable by column.
+
+> **Network dashboard caveats:**
+>
+> 1. **Frontend NIC only — not the IB fabric.** `crusoe_vm_network_*` reports the guest-VM frontend interface (`ens7` on B200 workers, `ens3` on CPU/login). GPU-to-GPU collective traffic (NCCL allreduce, etc.) traverses InfiniBand and shows up only on the IB dashboards. During a typical training run these dashboards will look almost idle — that is expected.
+> 2. **No packet / error / drop counters on the frontend NIC.** Crusoe Metrics only exposes RX and TX byte counters per VM-device. If you need per-packet rate, retransmits, TCP-level stats, or interface errors, those need a node-exporter sidecar that this solution does not deploy.
+> 3. **ELB metrics are project-scoped, not cluster-scoped.** `crusoe_elb_*` series carry `project_id` but no `cluster_id` label, so the `$cluster` dropdown does not filter the ELB section — every ELB in the project shows up. If you run multiple clusters in one project they share this view.
+> 4. **No node-to-node flow map.** RX/TX are aggregate counters, not per-peer. You can see "node A is moving a lot of data" but not "node A is talking to node B" — for that you would need flow data the Crusoe relay doesn't currently expose.
+
 ---
 
 ## Troubleshooting
@@ -420,6 +445,8 @@ kubectl create configmap crusoe-dashboards \
   --from-file=node-ib-detail.json=dashboards/node-ib-detail.json \
   --from-file=storage-cluster-overview.json=dashboards/storage-cluster-overview.json \
   --from-file=slurm-cluster-overview.json=dashboards/slurm-cluster-overview.json \
+  --from-file=network-cluster-overview.json=dashboards/network-cluster-overview.json \
+  --from-file=node-network-detail.json=dashboards/node-network-detail.json \
   --dry-run=client -o yaml \
   | sed 's/^metadata:$/metadata:\n  labels:\n    grafana_dashboard: "1"/' \
   | kubectl apply -f -
