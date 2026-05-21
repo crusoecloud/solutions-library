@@ -540,8 +540,8 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
-          "legendFormat": "{{node}}",
+          "expr": "sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
@@ -612,9 +612,9 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (node) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": true,
-          "legendFormat": "{{node}}",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
