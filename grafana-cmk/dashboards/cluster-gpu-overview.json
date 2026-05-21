@@ -1083,7 +1083,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Crusoe \u2014 Cluster GPU Overview",
+  "title": "Cluster GPU Overview",
   "uid": "crusoe-cluster-gpu-overview",
   "version": 8,
   "weekStart": ""
