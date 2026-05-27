@@ -429,27 +429,37 @@ curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT_ID}/metrics/
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['metric']) for r in d.get('data',{}).get('result',[])]"
 ```
 
-If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`). After editing the JSON, regenerate the dashboards ConfigMap:
+If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`). After editing the JSON, regenerate `manifests/grafana-dashboards-configmap.yaml` — one ConfigMap per dashboard, all labeled `grafana_dashboard: "1"` so the k8s-sidecar picks them up:
 
 ```bash
-kubectl create configmap crusoe-dashboards \
-  --namespace=monitoring \
-  --from-file=cluster-gpu-overview.json=dashboards/cluster-gpu-overview.json \
-  --from-file=node-gpu-detail.json=dashboards/node-gpu-detail.json \
-  --from-file=dcgm-xid-errors.json=dashboards/dcgm-xid-errors.json \
-  --from-file=cluster-gpu-power.json=dashboards/cluster-gpu-power.json \
-  --from-file=cluster-ib-overview.json=dashboards/cluster-ib-overview.json \
-  --from-file=node-ib-detail.json=dashboards/node-ib-detail.json \
-  --from-file=storage-cluster-overview.json=dashboards/storage-cluster-overview.json \
-  --from-file=slurm-cluster-overview.json=dashboards/slurm-cluster-overview.json \
-  --from-file=network-cluster-overview.json=dashboards/network-cluster-overview.json \
-  --from-file=node-network-detail.json=dashboards/node-network-detail.json \
-  --dry-run=client -o yaml \
-  | sed 's/^metadata:$/metadata:\n  labels:\n    grafana_dashboard: "1"/' \
-  | kubectl apply -f -
+cd grafana-cmk
+{
+  echo "# Auto-generated: one ConfigMap per dashboard, all labeled grafana_dashboard=\"1\"."
+  echo "# Splitting keeps each CM small enough that client-side \`kubectl apply -f\` stays"
+  echo "# under the 256 KiB per-resource annotation limit."
+} > manifests/grafana-dashboards-configmap.yaml
+first=1
+for f in dashboards/*.json; do
+  name=$(basename "$f" .json)
+  [ $first -eq 1 ] && first=0 || echo "---" >> manifests/grafana-dashboards-configmap.yaml
+  kubectl create configmap "crusoe-dashboard-$name" \
+    --namespace=monitoring \
+    --from-file="${name}.json=$f" \
+    --dry-run=client -o yaml \
+    | sed '/creationTimestamp/d' \
+    | sed 's/^metadata:$/metadata:\n  labels:\n    grafana_dashboard: "1"/' \
+    >> manifests/grafana-dashboards-configmap.yaml
+done
+kubectl apply -f manifests/grafana-dashboards-configmap.yaml
 ```
 
 The `grafana_dashboard: "1"` label is what the sidecar watches — without it, the sidecar will not pick up the ConfigMap. The sidecar reloads dashboards within a minute.
+
+> **Migrating from a pre-split deployment?** Earlier releases shipped a single combined ConfigMap named `crusoe-dashboards`. If you were on that, delete it first so the sidecar doesn't load the same dashboards twice:
+>
+> ```bash
+> kubectl delete configmap crusoe-dashboards -n monitoring --ignore-not-found
+> ```
 
 ### LoadBalancer service stuck in `<pending>` for external IP
 

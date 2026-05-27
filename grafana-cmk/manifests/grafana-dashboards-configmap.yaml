@@ -1,3 +1,15 @@
+# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.
+#
+# Auto-generated: one ConfigMap per dashboard, all labeled grafana_dashboard="1".
+# The k8s-sidecar deployed alongside Grafana picks them all up by label, so splitting
+# vs. bundling makes no application-layer difference. Splitting keeps each CM small
+# enough that client-side `kubectl apply -f` stays under the 256 KiB per-resource
+# annotation limit even as individual dashboards grow.
+#
+# Migrating from an earlier release that shipped a single combined CM named
+# "crusoe-dashboards"? Delete it first to avoid duplicate dashboard loads:
+#   kubectl delete configmap crusoe-dashboards -n monitoring
+# Then apply this file.
 apiVersion: v1
 data:
   cluster-gpu-overview.json: |-
@@ -1091,6 +1103,15 @@ data:
       "version": 8,
       "weekStart": ""
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-cluster-gpu-overview
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   cluster-gpu-power.json: |-
     {
       "__inputs": [
@@ -1905,6 +1926,15 @@ data:
       "version": 2,
       "weekStart": ""
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-cluster-gpu-power
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   cluster-ib-overview.json: |-
     {
       "uid": "crusoe-ib-cluster",
@@ -2935,6 +2965,15 @@ data:
         }
       ]
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-cluster-ib-overview
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   dcgm-xid-errors.json: |
     {
       "__inputs": [
@@ -3296,6 +3335,15 @@ data:
       "version": 1,
       "weekStart": ""
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-dcgm-xid-errors
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   network-cluster-overview.json: |-
     {
       "uid": "crusoe-network-cluster",
@@ -4668,6 +4716,15 @@ data:
       ],
       "description": "Frontend ethernet RX/TX and ELB stats. Frontend NIC is `ens7` on B200 workers, `ens3` on CPU/login. ELBs are project-scoped \u2014 no cluster filter applies to them. GPU collective traffic is on the IB fabric (see IB dashboards), not here."
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-network-cluster-overview
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   node-gpu-detail.json: |
     {
       "__inputs": [
@@ -5050,6 +5107,15 @@ data:
       "version": 1,
       "weekStart": ""
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-node-gpu-detail
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   node-ib-detail.json: |-
     {
       "uid": "crusoe-ib-node",
@@ -5766,6 +5832,15 @@ data:
         }
       ]
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-node-ib-detail
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   node-network-detail.json: |-
     {
       "uid": "crusoe-node-network-detail",
@@ -6466,6 +6541,15 @@ data:
       ],
       "description": "Per-node frontend ethernet detail. Use the $node dropdown to filter to one or many vm_names; defaults to All. To see a high-traffic node, hop here from the Top-N panel on Network Cluster View by clicking the legend entry."
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-node-network-detail
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   slurm-cluster-overview.json: |-
     {
       "uid": "crusoe-slurm-cluster",
@@ -7791,6 +7875,15 @@ data:
         }
       ]
     }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-slurm-cluster-overview
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   storage-cluster-overview.json: |-
     {
       "uid": "crusoe-storage-cluster",
@@ -8375,5 +8468,5 @@ kind: ConfigMap
 metadata:
   labels:
     grafana_dashboard: "1"
-  name: crusoe-dashboards
+  name: crusoe-dashboard-storage-cluster-overview
   namespace: monitoring
