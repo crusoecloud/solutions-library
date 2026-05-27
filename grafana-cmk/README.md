@@ -268,9 +268,23 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 **Cluster GPU Power (`cluster-gpu-power.json`)** — aggregate and per-node power draw across the cluster, plus per-GPU power distribution histogram.
 
-**DCGM & Xid Errors (`dcgm-xid-errors.json`)** — Xid + ECC tracking. Stat panels that turn red on any non-zero value, error rate by node over time, breakdown table by node / GPU / Xid code, and a DCGM health table for double-bit ECC and thermal violations. Xid code meanings: [NVIDIA's Xid error reference](https://docs.nvidia.com/deploy/xid-errors/).
+**DCGM & Xid Errors (`dcgm-xid-errors.json`, 18 panels)** — Xid + ECC tracking, plus a GPU Health section designed for slow-node detection during training runs.
 
-> **Note on the `xid_id` label:** Panels that break down errors by Xid code use `sum by (node, gpu, xid_id)`. This label name is confirmed on Managed Slurm clusters. If the table shows no rows, verify the label name with the discovery curl in the Troubleshooting section.
+- **Top section: Xid + DBE.** Stat cards that turn red on any non-zero value, Xid rate by node over time, breakdown table by node / GPU / Xid code, and a Health Failures table that lists any GPU with a new ECC DBE volatile increase or an uncorrectable HBM row remapping in the last 24h. Xid code meanings: [NVIDIA's Xid error reference](https://docs.nvidia.com/deploy/xid-errors/).
+- **GPU Health Indicators — Slow Node Detection.** Six headline stats (active SBE GPUs, GPUs with remapped rows, uncorrectable rows, 24 h PCIe replay delta, 24 h SBE volatile delta, cluster lifetime SBE) plus four leaderboard tables for drill-in:
+  - **Top 15 by Lifetime Aggregate SBE** — fleet-quality view; identifies GPUs whose HBM dies have produced the most single-bit corrections since first power-on. Useful for picking which nodes to drain when capacity allows or which to exclude from latency-critical jobs.
+  - **Top 15 by Correctable Remapped Rows** — GPUs with HBM rows DCGM has retired. They still work but have slightly less HBM and can be marginally slower than peers on remap-region accesses.
+  - **Top 15 by 24h SBE Volatile Growth** — who is struggling *right now*, in contrast to the lifetime view. Start here when chasing a same-day slow-node symptom.
+  - **Red Flag GPUs** — any GPU with either an uncorrectable remapped row or a non-zero PCIe replay increase in the last 24 h. Either condition warrants pulling the node from training and filing for hardware investigation.
+- **Time series for trend.** SBE volatile rate by node (top 20 over 6 h) so you can see *when* ECC pressure was happening, and Tensor Core Utilization by node (last 1 h) to spot performance outliers — a node consistently below its peers during steady-state training is the strongest "this node is dragging the collective" signal short of an outright Xid event.
+
+> **Notes & caveats:**
+>
+> 1. **Volatile vs aggregate ECC counters.** `DCGM_FI_DEV_ECC_SBE_VOL_TOTAL` resets on GPU reset/reboot — it captures "this session's" correction work. `DCGM_FI_DEV_ECC_SBE_AGG_TOTAL` accumulates over the GPU's lifetime. Both are surfaced because the questions they answer are different.
+> 2. **`DCGM_FI_DEV_CLOCK_THROTTLE_REASONS` is not collected.** The Crusoe Watch Agent does not publish this metric today, so the Health Failures panel originally combining DBE with throttle reasons was silently empty on the throttle half. It now combines DBE with uncorrectable remapped rows instead.
+> 3. **Idle and active GPUs share the SBE timeseries.** Top-20 by `rate(... [15m])` will return 20 series even on a quiet cluster — most will be flat zero. That is the healthy state.
+> 4. **Tensor utilization is per-node averaged across that node's 8 GPUs.** A single bad GPU on an 8-GPU node will only drag the average down by ~12 percentage points, but in collective workloads that's exactly enough to make it the step-time bottleneck.
+> 5. **`xid_id` label.** Panels that break down errors by Xid code use `sum by (vm_name, gpu, xid_id)`. This label name is confirmed on Managed Slurm clusters; if the table shows no rows, verify the label name with the discovery curl in the Troubleshooting section.
 
 ### InfiniBand dashboards
 
