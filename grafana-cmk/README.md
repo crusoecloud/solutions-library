@@ -333,7 +333,7 @@ The dropdown is sourced from `label_values(crusoe_sdisk_disk_capacity_used_bytes
 
 > **Storage dashboard caveats:**
 >
-> 1. **Two identifiers per disk.** Each Crusoe SDisk has both a `disk_id` (Crusoe-side identifier — shown in Crusoe Console and `crusoe storage disks list`) and a `disk_name` (the K8s PVC UID once it's mounted by a CSI driver). They are *different* UUIDs. The dropdown uses `disk_id`; the capacity bar gauge displays both, e.g. `44b160b1-bc88-466a-bdb2-e518941b59f8 (1dd0fac5-44e0-4539-ad89-2924e4f1b822)`.
+> 1. **Two identifiers per disk.** Each Crusoe SDisk has both a `disk_id` (Crusoe-side identifier — shown in Crusoe Console and `crusoe storage disks list`) and a `disk_name` (the K8s PVC UID once it's mounted by a CSI driver). They are *different* UUIDs. The dropdown uses `disk_id`; the capacity bar gauge displays both, e.g. `<disk_id-uuid> (<pvc-uid>)`.
 > 2. **No in-volume usage.** `kubelet_volume_stats_used_bytes` is not in the Crusoe Metrics catalog, so the dashboard can't show "this disk is 80% full" — only `crusoe_sdisk_disk_capacity_used_bytes`, which is bytes consumed from the Crusoe-storage-service's vantage point.
 > 3. **Latency unit assumed microseconds.** `crusoe_sdisk_disk_read_latency_sum` / `_count` produce an average via `rate(sum)/rate(count)`. Magnitudes (~500 µs for cached SSD reads) match microseconds, but verify with `perftest`-style benchmarks if precision matters. Latency panels fall back to 0 when the disk has no traffic in the window (rather than the more confusing NaN/"No data").
 > 4. **`[2m]` rate windows.** Measured Watch Agent cadence on the SDisk metrics is ~60 s between fresh samples (with occasional 2–12 min outliers). The dashboard uses `[2m]` rate windows so panels update within ~1–2 min of the agent posting fresh data, balanced against the occasional empty point on a scrape gap.
@@ -353,7 +353,7 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 > **Slurm dashboard caveats:**
 >
 > 1. **Memory unit is MB.** `crusoe_slurm_node_memory_bytes` and `_memory_alloc_bytes` are exported in megabytes despite the `_bytes` suffix (Slurm's RealMemory convention). The dashboard uses Grafana's `mbytes` unit so the panel auto-scales MB → GB → TB. The `Memory Alloc %` gauge ratios the two metrics, so the unit confusion cancels.
-> 2. **Slurm node names don't match Crusoe `vm_name`.** Slurm uses canonical names like `come-scale-away-workers-0`; the Crusoe Metrics relay uses `np-…` for `vm_name`. The two surfaces can't be joined at the node level without an external mapping — so this dashboard doesn't link click-through to the GPU dashboards.
+> 2. **Slurm node names don't match Crusoe `vm_name`.** Slurm uses canonical names following a `<cluster-name>-<nodepool>-<index>` convention; the Crusoe Metrics relay uses `np-…` for `vm_name`. The two surfaces can't be joined at the node level without an external mapping — so this dashboard doesn't link click-through to the GPU dashboards.
 > 3. **Not all installations expose every state.** Sparse states (`crusoe_slurm_nodes_planned`, `_resv`, `_unknown`, `_maint`) will simply not contribute to the stacked area on a cluster that never enters those states. That's expected — empty isn't broken.
 > 4. **No slurmdbd panel.** The `crusoe_slurm_slurmdbd_queue_size` metric is published but consistently reports 0 on slinky-based Slurm-on-CMK installations (no slurmdbd pod), so showing it was misleading. If your cluster runs Crusoe Managed Slurm with slurmdbd, the metric is meaningful and you can re-add the panel locally.
 > 5. **Single-cluster scope.** The dashboard intentionally surfaces only cluster-wide aggregates. Per-partition (`crusoe_slurm_partition_*`), per-user (`crusoe_slurm_user_jobs_*`), and per-account (`crusoe_slurm_account_jobs_*`) metrics are available.
@@ -575,7 +575,7 @@ Grafana's pod should land on a node whose instance type doesn't start with `b200
 
 ### Sizing resource requests / limits
 
-The default `resources` block in `grafana-values.yaml` (200m / 512Mi requests, 1 CPU / 2Gi limit) was tuned for the come-scale-away test cluster (~1,700 DCGM series, 8 dashboards). For other fleet sizes:
+The default `resources` block in `grafana-values.yaml` (200m / 512Mi requests, 1 CPU / 2Gi limit) was tuned against a mid-size B200 test fleet (low thousands of DCGM series, full dashboard set). For other fleet sizes:
 
 | Fleet size (DCGM series) | Suggested `requests` | Suggested `limits` |
 |---|---|---|
