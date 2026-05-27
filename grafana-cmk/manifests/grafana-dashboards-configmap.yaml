@@ -2974,7 +2974,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  dcgm-xid-errors.json: |
+  dcgm-xid-errors.json: |-
     {
       "__inputs": [
         {
@@ -2988,17 +2988,45 @@ data:
       ],
       "__elements": {},
       "__requires": [
-        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
-        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
-        {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
-        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
-        {"type": "panel", "id": "table", "name": "Table", "version": ""}
+        {
+          "type": "grafana",
+          "id": "grafana",
+          "name": "Grafana",
+          "version": "11.0.0"
+        },
+        {
+          "type": "datasource",
+          "id": "prometheus",
+          "name": "Prometheus",
+          "version": "1.0.0"
+        },
+        {
+          "type": "panel",
+          "id": "stat",
+          "name": "Stat",
+          "version": ""
+        },
+        {
+          "type": "panel",
+          "id": "timeseries",
+          "name": "Time series",
+          "version": ""
+        },
+        {
+          "type": "panel",
+          "id": "table",
+          "name": "Table",
+          "version": ""
+        }
       ],
       "annotations": {
         "list": [
           {
             "builtIn": 1,
-            "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+            "datasource": {
+              "type": "grafana",
+              "uid": "-- Grafana --"
+            },
             "enable": true,
             "hide": true,
             "iconColor": "rgba(0, 211, 255, 1)",
@@ -3007,7 +3035,7 @@ data:
           }
         ]
       },
-      "description": "DCGM Xid errors and GPU health check failures across the cluster. Xid errors indicate GPU hardware or driver issues — see https://docs.nvidia.com/deploy/xid-errors/ for error code reference. Data sourced from Crusoe Metrics (Watch Agent provides DCGM metrics; no separate DCGM exporter installation is required).",
+      "description": "DCGM Xid errors and GPU health check failures across the cluster. Xid errors indicate GPU hardware or driver issues \u2014 see https://docs.nvidia.com/deploy/xid-errors/ for error code reference. Data sourced from Crusoe Metrics (Watch Agent provides DCGM metrics; no separate DCGM exporter installation is required). | GPU Health section added: SBE/DBE counters, remapped rows, PCIe replay, tensor-core utilization. Designed for slow-node detection during training runs.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -3018,7 +3046,10 @@ data:
           "icon": "arrow-left",
           "includeVars": false,
           "keepTime": true,
-          "tags": ["crusoe", "gpu"],
+          "tags": [
+            "crusoe",
+            "gpu"
+          ],
           "targetBlank": false,
           "title": "Cluster GPU Overview",
           "tooltip": "",
@@ -3028,40 +3059,74 @@ data:
       ],
       "panels": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "Total Xid errors recorded across all GPUs in the last 24 hours. Any non-zero value warrants investigation.\n\nFor Xid error code meanings see: https://docs.nvidia.com/deploy/xid-errors/",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "thresholds"},
+              "color": {
+                "mode": "thresholds"
+              },
               "mappings": [
-                {"options": {"0": {"color": "green", "index": 0, "text": "0 — Clean"}}, "type": "value"}
+                {
+                  "options": {
+                    "0": {
+                      "color": "green",
+                      "index": 0,
+                      "text": "0 \u2014 Clean"
+                    }
+                  },
+                  "type": "value"
+                }
               ],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  {"color": "green", "value": null},
-                  {"color": "red", "value": 1}
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
                 ]
               },
               "unit": "short"
             },
             "overrides": []
           },
-          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
           "id": 1,
           "options": {
             "colorMode": "background",
             "graphMode": "none",
             "justifyMode": "auto",
             "orientation": "auto",
-            "reduceOptions": {"calcs": ["sum"], "fields": "", "values": false},
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
             "textMode": "auto",
             "wideLayout": true
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-              "expr": "sum(increase(DCGM_FI_DEV_XID_ERRORS[24h]))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(increase(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h]))",
               "instant": true,
               "legendFormat": "",
               "refId": "A"
@@ -3071,41 +3136,78 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "Total ECC double-bit errors in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL counts volatile (since-reset) double-bit errors. Persistent non-zero values indicate failing GPU memory.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "thresholds"},
+              "color": {
+                "mode": "thresholds"
+              },
               "mappings": [
-                {"options": {"0": {"color": "green", "index": 0, "text": "0 — Clean"}}, "type": "value"}
+                {
+                  "options": {
+                    "0": {
+                      "color": "green",
+                      "index": 0,
+                      "text": "0 \u2014 Clean"
+                    }
+                  },
+                  "type": "value"
+                }
               ],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  {"color": "green", "value": null},
-                  {"color": "yellow", "value": 1},
-                  {"color": "red", "value": 10}
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
                 ]
               },
               "unit": "short"
             },
             "overrides": []
           },
-          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
           "id": 2,
           "options": {
             "colorMode": "background",
             "graphMode": "none",
             "justifyMode": "auto",
             "orientation": "auto",
-            "reduceOptions": {"calcs": ["sum"], "fields": "", "values": false},
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
             "textMode": "auto",
             "wideLayout": true
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-              "expr": "sum(increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h]))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h]))",
               "instant": true,
               "legendFormat": "",
               "refId": "A"
@@ -3115,11 +3217,16 @@ data:
           "type": "stat"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "Xid error rate per node over time. A sudden spike typically indicates a driver crash, hardware fault, or workload-induced GPU reset.\n\nFor Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "palette-classic"},
+              "color": {
+                "mode": "palette-classic"
+              },
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -3130,39 +3237,71 @@ data:
                 "drawStyle": "bars",
                 "fillOpacity": 80,
                 "gradientMode": "none",
-                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {"type": "linear"},
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": true,
-                "stacking": {"group": "A", "mode": "normal"},
-                "thresholdsStyle": {"mode": "off"}
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "mappings": [],
               "min": 0,
-              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}]},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  }
+                ]
+              },
               "unit": "short"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 4
+          },
           "id": 3,
           "options": {
             "legend": {
-              "calcs": ["sum"],
+              "calcs": [
+                "sum"
+              ],
               "displayMode": "table",
               "placement": "bottom",
               "showLegend": true
             },
-            "tooltip": {"mode": "multi", "sort": "desc"}
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-              "expr": "sum by (vm_name) (increase(DCGM_FI_DEV_XID_ERRORS[5m]))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (vm_name) (increase(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[5m]))",
               "legendFormat": "{{vm_name}}",
               "refId": "A"
             }
@@ -3171,35 +3310,65 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-          "description": "Recent Xid errors grouped by node, GPU, and Xid error code. For Xid code meanings see: https://docs.nvidia.com/deploy/xid-errors/\n\nNote: the xid_id label name may differ — check the actual label names with the scrape discovery curl in the Troubleshooting section if this panel shows no data.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "description": "Recent Xid errors grouped by node, GPU, and Xid error code. For Xid code meanings see: https://docs.nvidia.com/deploy/xid-errors/\n\nNote: the xid_id label name may differ \u2014 check the actual label names with the scrape discovery curl in the Troubleshooting section if this panel shows no data.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "thresholds"},
+              "color": {
+                "mode": "thresholds"
+              },
               "custom": {
                 "align": "auto",
-                "cellOptions": {"type": "auto"},
+                "cellOptions": {
+                  "type": "auto"
+                },
                 "inspect": false
               },
               "mappings": [],
-              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
             },
             "overrides": [
               {
-                "matcher": {"id": "byName", "options": "Value"},
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
                 "properties": [
-                  {"id": "displayName", "value": "Error Count"},
+                  {
+                    "id": "displayName",
+                    "value": "Error Count"
+                  },
                   {
                     "id": "custom.cellOptions",
-                    "value": {"mode": "basic", "type": "color-background"}
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
                   },
                   {
                     "id": "thresholds",
                     "value": {
                       "mode": "absolute",
                       "steps": [
-                        {"color": "green", "value": null},
-                        {"color": "red", "value": 1}
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        }
                       ]
                     }
                   }
@@ -3207,23 +3376,38 @@ data:
               }
             ]
           },
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 12
+          },
           "id": 4,
           "options": {
             "cellHeight": "sm",
             "footer": {
               "countRows": false,
               "fields": "",
-              "reducer": ["sum"],
+              "reducer": [
+                "sum"
+              ],
               "show": false
             },
             "showHeader": true,
-            "sortBy": [{"desc": true, "displayName": "Error Count"}]
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "Error Count"
+              }
+            ]
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-              "expr": "sum by (vm_name, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (vm_name, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h])) > 0",
               "instant": true,
               "legendFormat": "",
               "refId": "A"
@@ -3233,13 +3417,22 @@ data:
           "transformations": [
             {
               "id": "labelsToFields",
-              "options": {"mode": "columns"}
+              "options": {
+                "mode": "columns"
+              }
             },
             {
               "id": "organize",
               "options": {
-                "excludeByName": {"Time": true},
-                "indexByName": {"node": 0, "gpu": 1, "xid_id": 2, "Value": 3},
+                "excludeByName": {
+                  "Time": true
+                },
+                "indexByName": {
+                  "node": 0,
+                  "gpu": 1,
+                  "xid_id": 2,
+                  "Value": 3
+                },
                 "renameByName": {}
               }
             }
@@ -3247,36 +3440,69 @@ data:
           "type": "table"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-          "description": "DCGM GPU health failures: ECC double-bit errors and clock throttle events per node/GPU in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL is the volatile double-bit ECC error counter. DCGM_FI_DEV_CLOCK_THROTTLE_REASONS is a bitmask — any non-zero increase indicates throttling events.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "description": "Cluster-wide ECC DBE volatile increases and any GPU reporting uncorrectable HBM row remappings. Both are urgent: DBE volatile = a currently-running double-bit error correction; uncorrectable remapped rows = HBM regions DCGM has retired permanently. Either warrants pulling the node from a training run and filing for hardware investigation.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "thresholds"},
+              "color": {
+                "mode": "thresholds"
+              },
               "custom": {
                 "align": "auto",
-                "cellOptions": {"type": "auto"},
+                "cellOptions": {
+                  "type": "auto"
+                },
                 "inspect": false
               },
               "mappings": [],
-              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
             },
             "overrides": [
               {
-                "matcher": {"id": "byName", "options": "Value"},
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
                 "properties": [
-                  {"id": "displayName", "value": "Event Count"},
+                  {
+                    "id": "displayName",
+                    "value": "Event Count"
+                  },
                   {
                     "id": "custom.cellOptions",
-                    "value": {"mode": "basic", "type": "color-background"}
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
                   },
                   {
                     "id": "thresholds",
                     "value": {
                       "mode": "absolute",
                       "steps": [
-                        {"color": "green", "value": null},
-                        {"color": "yellow", "value": 1},
-                        {"color": "red", "value": 10}
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "yellow",
+                          "value": 1
+                        },
+                        {
+                          "color": "red",
+                          "value": 10
+                        }
                       ]
                     }
                   }
@@ -3284,32 +3510,50 @@ data:
               }
             ]
           },
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 12
+          },
           "id": 5,
           "options": {
             "cellHeight": "sm",
             "footer": {
               "countRows": false,
               "fields": "",
-              "reducer": ["sum"],
+              "reducer": [
+                "sum"
+              ],
               "show": false
             },
             "showHeader": true,
-            "sortBy": [{"desc": true, "displayName": "Event Count"}]
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "Event Count"
+              }
+            ]
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-              "expr": "sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[24h])) > 0",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) > 0",
               "instant": true,
               "legendFormat": "ECC DBE {{vm_name}} GPU {{gpu}}",
               "refId": "A"
             },
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
-              "expr": "sum by (vm_name, gpu) (increase(DCGM_FI_DEV_CLOCK_THROTTLE_REASONS[24h])) > 0",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (vm_name, gpu) (DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) > 0",
               "instant": true,
-              "legendFormat": "Throttle {{vm_name}} GPU {{gpu}}",
+              "legendFormat": "Uncorrectable Remap {{vm_name}} GPU {{gpu}}",
               "refId": "B"
             }
           ],
@@ -3317,22 +3561,1110 @@ data:
           "transformations": [
             {
               "id": "labelsToFields",
-              "options": {"mode": "columns"}
+              "options": {
+                "mode": "columns"
+              }
             }
           ],
           "type": "table"
+        },
+        {
+          "id": 6,
+          "type": "row",
+          "title": "GPU Health Indicators \u2014 Slow Node Detection",
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "id": 7,
+          "type": "stat",
+          "title": "Active SBE GPUs",
+          "description": "Count of GPUs currently reporting a non-zero ECC single-bit error volatile counter. A non-zero volatile counter means the GPU is actively correcting SBEs since its last reset \u2014 usually benign on its own, but worth knowing when a slow-node hunt is underway.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 21,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "count(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "GPUs With Remapped Rows",
+          "description": "Count of GPUs that have any correctable HBM row remapping recorded. Once a row is remapped DCGM routes around it; the GPU still works but capacity is reduced and remapped-row accesses are slower. A growing count over time is the classic 'HBM is degrading' signal.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 21,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "count(DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "stat",
+          "title": "Uncorrectable Rows",
+          "description": "Cluster-total of HBM rows DCGM has marked uncorrectable. Should be 0. Any non-zero value means at least one GPU has bad HBM that cannot be remapped \u2014 the GPU should be drained and replaced.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 21,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) or vector(0)",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "24h PCIe Replays",
+          "description": "Cluster-wide increase in PCIe replay events over the last 24h. Non-zero indicates physical-layer PCIe link issues \u2014 bus glitches, marginal connectors, or a failing host bridge. Even small numbers (10s/day) can indicate a developing problem.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 21,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(increase(DCGM_FI_DEV_PCIE_REPLAY_COUNTER{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "stat",
+          "title": "24h SBE Volatile \u0394",
+          "description": "Cluster-wide increase in single-bit ECC corrections in the last 24h. Per-GPU rates of dozens to low thousands per day under sustained load are normal on healthy HBM; runaway growth on one node is a slow-node candidate.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 21,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10000
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "type": "stat",
+          "title": "Lifetime SBE (\u03a3)",
+          "description": "Fleet-wide lifetime aggregate of single-bit ECC corrections (across all HBM dies on all GPUs). Mainly useful as a reference point; the distribution (which GPUs contribute most) is what matters \u2014 see the leaderboard below.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 20,
+            "y": 21,
+            "w": 4,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum(DCGM_FI_DEV_ECC_SBE_AGG_TOTAL{cluster_id=~\"$cluster\"})",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "type": "table",
+          "title": "Top 15 GPUs by Lifetime Aggregate SBE",
+          "description": "Fleet quality leaderboard. GPUs at the top of this list have HBM dies that have produced the most single-bit corrections since first power-on. They are not necessarily failing, but are statistically more likely to slow down or degrade further. Useful for picking which nodes to drain when capacity allows or which to exclude from latency-critical jobs.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 25,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "Lifetime SBE",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 1000
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Lifetime SBE"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(15, sum by (vm_name, gpu) (DCGM_FI_DEV_ECC_SBE_AGG_TOTAL{cluster_id=~\"$cluster\"}))",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "cluster_id": true,
+                  "device": true,
+                  "Hostname": true,
+                  "UUID": true,
+                  "container": true,
+                  "namespace": true,
+                  "pod": true,
+                  "crusoe_resource": true,
+                  "location": true,
+                  "metrics_source": true,
+                  "nodepool": true,
+                  "ib_network_id": true,
+                  "ib_network_name": true,
+                  "modelName": true,
+                  "pci_bus_id": true,
+                  "vm_id": true,
+                  "DCGM_FI_DRIVER_VERSION": true,
+                  "node_id": true,
+                  "organization_id": true,
+                  "project_id": true,
+                  "vm_instance_type": true,
+                  "vpc_network_id": true,
+                  "pod_id": true,
+                  "nodepool_name": true,
+                  "node": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "type": "table",
+          "title": "Top 15 GPUs by Correctable Remapped Rows",
+          "description": "GPUs that currently have correctable HBM rows remapped. Each remapped row is a region DCGM has retired because of repeated correctable errors. The GPU still works but has slightly less usable HBM, and accesses to the remap-region can be marginally slower than peers. Sudden increases or unusually high counts are reasons to drain.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 25,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "Remapped Rows",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 1000
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Remapped Rows"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(15, sum by (vm_name, gpu) (DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) > 0)",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "cluster_id": true,
+                  "device": true,
+                  "Hostname": true,
+                  "UUID": true,
+                  "container": true,
+                  "namespace": true,
+                  "pod": true,
+                  "crusoe_resource": true,
+                  "location": true,
+                  "metrics_source": true,
+                  "nodepool": true,
+                  "ib_network_id": true,
+                  "ib_network_name": true,
+                  "modelName": true,
+                  "pci_bus_id": true,
+                  "vm_id": true,
+                  "DCGM_FI_DRIVER_VERSION": true,
+                  "node_id": true,
+                  "organization_id": true,
+                  "project_id": true,
+                  "vm_instance_type": true,
+                  "vpc_network_id": true,
+                  "pod_id": true,
+                  "nodepool_name": true,
+                  "node": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "type": "table",
+          "title": "Top 15 GPUs by 24h SBE Volatile Growth",
+          "description": "Which GPUs are doing the most ECC correction work in the last 24h. This is the 'who is struggling right now' view, in contrast to the lifetime leaderboard. If you're chasing a slow-node symptom that emerged today, start here.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 35,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "24h SBE \u0394",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 1000
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "24h SBE \u0394"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(15, sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) > 0)",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "cluster_id": true,
+                  "device": true,
+                  "Hostname": true,
+                  "UUID": true,
+                  "container": true,
+                  "namespace": true,
+                  "pod": true,
+                  "crusoe_resource": true,
+                  "location": true,
+                  "metrics_source": true,
+                  "nodepool": true,
+                  "ib_network_id": true,
+                  "ib_network_name": true,
+                  "modelName": true,
+                  "pci_bus_id": true,
+                  "vm_id": true,
+                  "DCGM_FI_DRIVER_VERSION": true,
+                  "node_id": true,
+                  "organization_id": true,
+                  "project_id": true,
+                  "vm_instance_type": true,
+                  "vpc_network_id": true,
+                  "pod_id": true,
+                  "nodepool_name": true,
+                  "node": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "type": "table",
+          "title": "Red Flag GPUs (Uncorrectable Rows or PCIe Replays in 24h)",
+          "description": "GPUs with at least one of: an uncorrectable remapped row right now, or a non-zero PCIe replay-counter increase in the last 24h. Either condition warrants pulling the node from training and filing for hardware investigation \u2014 uncorrectable rows can manifest as silent data corruption, and sustained PCIe replays cap effective per-GPU bandwidth.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 35,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "Severity (uncorrectable + 24h replay)",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 1000
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Severity (uncorrectable + 24h replay)"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "sum by (vm_name, gpu) (DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"} + increase(DCGM_FI_DEV_PCIE_REPLAY_COUNTER{cluster_id=~\"$cluster\"}[24h])) > 0",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "cluster_id": true,
+                  "device": true,
+                  "Hostname": true,
+                  "UUID": true,
+                  "container": true,
+                  "namespace": true,
+                  "pod": true,
+                  "crusoe_resource": true,
+                  "location": true,
+                  "metrics_source": true,
+                  "nodepool": true,
+                  "ib_network_id": true,
+                  "ib_network_name": true,
+                  "modelName": true,
+                  "pci_bus_id": true,
+                  "vm_id": true,
+                  "DCGM_FI_DRIVER_VERSION": true,
+                  "node_id": true,
+                  "organization_id": true,
+                  "project_id": true,
+                  "vm_instance_type": true,
+                  "vpc_network_id": true,
+                  "pod_id": true,
+                  "nodepool_name": true,
+                  "node": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 17,
+          "type": "timeseries",
+          "title": "SBE Volatile Rate by Node (last 6h)",
+          "description": "Per-GPU SBE correction rate (15m windows, top 20). Spikes correlate with periods of heavy HBM bandwidth pressure \u2014 e.g., the gradient-allreduce of a training step. Persistently elevated rate on a single GPU is a slow-node candidate; correlated bursts across many GPUs usually mean the workload itself is HBM-stressing.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 45,
+            "w": 24,
+            "h": 8
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(20, rate(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[15m]))",
+              "legendFormat": "{{vm_name}} GPU {{gpu}}"
+            }
+          ]
+        },
+        {
+          "id": 18,
+          "type": "timeseries",
+          "title": "Tensor Core Utilization by Node (last 1h)",
+          "description": "Tensor-core utilization per node (avg across that node's GPUs). On a B200 under matmul-heavy training, healthy nodes typically average 50\u201380% during the steady-state of a step. A node consistently 20+ percentage points below its peers, while the rest are pushing tensors, is the strongest 'this node is dragging the collective' signal short of an outright Xid event.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 53,
+            "w": 24,
+            "h": 8
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "avg by (vm_name) (DCGM_FI_PROF_PIPE_TENSOR_ACTIVE{cluster_id=~\"$cluster\"})",
+              "legendFormat": "{{vm_name}}"
+            }
+          ]
         }
       ],
       "refresh": "5m",
       "schemaVersion": 39,
-      "tags": ["crusoe", "gpu", "dcgm", "xid"],
-      "templating": {"list": []},
-      "time": {"from": "now-24h", "to": "now"},
+      "tags": [
+        "crusoe",
+        "gpu",
+        "dcgm",
+        "xid"
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-metrics"
+            },
+            "query": {
+              "query": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+              "refId": "A"
+            },
+            "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".+",
+            "current": {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            },
+            "options": [],
+            "refresh": 1,
+            "regex": "",
+            "sort": 1,
+            "hide": 0,
+            "skipUrlSync": false
+          }
+        ]
+      },
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
       "timepicker": {},
       "timezone": "browser",
       "title": "DCGM & Xid Errors",
       "uid": "crusoe-dcgm-xid-errors",
-      "version": 1,
+      "version": 3,
       "weekStart": ""
     }
 kind: ConfigMap
