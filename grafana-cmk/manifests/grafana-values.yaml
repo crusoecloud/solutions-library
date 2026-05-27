@@ -68,9 +68,9 @@ resources:
     cpu: 1000m
     memory: 2Gi
 # 512Mi memory / 500m cpu (chart default) OOMKills when rendering multiple
-# dashboards against a cluster with thousands of metric series — observed on
-# come-scale-away (~1700 DCGM series, 6 dashboards). 2Gi is comfortable for
-# both query rendering and the small Caddy sidecar. See README → "Production
+# dashboards against a cluster with thousands of metric series — observed
+# repeatedly on a mid-size B200 test fleet. 2Gi is comfortable for both
+# query rendering and the small Caddy sidecar. See README → "Production
 # hardening" for sizing guidance at other fleet sizes.
 
 # Keep Grafana off GPU worker nodes. Match key `nvidia.com/gpu.present` is set
