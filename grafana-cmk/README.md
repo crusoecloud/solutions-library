@@ -249,7 +249,7 @@ Verify the dashboards:
 
 1. Click **Dashboards** in the left sidebar.
 2. Open the **Crusoe** folder.
-3. You should see ten dashboards: Cluster GPU Overview, Node GPU Detail, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
+3. You should see ten dashboards: Cluster GPU Overview, Node Details, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
 
 ---
 
@@ -262,9 +262,18 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 **Cluster GPU Overview (`cluster-gpu-overview.json`, 13 panels)** — cluster-wide GPU health, utilization, and thermals.
 
 - **Utilization + capacity**: Total GPUs / nodes, average utilization gauge (70%/90% thresholds), per-node utilization time series, memory used vs total, power draw by node, top-10 nodes by utilization.
-- **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs ≥80°C, GPUs ≥85°C slowdown threshold) sourced from `DCGM_FI_DEV_GPU_TEMP`, a compact **Top 3 Hottest Nodes** card row (node-name + temp), and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node GPU Detail dashboard.
+- **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs ≥80°C, GPUs ≥85°C slowdown threshold) sourced from `DCGM_FI_DEV_GPU_TEMP`, a compact **Top 3 Hottest Nodes** card row (node-name + temp), and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node Details dashboard.
 
-**Node GPU Detail (`node-gpu-detail.json`)** — per-GPU breakdown for one node. Utilization per device, memory used, temperature with 75 °C / 85 °C thresholds, power draw, and SM/memory clocks (useful for spotting thermal throttling).
+**Node Details (`node-gpu-detail.json`, 14 panels)** — per-node drill-in for both GPU and host system metrics. Pick a node from the `$node` dropdown; panels populate after selection. UID is preserved as `crusoe-node-gpu-detail` so existing URLs and bookmarks resolve.
+
+- **GPU section** (top): per-GPU utilization, memory used, temperature with 75 °C / 85 °C thresholds, power draw, and SM/memory clocks (useful for spotting thermal throttling).
+- **Node System section** (bottom): four headline stats (CPU Used %, Memory Used %, Memory Used bytes, Uptime) plus CPU utilization broken down by mode (`user`, `system`, `io_wait`, `nice`), memory used vs total, and per-device disk bandwidth + IOPS (read and write).
+
+> **Notes on the system section:**
+>
+> 1. **CPU modes.** `crusoe_vm_cpu_seconds_total` exports five modes — `idle`, `user`, `system`, `io_wait`, `nice` (note the underscore in `io_wait`). The stacked panel sums the non-idle modes; the stat card is `100 * (1 - avg(rate(...{mode="idle"}...)))` averaged across all logical CPUs.
+> 2. **Disk devices.** Per-device disk I/O includes `vda*` (root + ephemeral) and `loop*` (squashfs / snap mounts). **Crusoe SDisks are NOT visible here** — those use Crusoe-side counters (`crusoe_sdisk_*`) and appear on the Shared Storage View.
+> 3. **Uptime via `crusoe_vm_boot_time`.** Grafana auto-formats the `time() - boot_time` value as days/hours.
 
 **Cluster GPU Power (`cluster-gpu-power.json`)** — aggregate and per-node power draw across the cluster, plus per-GPU power distribution histogram.
 
