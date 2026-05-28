@@ -6057,7 +6057,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  node-gpu-detail.json: |
+  node-gpu-detail.json: |-
     {
       "__inputs": [
         {
@@ -6071,15 +6071,33 @@ data:
       ],
       "__elements": {},
       "__requires": [
-        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0"},
-        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
-        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""}
+        {
+          "type": "grafana",
+          "id": "grafana",
+          "name": "Grafana",
+          "version": "11.0.0"
+        },
+        {
+          "type": "datasource",
+          "id": "prometheus",
+          "name": "Prometheus",
+          "version": "1.0.0"
+        },
+        {
+          "type": "panel",
+          "id": "timeseries",
+          "name": "Time series",
+          "version": ""
+        }
       ],
       "annotations": {
         "list": [
           {
             "builtIn": 1,
-            "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+            "datasource": {
+              "type": "grafana",
+              "uid": "-- Grafana --"
+            },
             "enable": true,
             "hide": true,
             "iconColor": "rgba(0, 211, 255, 1)",
@@ -6088,7 +6106,7 @@ data:
           }
         ]
       },
-      "description": "Per-GPU metrics for a selected node: utilization, memory, temperature, power, and clock speeds. Data sourced from Crusoe Metrics.",
+      "description": "Per-node drill-in: GPU (utilization, memory, temp, power, clocks) plus system (CPU by mode, memory, disk I/O). Pick a node from the dropdown; panels populate after selection.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -6099,7 +6117,10 @@ data:
           "icon": "arrow-left",
           "includeVars": false,
           "keepTime": true,
-          "tags": ["crusoe", "gpu"],
+          "tags": [
+            "crusoe",
+            "gpu"
+          ],
           "targetBlank": false,
           "title": "Cluster GPU Overview",
           "tooltip": "",
@@ -6109,11 +6130,16 @@ data:
       ],
       "panels": [
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "GPU utilization per GPU on the selected node. Each line represents one GPU device. The 'gpu' label is the DCGM GPU index.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "palette-classic"},
+              "color": {
+                "mode": "palette-classic"
+              },
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -6124,39 +6150,73 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 10,
                 "gradientMode": "none",
-                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {"type": "linear"},
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": true,
-                "stacking": {"group": "A", "mode": "none"},
-                "thresholdsStyle": {"mode": "off"}
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "mappings": [],
               "max": 100,
               "min": 0,
-              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
               "unit": "percent"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
           "id": 1,
           "options": {
             "legend": {
-              "calcs": ["mean", "max", "lastNotNull"],
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ],
               "displayMode": "table",
               "placement": "right",
               "showLegend": true
             },
-            "tooltip": {"mode": "multi", "sort": "desc"}
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
               "expr": "DCGM_FI_DEV_GPU_UTIL{vm_name=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -6166,11 +6226,16 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "GPU framebuffer memory used per GPU on the selected node. DCGM_FI_DEV_FB_USED is in MiB.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "palette-classic"},
+              "color": {
+                "mode": "palette-classic"
+              },
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -6181,38 +6246,72 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 10,
                 "gradientMode": "none",
-                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {"type": "linear"},
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": true,
-                "stacking": {"group": "A", "mode": "none"},
-                "thresholdsStyle": {"mode": "off"}
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "mappings": [],
               "min": 0,
-              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
               "unit": "mebibytes"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
           "id": 2,
           "options": {
             "legend": {
-              "calcs": ["mean", "max", "lastNotNull"],
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ],
               "displayMode": "table",
               "placement": "right",
               "showLegend": true
             },
-            "tooltip": {"mode": "multi", "sort": "desc"}
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
               "expr": "DCGM_FI_DEV_FB_USED{vm_name=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -6222,11 +6321,16 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "GPU temperature per GPU on the selected node. DCGM_FI_DEV_GPU_TEMP is in Celsius.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "palette-classic"},
+              "color": {
+                "mode": "palette-classic"
+              },
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -6237,15 +6341,24 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 10,
                 "gradientMode": "none",
-                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {"type": "linear"},
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": true,
-                "stacking": {"group": "A", "mode": "none"},
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
                 "thresholdsStyle": {
                   "mode": "line+area"
                 }
@@ -6255,29 +6368,53 @@ data:
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  {"color": "green", "value": null},
-                  {"color": "yellow", "value": 75},
-                  {"color": "red", "value": 85}
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 75
+                  },
+                  {
+                    "color": "red",
+                    "value": 85
+                  }
                 ]
               },
               "unit": "celsius"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
           "id": 3,
           "options": {
             "legend": {
-              "calcs": ["mean", "max", "lastNotNull"],
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ],
               "displayMode": "table",
               "placement": "right",
               "showLegend": true
             },
-            "tooltip": {"mode": "multi", "sort": "desc"}
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
               "expr": "DCGM_FI_DEV_GPU_TEMP{vm_name=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -6287,11 +6424,16 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "GPU power draw per GPU on the selected node. DCGM_FI_DEV_POWER_USAGE is in watts.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "palette-classic"},
+              "color": {
+                "mode": "palette-classic"
+              },
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -6302,38 +6444,72 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 10,
                 "gradientMode": "none",
-                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {"type": "linear"},
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": true,
-                "stacking": {"group": "A", "mode": "none"},
-                "thresholdsStyle": {"mode": "off"}
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "mappings": [],
               "min": 0,
-              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
               "unit": "watt"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
           "id": 4,
           "options": {
             "legend": {
-              "calcs": ["mean", "max", "lastNotNull"],
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ],
               "displayMode": "table",
               "placement": "right",
               "showLegend": true
             },
-            "tooltip": {"mode": "multi", "sort": "desc"}
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
               "expr": "DCGM_FI_DEV_POWER_USAGE{vm_name=\"$node\"}",
               "legendFormat": "GPU {{gpu}}",
               "refId": "A"
@@ -6343,11 +6519,16 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
           "description": "SM clock and memory clock per GPU on the selected node. DCGM_FI_DEV_SM_CLOCK and DCGM_FI_DEV_MEM_CLOCK are in MHz. High values indicate the GPU is not being thermally throttled.",
           "fieldConfig": {
             "defaults": {
-              "color": {"mode": "palette-classic"},
+              "color": {
+                "mode": "palette-classic"
+              },
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -6358,44 +6539,80 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 5,
                 "gradientMode": "none",
-                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {"type": "linear"},
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": true,
-                "stacking": {"group": "A", "mode": "none"},
-                "thresholdsStyle": {"mode": "off"}
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "mappings": [],
               "min": 0,
-              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
               "unit": "megahertz"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
           "id": 5,
           "options": {
             "legend": {
-              "calcs": ["mean", "lastNotNull"],
+              "calcs": [
+                "mean",
+                "lastNotNull"
+              ],
               "displayMode": "table",
               "placement": "right",
               "showLegend": true
             },
-            "tooltip": {"mode": "multi", "sort": "desc"}
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
           "targets": [
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
               "expr": "DCGM_FI_DEV_SM_CLOCK{vm_name=\"$node\"}",
               "legendFormat": "SM GPU {{gpu}}",
               "refId": "A"
             },
             {
-              "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
               "expr": "DCGM_FI_DEV_MEM_CLOCK{vm_name=\"$node\"}",
               "legendFormat": "Mem GPU {{gpu}}",
               "refId": "B"
@@ -6403,16 +6620,560 @@ data:
           ],
           "title": "Per-GPU SM & Memory Clock",
           "type": "timeseries"
+        },
+        {
+          "id": 6,
+          "type": "row",
+          "title": "Node System (CPU / Memory / Disk)",
+          "gridPos": {
+            "x": 0,
+            "y": 24,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "id": 7,
+          "type": "stat",
+          "title": "CPU Used %",
+          "description": "Percentage of total CPU capacity in use right now (1 - average idle fraction across all logical CPUs).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 25,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "100 * (1 - avg(rate(crusoe_vm_cpu_seconds_total{vm_name=\"$node\", mode=\"idle\"}[$__rate_interval])))",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "Memory Used %",
+          "description": "Currently-used host memory as a percentage of total.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 25,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "100 * crusoe_vm_memory_used_bytes{vm_name=\"$node\"} / crusoe_vm_memory_total_bytes{vm_name=\"$node\"}",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "stat",
+          "title": "Memory Used",
+          "description": "Currently-used host memory in bytes.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 25,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "crusoe_vm_memory_used_bytes{vm_name=\"$node\"}",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "Uptime",
+          "description": "Seconds since this node's last boot, sourced from `crusoe_vm_boot_time`. Grafana auto-formats as days/hours.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 25,
+            "w": 6,
+            "h": 4
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "time() - crusoe_vm_boot_time{vm_name=\"$node\"}",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "CPU Utilization by Mode",
+          "description": "Stacked CPU utilization by mode (user, system, io_wait, nice). Sum of all modes equals total CPU busy %. Useful for diagnosing iowait spikes vs straight compute load.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 29,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 30,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "100 * avg by (mode) (rate(crusoe_vm_cpu_seconds_total{vm_name=\"$node\", mode!=\"idle\"}[$__rate_interval]))",
+              "legendFormat": "{{mode}}"
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Memory Used vs Total",
+          "description": "Host memory: currently-used vs total RAM. The gap is what's available for new allocations (cache + free).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 29,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "crusoe_vm_memory_used_bytes{vm_name=\"$node\"}",
+              "legendFormat": "Used"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "crusoe_vm_memory_total_bytes{vm_name=\"$node\"}",
+              "legendFormat": "Total"
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "type": "timeseries",
+          "title": "Disk Bandwidth by Device",
+          "description": "Per-device disk throughput, read and write. Devices typically include `vda*` (root + ephemeral), and `loop*` (squashfs/snap mounts). Storage SDisks are NOT visible here \u2014 those use the Crusoe-side counters and appear on Shared Storage View.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 39,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_disk_read_bytes_total{vm_name=\"$node\"}[$__rate_interval])",
+              "legendFormat": "read {{device}}"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_disk_written_bytes_total{vm_name=\"$node\"}[$__rate_interval])",
+              "legendFormat": "write {{device}}"
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "type": "timeseries",
+          "title": "Disk IOPS by Device",
+          "description": "Completed I/O operations per second per device. Helps distinguish small-block random I/O (high IOPS, low BW) from large-block sequential (high BW, low IOPS).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 39,
+            "w": 12,
+            "h": 10
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "showLegend": true,
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "iops",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_disk_reads_completed_total{vm_name=\"$node\"}[$__rate_interval])",
+              "legendFormat": "read {{device}}"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "rate(crusoe_vm_disk_writes_completed_total{vm_name=\"$node\"}[$__rate_interval])",
+              "legendFormat": "write {{device}}"
+            }
+          ]
         }
       ],
       "refresh": "1m",
       "schemaVersion": 39,
-      "tags": ["crusoe", "gpu", "kubernetes"],
+      "tags": [
+        "crusoe",
+        "gpu",
+        "kubernetes"
+      ],
       "templating": {
         "list": [
           {
             "current": {},
-            "datasource": {"type": "prometheus", "uid": "crusoe-metrics"},
+            "datasource": {
+              "type": "prometheus",
+              "uid": "crusoe-metrics"
+            },
             "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, vm_name)",
             "hide": 0,
             "includeAll": false,
@@ -6431,12 +7192,15 @@ data:
           }
         ]
       },
-      "time": {"from": "now-6h", "to": "now"},
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
       "timepicker": {},
       "timezone": "browser",
-      "title": "Node GPU Detail",
+      "title": "Node Details",
       "uid": "crusoe-node-gpu-detail",
-      "version": 1,
+      "version": 2,
       "weekStart": ""
     }
 kind: ConfigMap
