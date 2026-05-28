@@ -8,7 +8,7 @@
     "cluster"
   ],
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "refresh": "1m",
   "time": {
     "from": "now-3h",
@@ -686,7 +686,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 8,
+        "y": 14,
         "w": 12,
         "h": 8
       },
@@ -730,7 +730,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 8,
+        "y": 14,
         "w": 12,
         "h": 8
       },
@@ -774,7 +774,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 22,
         "w": 12,
         "h": 8
       },
@@ -818,7 +818,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 22,
         "w": 12,
         "h": 8
       },
@@ -862,7 +862,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -906,7 +906,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -950,7 +950,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 38,
         "w": 12,
         "h": 8
       },
@@ -994,7 +994,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 32,
+        "y": 38,
         "w": 12,
         "h": 8
       },
@@ -1022,6 +1022,135 @@
           "expr": "topk(10, sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\"}[1h]) + rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\"}[1h])) / 8)",
           "instant": true,
           "legendFormat": "{{vm_name}}"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Link-Down Events by HCA (last 1h)",
+      "description": "Per-HCA breakdown of the cluster-wide Link Downed Events stat above. Each row is one HCA port that has had at least one link-down counter increment in the trailing hour. Sort by Events to find the worst offenders; copy a `vm_name` and paste it into the InfiniBand Node View $node dropdown to drill in. Empty / 'No data' is the healthy state. The window is fixed at [1h] for the same reason as the stat: the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Events",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Events"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum by (vm_name, hca_number, nodepool_name, pod_id) (increase(crusoe_ib_port_link_downed{cluster_id=~\"$cluster\"}[1h])) > 0",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cluster_id": true,
+              "location": true,
+              "metrics_source": true,
+              "organization_id": true,
+              "project_id": true,
+              "vpc_network_id": true,
+              "crusoe_resource": true,
+              "ib_network_id": true,
+              "ib_network_name": true,
+              "vm_id": true,
+              "collector": true,
+              "vm_instance_type": true
+            },
+            "renameByName": {
+              "vm_name": "Node",
+              "hca_number": "HCA",
+              "nodepool_name": "Nodepool",
+              "pod_id": "Rail Pod"
+            },
+            "indexByName": {
+              "vm_name": 0,
+              "hca_number": 1,
+              "nodepool_name": 2,
+              "pod_id": 3,
+              "Value": 4
+            }
+          }
         }
       ]
     }
