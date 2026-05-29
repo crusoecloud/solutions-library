@@ -296,7 +296,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Total GPU energy consumed across the cluster during the selected time range. Derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative millijoules) using increase() over the dashboard range.\n\nFormula: increase(mJ) \u00f7 3.6\u00d710\u2079 = kWh",
+      "description": "Total GPU energy across the dashboard time range, derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative mJ). Formula: increase(mJ) / 3.6\u00d710\u2079 = kWh.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -626,7 +626,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU power draw vs GPU utilization over time, overlaid on a dual-axis chart. A flat power line with low utilization suggests idle or memory-bound work. Rising power tracking rising utilization indicates a compute-bound workload.",
+      "description": "Power draw vs GPU utilization, dual-axis. Flat power with low utilization = idle / memory-bound; rising power tracking rising utilization = compute-bound.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -808,6 +808,6 @@
   "timezone": "browser",
   "title": "Cluster GPU Power",
   "uid": "crusoe-cluster-power",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

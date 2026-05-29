@@ -8,7 +8,7 @@
     "sdisk"
   ],
   "schemaVersion": 38,
-  "version": 3,
+  "version": 4,
   "refresh": "1m",
   "time": {
     "from": "now-1h",
@@ -345,7 +345,7 @@
       "id": 7,
       "type": "bargauge",
       "title": "Per-Disk Capacity Used (all disks)",
-      "description": "Per-disk capacity used. Unfiltered \u2014 every Crusoe SDisk in this project is listed regardless of which disk is selected in the dropdown. Legend shows `disk_id` (Crusoe Console identifier) followed by `disk_name` (K8s PVC UID) so you can map a disk between Crusoe Console and `kubectl get pv`.",
+      "description": "Per-disk capacity used. Unfiltered \u2014 every SDisk in this project is listed regardless of dropdown selection. Legend shows `disk_id` (Crusoe Console) and `disk_name` (K8s PVC UID) so you can map between them.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -491,7 +491,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Selected Disk: Read Latency",
-      "description": "Average per-operation read latency on the selected disk. Computed as `rate(latency_sum) / rate(latency_count)`. Falls back to 0 when the disk has no read traffic in the window \u2014 that's not a dashboard bug, just an idle disk.",
+      "description": "Average per-operation read latency on the selected disk, computed as `rate(latency_sum)/rate(latency_count)`. Falls back to 0 on an idle disk \u2014 that's not a dashboard bug.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"

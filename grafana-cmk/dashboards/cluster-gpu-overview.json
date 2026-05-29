@@ -139,7 +139,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Number of distinct nodes reporting GPU metrics.\n\nThe 'node' label is the standard Prometheus scrape target label; it represents the node hostname as set by the Crusoe Watch Agent. If the variable dropdown is empty, check what labels are present on DCGM_FI_DEV_GPU_UTIL by running the scrape discovery curl in the Troubleshooting section.",
+      "description": "Distinct nodes reporting DCGM metrics. If dropdown is empty, check labels on DCGM_FI_DEV_GPU_UTIL via the discovery curl in the README.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -909,7 +909,7 @@
       "id": 13,
       "type": "stat",
       "title": "Top 3 Hottest Nodes (max GPU temp)",
-      "description": "The three nodes with the hottest GPU right now (max across all GPUs per node). Cards display node-name + temp, ordered hottest \u2192 coolest left-to-right. Thresholds: green <70\u00b0C / yellow 70\u201380\u00b0C / red \u226580\u00b0C.",
+      "description": "The three nodes with the hottest GPU right now (max across all GPUs per node). Thresholds: green <70\u00b0C / yellow 70\u201380\u00b0C / red \u226580\u00b0C.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1085,6 +1085,6 @@
   "timezone": "browser",
   "title": "Cluster GPU Overview",
   "uid": "crusoe-cluster-gpu-overview",
-  "version": 8,
+  "version": 9,
   "weekStart": ""
 }

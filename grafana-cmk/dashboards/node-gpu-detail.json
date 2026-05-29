@@ -964,7 +964,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "Disk Bandwidth by Device",
-      "description": "Per-device disk throughput, read and write. Devices typically include `vda*` (root + ephemeral), and `loop*` (squashfs/snap mounts). Storage SDisks are NOT visible here \u2014 those use the Crusoe-side counters and appear on Shared Storage View.",
+      "description": "Per-device disk throughput, read and write. Devices include `vda*` (root + ephemeral) and `loop*` (squashfs). Crusoe SDisks are not visible here \u2014 see the Shared Storage View.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1140,6 +1140,6 @@
   "timezone": "browser",
   "title": "Node Details",
   "uid": "crusoe-node-gpu-detail",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

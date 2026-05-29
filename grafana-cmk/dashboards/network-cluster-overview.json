@@ -8,7 +8,7 @@
     "elb"
   ],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -60,7 +60,7 @@
       "id": 1,
       "type": "stat",
       "title": "Cluster Frontend RX",
-      "description": "Aggregate frontend ethernet RX across all VMs in the selected cluster. NOTE: GPU-to-GPU collective traffic uses InfiniBand (see IB dashboards); the frontend NIC carries storage pulls, container images, control plane, and SSH.",
+      "description": "Aggregate frontend ethernet RX across all VMs in the selected cluster. GPU collective traffic uses InfiniBand (see IB dashboards); the frontend NIC carries storage, container images, control plane, and SSH.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -493,7 +493,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Frontend RX+TX by Rail Pod (pod_id)",
-      "description": "Aggregate frontend NIC bandwidth per rail pod (set of nodes on the same InfiniBand switch in the rail-optimized topology). One rail pod spiking on the frontend usually indicates storage activity concentrated on that switch's nodes, not collective traffic \u2014 collectives stay on IB.",
+      "description": "Frontend NIC bandwidth aggregated per rail pod (set of nodes on the same IB switch). One pod spiking here usually means storage activity concentrated on those nodes, not collective traffic \u2014 collectives stay on IB.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -701,7 +701,7 @@
       "id": 12,
       "type": "stat",
       "title": "Active ELBs (project)",
-      "description": "Number of distinct Crusoe Elastic Load Balancers reporting metrics in this project. ELB metrics do NOT carry a cluster_id label \u2014 this section shows project-wide LB activity, regardless of the $cluster filter above.",
+      "description": "Distinct Crusoe Elastic Load Balancers reporting metrics. ELB metrics are project-scoped and ignore the $cluster filter above.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"

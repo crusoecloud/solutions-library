@@ -1004,7 +1004,7 @@
       "id": 13,
       "type": "table",
       "title": "Top 15 GPUs by Lifetime Aggregate SBE",
-      "description": "Lifetime single-bit ECC corrections per GPU (DCGM field 312). Identifies HBM dies that have done the most correction work since first boot. Useful for draining decisions or excluding from latency-critical jobs.",
+      "description": "Lifetime single-bit ECC corrections per GPU (DCGM field 312). Useful for draining decisions or excluding from latency-critical jobs.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1520,7 +1520,7 @@
       "id": 17,
       "type": "timeseries",
       "title": "SBE Volatile Rate by Node (last 6h)",
-      "description": "Per-GPU SBE correction rate, top 20 over 6h (DCGM field 310). Persistent elevation on a single GPU is a slow-node candidate; correlated bursts across many GPUs usually mean the workload itself is HBM-stressing.",
+      "description": "Per-GPU SBE correction rate, top 20 over 6h (DCGM field 310). Persistent elevation on one GPU = slow-node candidate; correlated bursts across many = HBM-stressing workload.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1642,7 +1642,7 @@
       "id": 19,
       "type": "table",
       "title": "Top GPUs by Lifetime Uncorrectable ECC (DBE)",
-      "description": "Lifetime double-bit ECC error count per GPU (DCGM field 313). DBEs are unrecoverable \u2014 can cause silent data corruption or Xid 48/63/64. Any row here is a candidate for extra scrutiny or RMA if growing.",
+      "description": "Lifetime double-bit ECC error count per GPU (DCGM field 313). DBEs are unrecoverable \u2014 candidates for extra scrutiny or RMA if growing.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1782,7 +1782,7 @@
       "id": 20,
       "type": "table",
       "title": "Reset Candidates (heuristic: heavy SBE + remapped rows)",
-      "description": "GPUs meeting both: 24h SBE growth > 100 AND any correctable remapped rows. A reset re-arms DCGM's remap budget; the canonical signal (DCGM_FI_DEV_ROW_REMAP_PENDING, field 396) is not currently published by the Crusoe Watch Agent, so this heuristic is a proxy.",
+      "description": "GPUs with 24h SBE growth >100 AND any correctable remapped rows. Canonical signal `DCGM_FI_DEV_ROW_REMAP_PENDING` (field 396) is not published by the Watch Agent, so this is a proxy.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1967,6 +1967,6 @@
   "timezone": "browser",
   "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
-  "version": 6,
+  "version": 7,
   "weekStart": ""
 }
