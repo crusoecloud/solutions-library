@@ -154,7 +154,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Number of distinct nodes reporting GPU metrics.\n\nThe 'node' label is the standard Prometheus scrape target label; it represents the node hostname as set by the Crusoe Watch Agent. If the variable dropdown is empty, check what labels are present on DCGM_FI_DEV_GPU_UTIL by running the scrape discovery curl in the Troubleshooting section.",
+          "description": "Distinct nodes reporting DCGM metrics. If dropdown is empty, check labels on DCGM_FI_DEV_GPU_UTIL via the discovery curl in the README.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -924,7 +924,7 @@ data:
           "id": 13,
           "type": "stat",
           "title": "Top 3 Hottest Nodes (max GPU temp)",
-          "description": "The three nodes with the hottest GPU right now (max across all GPUs per node). Cards display node-name + temp, ordered hottest \u2192 coolest left-to-right. Thresholds: green <70\u00b0C / yellow 70\u201380\u00b0C / red \u226580\u00b0C.",
+          "description": "The three nodes with the hottest GPU right now (max across all GPUs per node). Thresholds: green <70\u00b0C / yellow 70\u201380\u00b0C / red \u226580\u00b0C.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -1100,7 +1100,7 @@ data:
       "timezone": "browser",
       "title": "Cluster GPU Overview",
       "uid": "crusoe-cluster-gpu-overview",
-      "version": 8,
+      "version": 9,
       "weekStart": ""
     }
 kind: ConfigMap
@@ -1411,7 +1411,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Total GPU energy consumed across the cluster during the selected time range. Derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative millijoules) using increase() over the dashboard range.\n\nFormula: increase(mJ) \u00f7 3.6\u00d710\u2079 = kWh",
+          "description": "Total GPU energy across the dashboard time range, derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative mJ). Formula: increase(mJ) / 3.6\u00d710\u2079 = kWh.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1741,7 +1741,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "GPU power draw vs GPU utilization over time, overlaid on a dual-axis chart. A flat power line with low utilization suggests idle or memory-bound work. Rising power tracking rising utilization indicates a compute-bound workload.",
+          "description": "Power draw vs GPU utilization, dual-axis. Flat power with low utilization = idle / memory-bound; rising power tracking rising utilization = compute-bound.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1923,7 +1923,7 @@ data:
       "timezone": "browser",
       "title": "Cluster GPU Power",
       "uid": "crusoe-cluster-power",
-      "version": 2,
+      "version": 3,
       "weekStart": ""
     }
 kind: ConfigMap
@@ -1946,7 +1946,7 @@ data:
         "cluster"
       ],
       "schemaVersion": 38,
-      "version": 2,
+      "version": 3,
       "refresh": "1m",
       "time": {
         "from": "now-3h",
@@ -1981,7 +1981,7 @@ data:
           "id": 1,
           "type": "stat",
           "title": "Active IB Nodes",
-          "description": "Number of nodes with at least one active IB HCA series. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Nodes with at least one active IB HCA series.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2032,7 +2032,7 @@ data:
           "id": 2,
           "type": "stat",
           "title": "Total HCA Ports",
-          "description": "Total IB HCA ports across the cluster. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Total IB HCA ports across the cluster.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2083,7 +2083,7 @@ data:
           "id": 3,
           "type": "stat",
           "title": "Cluster RX BW",
-          "description": "Aggregate receive bandwidth across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate receive bandwidth across all nodes / HCAs.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2134,7 +2134,7 @@ data:
           "id": 4,
           "type": "stat",
           "title": "Cluster TX BW",
-          "description": "Aggregate transmit bandwidth across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate transmit bandwidth across all nodes / HCAs.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2185,7 +2185,7 @@ data:
           "id": 5,
           "type": "stat",
           "title": "Cluster RX Packets/s",
-          "description": "Aggregate receive packet rate across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate receive packet rate across all nodes / HCAs.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2236,7 +2236,7 @@ data:
           "id": 6,
           "type": "stat",
           "title": "Cluster TX Packets/s",
-          "description": "Aggregate transmit packet rate across all nodes / HCAs. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate transmit packet rate across all nodes / HCAs.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2287,7 +2287,7 @@ data:
           "id": 7,
           "type": "stat",
           "title": "Total RX Errors",
-          "description": "Cluster-wide RX error increment over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Cluster-wide RX error increment over the trailing hour.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2342,7 +2342,7 @@ data:
           "id": 8,
           "type": "stat",
           "title": "Total TX Discards",
-          "description": "Cluster-wide TX discards over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Cluster-wide TX discards over the trailing hour.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2397,7 +2397,7 @@ data:
           "id": 9,
           "type": "stat",
           "title": "Link Downed Events",
-          "description": "Cluster-wide IB link-down events. Any non-zero value warrants a look \u2014 a flapping or hard-down link affects every job on that node. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Cluster-wide IB link-down events. Any non-zero value warrants a look \u2014 a flapping or hard-down link affects every job on that node.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2452,7 +2452,7 @@ data:
           "id": 10,
           "type": "stat",
           "title": "Link Recovery Events",
-          "description": "Cluster-wide IB link-error-recovery events. Transient recoveries can indicate cable / SerDes issues. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Cluster-wide IB link-error-recovery events. Transient recoveries can indicate cable / SerDes issues.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2507,7 +2507,7 @@ data:
           "id": 11,
           "type": "stat",
           "title": "Remote Physical Errors",
-          "description": "RX errors reported as caused by the partner side of the link. Useful for narrowing fault-isolation to switches or other endpoints. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "RX errors reported as caused by the partner side of the link. Useful for narrowing fault-isolation to switches or other endpoints.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2562,7 +2562,7 @@ data:
           "id": 12,
           "type": "stat",
           "title": "Local Link Integrity Errors",
-          "description": "Local HCA-side link-integrity errors. Often the first signal that a node's IB cable / port is degrading. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Local HCA-side link-integrity errors. Often the first signal that a node's IB cable / port is degrading.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2617,7 +2617,7 @@ data:
           "id": 13,
           "type": "timeseries",
           "title": "Per-Node Aggregate RX Bandwidth",
-          "description": "Per-node aggregate RX bandwidth (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-node aggregate RX bandwidth (sum across HCAs).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2661,7 +2661,7 @@ data:
           "id": 14,
           "type": "timeseries",
           "title": "Per-Node Aggregate TX Bandwidth",
-          "description": "Per-node aggregate TX bandwidth (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-node aggregate TX bandwidth (sum across HCAs).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2705,7 +2705,7 @@ data:
           "id": 15,
           "type": "timeseries",
           "title": "Per-Node RX Packets/s",
-          "description": "Per-node aggregate RX packet rate (sum across HCAs). Pair with the BW panel above to spot small-packet floods. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-node aggregate RX packet rate. Pair with the BW panel above to spot small-packet floods.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2749,7 +2749,7 @@ data:
           "id": 16,
           "type": "timeseries",
           "title": "Per-Node TX Packets/s",
-          "description": "Per-node aggregate TX packet rate (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-node aggregate TX packet rate.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2793,7 +2793,7 @@ data:
           "id": 17,
           "type": "timeseries",
           "title": "RX Bandwidth Utilization % (per node)",
-          "description": "Per-node aggregate RX utilization as % of total line rate. NOTE: line_rate label reports gig_bit_per_sec=128 on HCAs whose ibstat rate is 400 (NDR), so the denominator is off by ~3\u00d7. Treat as relative not absolute. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-node RX utilization as % of total line rate. Note: line_rate's gig_bit_per_sec label reports 128 on HCAs whose ibstat is 400 (NDR), so the denominator is off by ~3\u00d7. Treat as relative.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2837,7 +2837,7 @@ data:
           "id": 18,
           "type": "timeseries",
           "title": "RX Errors Rate (per node)",
-          "description": "Per-node RX error rate (events/sec). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-node RX error rate (events/sec).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2881,7 +2881,7 @@ data:
           "id": 19,
           "type": "timeseries",
           "title": "TX Wait (Back-pressure, per node)",
-          "description": "Per-node TX-wait increment rate \u2014 indicates congestion or flow control. Rising values mean transmitter is waiting for credits. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-node TX-wait rate \u2014 indicates congestion or flow control. Rising values mean the transmitter is waiting for credits.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2925,7 +2925,7 @@ data:
           "id": 20,
           "type": "bargauge",
           "title": "Top 10 Nodes by Combined RX+TX",
-          "description": "Top 10 nodes by combined RX+TX bandwidth right now. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Top 10 nodes by combined RX+TX bandwidth right now.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -2967,7 +2967,7 @@ data:
           "id": 21,
           "type": "table",
           "title": "Link-Down Events by HCA (last 1h)",
-          "description": "Per-HCA breakdown of the cluster-wide Link Downed Events stat above. Each row is one HCA port that has had at least one link-down counter increment in the trailing hour. Sort by Events to find the worst offenders; copy a `vm_name` and paste it into the InfiniBand Node View $node dropdown to drill in. Empty / 'No data' is the healthy state. The window is fixed at [1h] for the same reason as the stat: the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100.",
+          "description": "Per-HCA breakdown of the Link Downed Events stat. Sort by Events; copy a vm_name into the InfiniBand Node View $node dropdown to drill in. Empty / 'No data' is the healthy state.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -3192,7 +3192,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Total Xid errors recorded across all GPUs in the last 24 hours. Any non-zero value warrants investigation.\n\nFor Xid error code meanings see: https://docs.nvidia.com/deploy/xid-errors/",
+          "description": "Cluster-wide increase in Xid events in the last 24h (DCGM field 230). Any non-zero value is a hard hardware/driver event \u2014 drill into the breakdown table below.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3269,7 +3269,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Total ECC double-bit errors in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL counts volatile (since-reset) double-bit errors. Persistent non-zero values indicate failing GPU memory.",
+          "description": "Cluster-wide increase in volatile DBE (uncorrectable ECC) in the last 24h (DCGM field 311). DBEs are unrecoverable \u2014 should normally be 0.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3350,7 +3350,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Xid error rate per node over time. A sudden spike typically indicates a driver crash, hardware fault, or workload-induced GPU reset.\n\nFor Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
+          "description": "Per-node Xid rate over time (DCGM field 230). Spikes identify which node experienced the event; correlate timing with workload logs.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3443,7 +3443,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Recent Xid errors grouped by node, GPU, and Xid error code. For Xid code meanings see: https://docs.nvidia.com/deploy/xid-errors/\n\nNote: the xid_id label name may differ \u2014 check the actual label names with the scrape discovery curl in the Troubleshooting section if this panel shows no data.",
+          "description": "Breakdown of Xid events in the last 24h by node, GPU, and Xid code. Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3573,7 +3573,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Cluster-wide ECC DBE volatile increases and any GPU reporting uncorrectable HBM row remappings. Both are urgent: DBE volatile = a currently-running double-bit error correction; uncorrectable remapped rows = HBM regions DCGM has retired permanently. Either warrants pulling the node from a training run and filing for hardware investigation.",
+          "description": "GPUs with new volatile DBE (DCGM field 311) or any uncorrectable remapped rows (field 393) in the last 24h. Both warrant urgent hardware investigation.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3714,7 +3714,7 @@ data:
           "id": 7,
           "type": "stat",
           "title": "Active SBE GPUs",
-          "description": "Count of GPUs currently reporting a non-zero ECC single-bit error volatile counter. A non-zero volatile counter means the GPU is actively correcting SBEs since its last reset \u2014 usually benign on its own, but worth knowing when a slow-node hunt is underway.",
+          "description": "GPUs currently reporting non-zero volatile SBE (DCGM field 310). Means actively correcting since last reset \u2014 usually benign on its own.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -3782,7 +3782,7 @@ data:
           "id": 8,
           "type": "stat",
           "title": "GPUs With Remapped Rows",
-          "description": "Count of GPUs that have any correctable HBM row remapping recorded. Once a row is remapped DCGM routes around it; the GPU still works but capacity is reduced and remapped-row accesses are slower. A growing count over time is the classic 'HBM is degrading' signal.",
+          "description": "GPUs with at least one correctable HBM row remapped (DCGM field 394). Growing count over time is the classic 'HBM degrading' signal.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -3850,7 +3850,7 @@ data:
           "id": 9,
           "type": "stat",
           "title": "Uncorrectable Rows",
-          "description": "Cluster-total of HBM rows DCGM has marked uncorrectable. Should be 0. Any non-zero value means at least one GPU has bad HBM that cannot be remapped \u2014 the GPU should be drained and replaced.",
+          "description": "Cluster-wide count of permanently uncorrectable HBM rows (DCGM field 393). Should be 0; any non-zero value means at least one GPU has unfixable HBM.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -3914,7 +3914,7 @@ data:
           "id": 10,
           "type": "stat",
           "title": "24h PCIe Replays",
-          "description": "Cluster-wide increase in PCIe replay events over the last 24h. Non-zero indicates physical-layer PCIe link issues \u2014 bus glitches, marginal connectors, or a failing host bridge. Even small numbers (10s/day) can indicate a developing problem.",
+          "description": "Cluster-wide PCIe replay increase in 24h (DCGM field 202). Non-zero indicates physical-layer link issues \u2014 bus glitches, marginal connectors, or a failing bridge.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -3982,7 +3982,7 @@ data:
           "id": 11,
           "type": "stat",
           "title": "24h SBE Volatile \u0394",
-          "description": "Cluster-wide increase in single-bit ECC corrections in the last 24h. Per-GPU rates of dozens to low thousands per day under sustained load are normal on healthy HBM; runaway growth on one node is a slow-node candidate.",
+          "description": "Cluster-wide volatile SBE increase in 24h (DCGM field 310). Dozens to low thousands per GPU under sustained load is normal; runaway growth on one node is a slow-node candidate.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -4050,7 +4050,7 @@ data:
           "id": 12,
           "type": "stat",
           "title": "Lifetime SBE (\u03a3)",
-          "description": "Fleet-wide lifetime aggregate of single-bit ECC corrections (across all HBM dies on all GPUs). Mainly useful as a reference point; the distribution (which GPUs contribute most) is what matters \u2014 see the leaderboard below.",
+          "description": "Fleet-wide lifetime aggregate of single-bit corrections (DCGM field 312). Reference number only \u2014 distribution matters; see leaderboard below.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -4110,14 +4110,14 @@ data:
           "id": 13,
           "type": "table",
           "title": "Top 15 GPUs by Lifetime Aggregate SBE",
-          "description": "Fleet quality leaderboard. GPUs at the top of this list have HBM dies that have produced the most single-bit corrections since first power-on. They are not necessarily failing, but are statistically more likely to slow down or degrade further. Useful for picking which nodes to drain when capacity allows or which to exclude from latency-critical jobs.",
+          "description": "Lifetime single-bit ECC corrections per GPU (DCGM field 312). Useful for draining decisions or excluding from latency-critical jobs.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
-            "y": 25,
+            "y": 35,
             "w": 12,
             "h": 10
           },
@@ -4239,14 +4239,14 @@ data:
           "id": 14,
           "type": "table",
           "title": "Top 15 GPUs by Correctable Remapped Rows",
-          "description": "GPUs that currently have correctable HBM rows remapped. Each remapped row is a region DCGM has retired because of repeated correctable errors. The GPU still works but has slightly less usable HBM, and accesses to the remap-region can be marginally slower than peers. Sudden increases or unusually high counts are reasons to drain.",
+          "description": "GPUs with HBM rows already retired by DCGM (field 394). Still functional but with slightly less HBM; remap-region accesses can be marginally slower.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
-            "y": 25,
+            "y": 35,
             "w": 12,
             "h": 10
           },
@@ -4368,14 +4368,14 @@ data:
           "id": 15,
           "type": "table",
           "title": "Top 15 GPUs by 24h SBE Volatile Growth",
-          "description": "Which GPUs are doing the most ECC correction work in the last 24h. This is the 'who is struggling right now' view, in contrast to the lifetime leaderboard. If you're chasing a slow-node symptom that emerged today, start here.",
+          "description": "GPUs correcting hardest right now \u2014 24h delta of DCGM field 310 (volatile SBE). Start here when chasing a same-day slow-node symptom.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
-            "y": 35,
+            "y": 45,
             "w": 12,
             "h": 10
           },
@@ -4497,14 +4497,14 @@ data:
           "id": 16,
           "type": "table",
           "title": "Red Flag GPUs (Uncorrectable Rows or PCIe Replays in 24h)",
-          "description": "GPUs with at least one of: an uncorrectable remapped row right now, or a non-zero PCIe replay-counter increase in the last 24h. Either condition warrants pulling the node from training and filing for hardware investigation \u2014 uncorrectable rows can manifest as silent data corruption, and sustained PCIe replays cap effective per-GPU bandwidth.",
+          "description": "GPUs with an uncorrectable remapped row (DCGM field 393) OR a non-zero 24h PCIe replay increase (field 202). Either condition warrants pulling the node from training for hardware investigation.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 12,
-            "y": 35,
+            "y": 45,
             "w": 12,
             "h": 10
           },
@@ -4626,14 +4626,14 @@ data:
           "id": 17,
           "type": "timeseries",
           "title": "SBE Volatile Rate by Node (last 6h)",
-          "description": "Per-GPU SBE correction rate (15m windows, top 20). Spikes correlate with periods of heavy HBM bandwidth pressure \u2014 e.g., the gradient-allreduce of a training step. Persistently elevated rate on a single GPU is a slow-node candidate; correlated bursts across many GPUs usually mean the workload itself is HBM-stressing.",
+          "description": "Per-GPU SBE correction rate, top 20 over 6h (DCGM field 310). Persistent elevation on one GPU = slow-node candidate; correlated bursts across many = HBM-stressing workload.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
-            "y": 45,
+            "y": 65,
             "w": 24,
             "h": 8
           },
@@ -4687,14 +4687,14 @@ data:
           "id": 18,
           "type": "timeseries",
           "title": "Tensor Core Utilization by Node (last 1h)",
-          "description": "Tensor-core utilization per node (avg across that node's GPUs). On a B200 under matmul-heavy training, healthy nodes typically average 50\u201380% during the steady-state of a step. A node consistently 20+ percentage points below its peers, while the rest are pushing tensors, is the strongest 'this node is dragging the collective' signal short of an outright Xid event.",
+          "description": "Tensor-core utilization per node, averaged across that node's 8 GPUs (DCGM_FI_PROF_PIPE_TENSOR_ACTIVE). A node consistently below its peers during steady-state training is dragging the collective.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "gridPos": {
             "x": 0,
-            "y": 53,
+            "y": 73,
             "w": 24,
             "h": 8
           },
@@ -4741,6 +4741,286 @@ data:
               },
               "expr": "avg by (vm_name) (DCGM_FI_PROF_PIPE_TENSOR_ACTIVE{cluster_id=~\"$cluster\"})",
               "legendFormat": "{{vm_name}}"
+            }
+          ]
+        },
+        {
+          "id": 19,
+          "type": "table",
+          "title": "Top GPUs by Lifetime Uncorrectable ECC (DBE)",
+          "description": "Lifetime double-bit ECC error count per GPU (DCGM field 313). DBEs are unrecoverable \u2014 candidates for extra scrutiny or RMA if growing.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 25,
+            "w": 24,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "Lifetime DBE",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 100
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Lifetime DBE"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "topk(20, sum by (vm_name, gpu) (DCGM_FI_DEV_ECC_DBE_AGG_TOTAL{cluster_id=~\"$cluster\"})) > 0",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "cluster_id": true,
+                  "location": true,
+                  "metrics_source": true,
+                  "organization_id": true,
+                  "project_id": true,
+                  "vpc_network_id": true,
+                  "crusoe_resource": true,
+                  "ib_network_id": true,
+                  "ib_network_name": true,
+                  "vm_id": true,
+                  "collector": true,
+                  "vm_instance_type": true,
+                  "DCGM_FI_DRIVER_VERSION": true,
+                  "Hostname": true,
+                  "UUID": true,
+                  "container": true,
+                  "device": true,
+                  "modelName": true,
+                  "namespace": true,
+                  "node": true,
+                  "node_id": true,
+                  "nodepool": true,
+                  "pci_bus_id": true,
+                  "pod": true,
+                  "pod_id": true,
+                  "nodepool_name": true,
+                  "host": true
+                },
+                "renameByName": {
+                  "vm_name": "Node",
+                  "gpu": "GPU"
+                },
+                "indexByName": {
+                  "vm_name": 0,
+                  "gpu": 1,
+                  "Value": 2
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 20,
+          "type": "table",
+          "title": "Reset Candidates (heuristic: heavy SBE + remapped rows)",
+          "description": "GPUs with 24h SBE growth >100 AND any correctable remapped rows. Canonical signal `DCGM_FI_DEV_ROW_REMAP_PENDING` (field 396) is not published by the Watch Agent, so this is a proxy.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 55,
+            "w": 24,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "24h SBE",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 100
+                  },
+                  {
+                    "color": "red",
+                    "value": 1000
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "24h SBE"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) > 100) and on (vm_name, gpu) (sum by (vm_name, gpu) (DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) > 0)",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "cluster_id": true,
+                  "location": true,
+                  "metrics_source": true,
+                  "organization_id": true,
+                  "project_id": true,
+                  "vpc_network_id": true,
+                  "crusoe_resource": true,
+                  "ib_network_id": true,
+                  "ib_network_name": true,
+                  "vm_id": true,
+                  "collector": true,
+                  "vm_instance_type": true,
+                  "DCGM_FI_DRIVER_VERSION": true,
+                  "Hostname": true,
+                  "UUID": true,
+                  "container": true,
+                  "device": true,
+                  "modelName": true,
+                  "namespace": true,
+                  "node": true,
+                  "node_id": true,
+                  "nodepool": true,
+                  "pci_bus_id": true,
+                  "pod": true,
+                  "pod_id": true,
+                  "nodepool_name": true,
+                  "host": true
+                },
+                "renameByName": {
+                  "vm_name": "Node",
+                  "gpu": "GPU"
+                },
+                "indexByName": {
+                  "vm_name": 0,
+                  "gpu": 1,
+                  "Value": 2
+                }
+              }
             }
           ]
         }
@@ -4793,7 +5073,7 @@ data:
       "timezone": "browser",
       "title": "DCGM & Xid Errors",
       "uid": "crusoe-dcgm-xid-errors",
-      "version": 3,
+      "version": 7,
       "weekStart": ""
     }
 kind: ConfigMap
@@ -4816,7 +5096,7 @@ data:
         "elb"
       ],
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
       "refresh": "30s",
       "time": {
         "from": "now-1h",
@@ -4868,7 +5148,7 @@ data:
           "id": 1,
           "type": "stat",
           "title": "Cluster Frontend RX",
-          "description": "Aggregate frontend ethernet RX across all VMs in the selected cluster. NOTE: GPU-to-GPU collective traffic uses InfiniBand (see IB dashboards); the frontend NIC carries storage pulls, container images, control plane, and SSH.",
+          "description": "Aggregate frontend ethernet RX across all VMs in the selected cluster. GPU collective traffic uses InfiniBand (see IB dashboards); the frontend NIC carries storage, container images, control plane, and SSH.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -5301,7 +5581,7 @@ data:
           "id": 8,
           "type": "timeseries",
           "title": "Frontend RX+TX by Rail Pod (pod_id)",
-          "description": "Aggregate frontend NIC bandwidth per rail pod (set of nodes on the same InfiniBand switch in the rail-optimized topology). One rail pod spiking on the frontend usually indicates storage activity concentrated on that switch's nodes, not collective traffic \u2014 collectives stay on IB.",
+          "description": "Frontend NIC bandwidth aggregated per rail pod (set of nodes on the same IB switch). One pod spiking here usually means storage activity concentrated on those nodes, not collective traffic \u2014 collectives stay on IB.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -5509,7 +5789,7 @@ data:
           "id": 12,
           "type": "stat",
           "title": "Active ELBs (project)",
-          "description": "Number of distinct Crusoe Elastic Load Balancers reporting metrics in this project. ELB metrics do NOT carry a cluster_id label \u2014 this section shows project-wide LB activity, regardless of the $cluster filter above.",
+          "description": "Distinct Crusoe Elastic Load Balancers reporting metrics. ELB metrics are project-scoped and ignore the $cluster filter above.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7153,7 +7433,7 @@ data:
           "id": 13,
           "type": "timeseries",
           "title": "Disk Bandwidth by Device",
-          "description": "Per-device disk throughput, read and write. Devices typically include `vda*` (root + ephemeral), and `loop*` (squashfs/snap mounts). Storage SDisks are NOT visible here \u2014 those use the Crusoe-side counters and appear on Shared Storage View.",
+          "description": "Per-device disk throughput, read and write. Devices include `vda*` (root + ephemeral) and `loop*` (squashfs). Crusoe SDisks are not visible here \u2014 see the Shared Storage View.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7329,7 +7609,7 @@ data:
       "timezone": "browser",
       "title": "Node Details",
       "uid": "crusoe-node-gpu-detail",
-      "version": 2,
+      "version": 3,
       "weekStart": ""
     }
 kind: ConfigMap
@@ -7352,7 +7632,7 @@ data:
         "node"
       ],
       "schemaVersion": 38,
-      "version": 1,
+      "version": 2,
       "refresh": "1m",
       "time": {
         "from": "now-3h",
@@ -7407,7 +7687,7 @@ data:
           "id": 1,
           "type": "stat",
           "title": "Selected Nodes RX",
-          "description": "Aggregate RX bandwidth across the selected nodes. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate RX bandwidth across the selected nodes.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7458,7 +7738,7 @@ data:
           "id": 2,
           "type": "stat",
           "title": "Selected Nodes TX",
-          "description": "Aggregate TX bandwidth across the selected nodes. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate TX bandwidth across the selected nodes.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7509,7 +7789,7 @@ data:
           "id": 3,
           "type": "stat",
           "title": "RX Errors",
-          "description": "RX errors on selected nodes over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "RX errors on selected nodes over the trailing hour.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7564,7 +7844,7 @@ data:
           "id": 4,
           "type": "stat",
           "title": "Link Integrity Errors",
-          "description": "Local link-integrity errors on selected nodes over the trailing hour. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Local link-integrity errors on selected nodes over the trailing hour.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7619,7 +7899,7 @@ data:
           "id": 5,
           "type": "timeseries",
           "title": "Aggregate RX per Node",
-          "description": "Aggregate RX bandwidth per node (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate RX bandwidth per node (sum across HCAs).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7663,7 +7943,7 @@ data:
           "id": 6,
           "type": "timeseries",
           "title": "Aggregate TX per Node",
-          "description": "Aggregate TX bandwidth per node (sum across HCAs). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Aggregate TX bandwidth per node (sum across HCAs).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7707,7 +7987,7 @@ data:
           "id": 7,
           "type": "timeseries",
           "title": "Per-HCA RX Bandwidth",
-          "description": "Per-HCA RX bandwidth. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA RX bandwidth.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7751,7 +8031,7 @@ data:
           "id": 8,
           "type": "timeseries",
           "title": "Per-HCA TX Bandwidth",
-          "description": "Per-HCA TX bandwidth. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA TX bandwidth.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7795,7 +8075,7 @@ data:
           "id": 9,
           "type": "timeseries",
           "title": "Per-HCA RX Utilization %",
-          "description": "Per-HCA RX utilization as % of line rate. NOTE: line_rate's gig_bit_per_sec label reports 128 on HCAs whose ibstat rate is 400 \u2014 denominator off by ~3\u00d7, treat as relative. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA RX utilization as % of line rate. Note: line_rate reports gig_bit_per_sec=128 on HCAs whose ibstat is 400 \u2014 denominator off by ~3\u00d7, treat as relative.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7839,7 +8119,7 @@ data:
           "id": 10,
           "type": "timeseries",
           "title": "Per-HCA TX Utilization %",
-          "description": "Per-HCA TX utilization as % of line rate. Same denominator caveat as the RX panel. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA TX utilization as % of line rate. Same denominator caveat as the RX panel.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7883,7 +8163,7 @@ data:
           "id": 11,
           "type": "timeseries",
           "title": "Per-HCA RX Packets/s",
-          "description": "Per-HCA RX packet rate. Pair with the BW panel to spot small-packet floods. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA RX packet rate. Pair with the BW panel above to spot small-packet floods.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7927,7 +8207,7 @@ data:
           "id": 12,
           "type": "timeseries",
           "title": "Per-HCA TX Packets/s",
-          "description": "Per-HCA TX packet rate. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA TX packet rate.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -7971,7 +8251,7 @@ data:
           "id": 13,
           "type": "timeseries",
           "title": "RX Errors (per HCA)",
-          "description": "Per-HCA RX error rate (events/sec). \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA RX error rate (events/sec).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -8015,7 +8295,7 @@ data:
           "id": 14,
           "type": "timeseries",
           "title": "TX Wait / Back-pressure (per HCA)",
-          "description": "Per-HCA TX-wait rate \u2014 indicates congestion or flow control. \u00b7 Window is fixed at [1h] because the Watch Agent's IB scrape cadence is ~19 min on B200 / ~4.5 min on H100; shorter windows would render mostly NaN. The reading is a trailing-hour average.",
+          "description": "Per-HCA TX-wait rate \u2014 indicates congestion or flow control.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10120,7 +10400,7 @@ data:
         "sdisk"
       ],
       "schemaVersion": 38,
-      "version": 3,
+      "version": 4,
       "refresh": "1m",
       "time": {
         "from": "now-1h",
@@ -10457,7 +10737,7 @@ data:
           "id": 7,
           "type": "bargauge",
           "title": "Per-Disk Capacity Used (all disks)",
-          "description": "Per-disk capacity used. Unfiltered \u2014 every Crusoe SDisk in this project is listed regardless of which disk is selected in the dropdown. Legend shows `disk_id` (Crusoe Console identifier) followed by `disk_name` (K8s PVC UID) so you can map a disk between Crusoe Console and `kubectl get pv`.",
+          "description": "Per-disk capacity used. Unfiltered \u2014 every SDisk in this project is listed regardless of dropdown selection. Legend shows `disk_id` (Crusoe Console) and `disk_name` (K8s PVC UID) so you can map between them.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10603,7 +10883,7 @@ data:
           "id": 10,
           "type": "timeseries",
           "title": "Selected Disk: Read Latency",
-          "description": "Average per-operation read latency on the selected disk. Computed as `rate(latency_sum) / rate(latency_count)`. Falls back to 0 when the disk has no read traffic in the window \u2014 that's not a dashboard bug, just an idle disk.",
+          "description": "Average per-operation read latency on the selected disk, computed as `rate(latency_sum)/rate(latency_count)`. Falls back to 0 on an idle disk \u2014 that's not a dashboard bug.",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
