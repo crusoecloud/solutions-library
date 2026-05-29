@@ -170,7 +170,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU framebuffer memory used per GPU on the selected node. DCGM_FI_DEV_FB_USED is in MiB.",
+      "description": "GPU framebuffer memory used per GPU on the selected node, in MiB.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -265,7 +265,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU temperature per GPU on the selected node. DCGM_FI_DEV_GPU_TEMP is in Celsius.",
+      "description": "GPU temperature per GPU on the selected node, in Celsius.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -368,7 +368,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU power draw per GPU on the selected node. DCGM_FI_DEV_POWER_USAGE is in watts.",
+      "description": "GPU power draw per GPU on the selected node, in watts.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -463,7 +463,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "SM clock and memory clock per GPU on the selected node. DCGM_FI_DEV_SM_CLOCK and DCGM_FI_DEV_MEM_CLOCK are in MHz. High values indicate the GPU is not being thermally throttled.",
+      "description": "SM clock and memory clock per GPU on the selected node, in MHz. High values indicate the GPU is not being thermally throttled.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1140,6 +1140,6 @@
   "timezone": "browser",
   "title": "Node Details",
   "uid": "crusoe-node-gpu-detail",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

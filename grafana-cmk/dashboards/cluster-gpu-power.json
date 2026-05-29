@@ -272,7 +272,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Total GPU energy across the dashboard time range, derived from DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION (cumulative mJ). Formula: increase(mJ) / 3.6\u00d710\u2079 = kWh.",
+      "description": "Total GPU energy consumption across the dashboard time range, in kilowatt-hours.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -771,6 +771,6 @@
   "timezone": "browser",
   "title": "Cluster GPU Power",
   "uid": "crusoe-cluster-power",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

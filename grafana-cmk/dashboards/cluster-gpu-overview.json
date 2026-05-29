@@ -139,7 +139,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Distinct nodes reporting DCGM metrics. If dropdown is empty, check labels on DCGM_FI_DEV_GPU_UTIL via the discovery curl in the README.",
+      "description": "Distinct nodes reporting GPU telemetry. If the variable dropdown is empty, see the README's Troubleshooting section.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -369,7 +369,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Cluster-wide GPU framebuffer memory used (stacked) vs total capacity (dashed red line). DCGM_FI_DEV_FB_USED and DCGM_FI_DEV_FB_FREE are reported in MiB.",
+      "description": "Cluster-wide GPU framebuffer memory used (stacked) vs total capacity (dashed red line).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -513,7 +513,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Total GPU power draw per node across the cluster. DCGM_FI_DEV_POWER_USAGE is reported in watts.",
+      "description": "Total GPU power draw per node across the cluster, in watts.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1085,6 +1085,6 @@
   "timezone": "browser",
   "title": "Cluster GPU Overview",
   "uid": "crusoe-cluster-gpu-overview",
-  "version": 9,
+  "version": 10,
   "weekStart": ""
 }
