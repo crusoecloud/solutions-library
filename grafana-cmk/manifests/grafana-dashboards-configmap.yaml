@@ -4633,7 +4633,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 55,
+            "y": 65,
             "w": 24,
             "h": 8
           },
@@ -4694,7 +4694,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 63,
+            "y": 73,
             "w": 24,
             "h": 8
           },
@@ -4883,6 +4883,146 @@ data:
               }
             }
           ]
+        },
+        {
+          "id": 20,
+          "type": "table",
+          "title": "Reset Candidates (heuristic: heavy SBE + remapped rows)",
+          "description": "Heuristic 'GPUs that may benefit from a reset' leaderboard. Each row is a GPU that meets BOTH conditions simultaneously: (1) more than 100 single-bit ECC corrections in the last 24h, AND (2) at least one HBM row already remapped by DCGM. The conjunction matters \u2014 a high SBE rate by itself is just a busy die, and remapped rows by themselves are a stable retired-page state. The combination implies a die that is actively correcting hard while also having already exhausted some replacement pages, suggesting the page-pool is under pressure. A GPU reset re-arms DCGM's remap budget; consider draining the workload off the node and rebooting it, then re-checking this table. Caveat: the canonical 'pending remap' signal (`DCGM_FI_DEV_ROW_REMAP_PENDING`, DCGM field 393) is NOT currently collected by the Crusoe Watch Agent; this is a proxy heuristic, not a direct measurement. Value column shows the 24h SBE count, sorted descending. Empty / 'No data' is the healthy state.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 55,
+            "w": 24,
+            "h": 10
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "24h SBE",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 100
+                  },
+                  {
+                    "color": "red",
+                    "value": 1000
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "24h SBE"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "crusoe-metrics"
+              },
+              "expr": "(sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) > 100) and on (vm_name, gpu) (sum by (vm_name, gpu) (DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) > 0)",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "cluster_id": true,
+                  "location": true,
+                  "metrics_source": true,
+                  "organization_id": true,
+                  "project_id": true,
+                  "vpc_network_id": true,
+                  "crusoe_resource": true,
+                  "ib_network_id": true,
+                  "ib_network_name": true,
+                  "vm_id": true,
+                  "collector": true,
+                  "vm_instance_type": true,
+                  "DCGM_FI_DRIVER_VERSION": true,
+                  "Hostname": true,
+                  "UUID": true,
+                  "container": true,
+                  "device": true,
+                  "modelName": true,
+                  "namespace": true,
+                  "node": true,
+                  "node_id": true,
+                  "nodepool": true,
+                  "pci_bus_id": true,
+                  "pod": true,
+                  "pod_id": true,
+                  "nodepool_name": true,
+                  "host": true
+                },
+                "renameByName": {
+                  "vm_name": "Node",
+                  "gpu": "GPU"
+                },
+                "indexByName": {
+                  "vm_name": 0,
+                  "gpu": 1,
+                  "Value": 2
+                }
+              }
+            }
+          ]
         }
       ],
       "refresh": "5m",
@@ -4933,7 +5073,7 @@ data:
       "timezone": "browser",
       "title": "DCGM & Xid Errors",
       "uid": "crusoe-dcgm-xid-errors",
-      "version": 4,
+      "version": 5,
       "weekStart": ""
     }
 kind: ConfigMap

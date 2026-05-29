@@ -277,15 +277,16 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 **Cluster GPU Power (`cluster-gpu-power.json`)** — aggregate and per-node power draw across the cluster, plus per-GPU power distribution histogram.
 
-**DCGM & Xid Errors (`dcgm-xid-errors.json`, 19 panels)** — Xid + ECC tracking, plus a GPU Health section designed for slow-node detection during training runs.
+**DCGM & Xid Errors (`dcgm-xid-errors.json`, 20 panels)** — Xid + ECC tracking, plus a GPU Health section designed for slow-node detection during training runs.
 
 - **Top section: Xid + DBE.** Stat cards that turn red on any non-zero value, Xid rate by node over time, breakdown table by node / GPU / Xid code, and a Health Failures table that lists any GPU with a new ECC DBE volatile increase or an uncorrectable HBM row remapping in the last 24h. Xid code meanings: [NVIDIA's Xid error reference](https://docs.nvidia.com/deploy/xid-errors/).
-- **GPU Health Indicators — Slow Node Detection.** Six headline stats (active SBE GPUs, GPUs with remapped rows, uncorrectable rows, 24 h PCIe replay delta, 24 h SBE volatile delta, cluster lifetime SBE) plus five leaderboard tables for drill-in:
+- **GPU Health Indicators — Slow Node Detection.** Six headline stats (active SBE GPUs, GPUs with remapped rows, uncorrectable rows, 24 h PCIe replay delta, 24 h SBE volatile delta, cluster lifetime SBE) plus six leaderboard tables for drill-in:
   - **Top GPUs by Lifetime Uncorrectable ECC (DBE)** — the strongest "this die has bad history" signal. Sourced from `DCGM_FI_DEV_ECC_DBE_AGG_TOTAL`, lifetime double-bit error count since first power-on. Unlike SBEs (transparently corrected), DBEs are not recoverable and may cause silent data corruption or a hard Xid 48/63/64. Any GPU on this leaderboard warrants extra scrutiny, exclusion from precision-critical workloads, or RMA if the count keeps growing.
   - **Top 15 by Lifetime Aggregate SBE** — fleet-quality view; identifies GPUs whose HBM dies have produced the most single-bit corrections since first power-on. Useful for picking which nodes to drain when capacity allows or which to exclude from latency-critical jobs.
   - **Top 15 by Correctable Remapped Rows** — GPUs with HBM rows DCGM has retired. They still work but have slightly less HBM and can be marginally slower than peers on remap-region accesses.
   - **Top 15 by 24h SBE Volatile Growth** — who is struggling *right now*, in contrast to the lifetime view. Start here when chasing a same-day slow-node symptom.
   - **Red Flag GPUs** — any GPU with either an uncorrectable remapped row or a non-zero PCIe replay increase in the last 24 h. Either condition warrants pulling the node from training and filing for hardware investigation.
+  - **Reset Candidates (heuristic)** — GPUs that meet BOTH conditions: 24h SBE volatile growth > 100 AND at least one HBM row already remapped. The conjunction approximates "this die is correcting hard right now AND has already exhausted some replacement pages" — symptoms that often resolve with a GPU reset (drain the workload, reboot the node). The canonical "pending remap" signal (`DCGM_FI_DEV_ROW_REMAP_PENDING`, DCGM field 393) is not currently published by the Crusoe Watch Agent, so this table is a proxy. Empty / "No data" is the healthy state.
 - **Time series for trend.** SBE volatile rate by node (top 20 over 6 h) so you can see *when* ECC pressure was happening, and Tensor Core Utilization by node (last 1 h) to spot performance outliers — a node consistently below its peers during steady-state training is the strongest "this node is dragging the collective" signal short of an outright Xid event.
 
 > **Notes & caveats:**
