@@ -1173,7 +1173,7 @@ data:
           }
         ]
       },
-      "description": "Aggregate GPU power draw and energy consumption across the cluster. Data sourced from Crusoe Metrics (DCGM_FI_DEV_POWER_USAGE in watts; DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION in millijoules cumulative). H100 SXM5 TDP is 700 W per GPU.",
+      "description": "Aggregate GPU power draw and energy consumption across the cluster. Data sourced from Crusoe Metrics \u2014 DCGM_FI_DEV_POWER_USAGE in watts, DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION in millijoules cumulative. SKU-agnostic: works for any NVIDIA GPU that DCGM reports power for.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -1201,7 +1201,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Total instantaneous GPU power draw across all nodes in the cluster. Sum of DCGM_FI_DEV_POWER_USAGE for all GPUs matching the selected cluster.",
+          "description": "Sum of GPU power draw across every reporting GPU in the cluster.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1214,14 +1214,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 5600
-                  },
-                  {
-                    "color": "red",
-                    "value": 8960
                   }
                 ]
               },
@@ -1271,7 +1263,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Average instantaneous power draw per GPU across the cluster. H100 SXM5 TDP is 700 W; sustained workloads typically draw 400\u2013650 W per GPU.",
+          "description": "Average instantaneous power draw per GPU across the cluster.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1284,14 +1276,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 350
-                  },
-                  {
-                    "color": "red",
-                    "value": 560
                   }
                 ]
               },
@@ -1341,7 +1325,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Peak total cluster power draw observed within the selected time range.",
+          "description": "Highest cluster-wide power draw observed in the selected time range.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1354,14 +1338,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 5600
-                  },
-                  {
-                    "color": "red",
-                    "value": 8960
                   }
                 ]
               },
@@ -1474,7 +1450,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Total GPU power draw across the entire cluster over time. The dashed threshold line at 11,200 W represents 100% TDP for 16\u00d7 H100 SXM5 GPUs (700 W each). Adjust if your node count or GPU model differs.",
+          "description": "Cluster-wide power draw over time. Scales with cluster size and workload.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1520,10 +1496,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 11200
                   }
                 ]
               },
@@ -1668,14 +1640,13 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "Current power draw per node as a bar gauge. Max value is set to 5,600 W (8\u00d7 H100 SXM5 at 700 W TDP each). Adjust if your node has a different GPU count or model.",
+          "description": "Current power draw per node as a bar gauge. Gauge auto-scales to the highest current value.",
           "fieldConfig": {
             "defaults": {
               "color": {
                 "mode": "thresholds"
               },
               "mappings": [],
-              "max": 5600,
               "min": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -1683,14 +1654,6 @@ data:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 2800
-                  },
-                  {
-                    "color": "red",
-                    "value": 4480
                   }
                 ]
               },
@@ -1805,7 +1768,7 @@ data:
                   },
                   {
                     "id": "max",
-                    "value": 100
+                    "value": null
                   },
                   {
                     "id": "custom.axisPlacement",
