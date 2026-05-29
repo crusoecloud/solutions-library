@@ -1011,7 +1011,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 35,
         "w": 12,
         "h": 10
       },
@@ -1140,7 +1140,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 25,
+        "y": 35,
         "w": 12,
         "h": 10
       },
@@ -1269,7 +1269,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 45,
         "w": 12,
         "h": 10
       },
@@ -1398,7 +1398,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 45,
         "w": 12,
         "h": 10
       },
@@ -1527,7 +1527,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 45,
+        "y": 55,
         "w": 24,
         "h": 8
       },
@@ -1588,7 +1588,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 53,
+        "y": 63,
         "w": 24,
         "h": 8
       },
@@ -1635,6 +1635,146 @@
           },
           "expr": "avg by (vm_name) (DCGM_FI_PROF_PIPE_TENSOR_ACTIVE{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{vm_name}}"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "Top GPUs by Lifetime Uncorrectable ECC (DBE)",
+      "description": "Each row is one GPU with a non-zero `DCGM_FI_DEV_ECC_DBE_AGG_TOTAL` counter \u2014 the lifetime tally of double-bit (uncorrectable) ECC errors since the GPU was first powered on. Unlike correctable (SBE) errors, which DCGM transparently fixes, double-bit errors mean two flipped bits in the same 64-bit word: NOT recoverable, may cause silent data corruption or a hard Xid 48/63/64. Any GPU on this leaderboard has a history of suspect HBM and should be considered a candidate for extra scrutiny, exclusion from precision-critical workloads, or RMA if the count keeps growing. The Active SBE / 24h SBE Volatile stats above tell you about ongoing correctable activity; this table tells you about past hardware faults that already happened.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Lifetime DBE",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lifetime DBE"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "topk(20, sum by (vm_name, gpu) (DCGM_FI_DEV_ECC_DBE_AGG_TOTAL{cluster_id=~\"$cluster\"})) > 0",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cluster_id": true,
+              "location": true,
+              "metrics_source": true,
+              "organization_id": true,
+              "project_id": true,
+              "vpc_network_id": true,
+              "crusoe_resource": true,
+              "ib_network_id": true,
+              "ib_network_name": true,
+              "vm_id": true,
+              "collector": true,
+              "vm_instance_type": true,
+              "DCGM_FI_DRIVER_VERSION": true,
+              "Hostname": true,
+              "UUID": true,
+              "container": true,
+              "device": true,
+              "modelName": true,
+              "namespace": true,
+              "node": true,
+              "node_id": true,
+              "nodepool": true,
+              "pci_bus_id": true,
+              "pod": true,
+              "pod_id": true,
+              "nodepool_name": true,
+              "host": true
+            },
+            "renameByName": {
+              "vm_name": "Node",
+              "gpu": "GPU"
+            },
+            "indexByName": {
+              "vm_name": 0,
+              "gpu": 1,
+              "Value": 2
+            }
+          }
         }
       ]
     }
@@ -1687,6 +1827,6 @@
   "timezone": "browser",
   "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
