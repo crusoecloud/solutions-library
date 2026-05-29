@@ -10356,14 +10356,14 @@ data:
     {
       "uid": "crusoe-storage-cluster",
       "title": "Shared Storage View",
-      "description": "Crusoe-provisioned block-storage (SDisk) health: per-disk capacity, throughput, IOPS, and latency. Project-scoped \u2014 all disks in the project are listed; pick one from the Crusoe SDisk (by Crusoe ID) dropdown to drill in. The bar gauge always shows every disk for context.",
+      "description": "Crusoe-provisioned block-storage (SDisk) health: per-disk capacity, throughput, IOPS, and latency. Project-scoped \u2014 all disks in the project are listed; pick one from the Crusoe SDisk (by Crusoe ID) dropdown to drill in. The bar gauge always shows every disk for context. All performance figures (BW/IOPS/latency) are server-side metrics from the Crusoe storage service; client-side experience may differ due to kernel buffering, queue depth, or network conditions.",
       "tags": [
         "crusoe",
         "storage",
         "sdisk"
       ],
       "schemaVersion": 38,
-      "version": 4,
+      "version": 5,
       "refresh": "1m",
       "time": {
         "from": "now-1h",
@@ -10547,7 +10547,7 @@ data:
           "id": 4,
           "type": "stat",
           "title": "Selected Disk: Read BW",
-          "description": "Average read bandwidth on the selected disk over the last 5 minutes.",
+          "description": "Average read bandwidth on the selected disk over the last 5 minutes. Server-side metric reported by the Crusoe storage service; may not reflect client-side experience (kernel buffering, queue depth, application layer, or network conditions at the client).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10598,7 +10598,7 @@ data:
           "id": 5,
           "type": "stat",
           "title": "Selected Disk: Write BW",
-          "description": "Average write bandwidth on the selected disk over the last 5 minutes.",
+          "description": "Average write bandwidth on the selected disk over the last 5 minutes. Server-side metric reported by the Crusoe storage service; may not reflect client-side experience (kernel buffering, queue depth, application layer, or network conditions at the client).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10649,7 +10649,7 @@ data:
           "id": 6,
           "type": "stat",
           "title": "Selected Disk: Avg Read Latency",
-          "description": "Average per-operation read latency on the selected disk. 0 when the disk has no read traffic in the last 5 minutes.",
+          "description": "Average per-operation read latency on the selected disk. 0 when the disk has no read traffic in the last 5 minutes. Server-side metric reported by the Crusoe storage service; may not reflect client-side experience (kernel buffering, queue depth, application layer, or network conditions at the client).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10742,7 +10742,7 @@ data:
           "id": 8,
           "type": "timeseries",
           "title": "Selected Disk: Read / Write Throughput",
-          "description": "Per-operation read/write bandwidth on the selected disk. Histogram-sum metric \u2192 use `rate(...)` to convert cumulative to bytes/sec.",
+          "description": "Per-operation read/write bandwidth on the selected disk. Histogram-sum metric \u2192 use `rate(...)` to convert cumulative to bytes/sec. Server-side metric reported by the Crusoe storage service; may not reflect client-side experience (kernel buffering, queue depth, application layer, or network conditions at the client).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10794,7 +10794,7 @@ data:
           "id": 9,
           "type": "timeseries",
           "title": "Selected Disk: Read / Write IOPS",
-          "description": "Read/write operations per second on the selected disk.",
+          "description": "Read/write operations per second on the selected disk. Server-side metric reported by the Crusoe storage service; may not reflect client-side experience (kernel buffering, queue depth, application layer, or network conditions at the client).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10846,7 +10846,7 @@ data:
           "id": 10,
           "type": "timeseries",
           "title": "Selected Disk: Read Latency",
-          "description": "Average per-operation read latency on the selected disk, computed as `rate(latency_sum)/rate(latency_count)`. Falls back to 0 on an idle disk \u2014 that's not a dashboard bug.",
+          "description": "Average per-operation read latency on the selected disk, computed as `rate(latency_sum)/rate(latency_count)`. Falls back to 0 on an idle disk \u2014 that's not a dashboard bug. Server-side metric reported by the Crusoe storage service; may not reflect client-side experience (kernel buffering, queue depth, application layer, or network conditions at the client).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
@@ -10890,7 +10890,7 @@ data:
           "id": 11,
           "type": "timeseries",
           "title": "Selected Disk: Write Latency",
-          "description": "Average per-operation write latency on the selected disk. Computed as `rate(latency_sum) / rate(latency_count)`. Falls back to 0 when the disk has no write traffic in the window.",
+          "description": "Average per-operation write latency on the selected disk. Computed as `rate(latency_sum) / rate(latency_count)`. Falls back to 0 when the disk has no write traffic in the window. Server-side metric reported by the Crusoe storage service; may not reflect client-side experience (kernel buffering, queue depth, application layer, or network conditions at the client).",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
