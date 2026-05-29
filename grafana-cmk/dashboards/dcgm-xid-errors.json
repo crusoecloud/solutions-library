@@ -86,7 +86,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Distinct GPUs that fired any non-zero Xid in the last 24h (DCGM field 230). DCGM_FI_DEV_XID_ERRORS is a gauge holding the most recent Xid code per GPU \u2014 use `max_over_time(... [24h]) > 0` to detect events, not `increase()`.",
+      "description": "Distinct GPUs that fired any non-zero Xid event in the last 24h.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -163,7 +163,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Cluster-wide increase in volatile DBE (uncorrectable ECC) in the last 24h (DCGM field 311). DBEs are unrecoverable \u2014 should normally be 0.",
+      "description": "Cluster-wide increase in uncorrectable (double-bit) ECC errors in the last 24h. Should normally be 0 \u2014 DBEs are unrecoverable.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -244,7 +244,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Most recent Xid code per node, sustained via `max_over_time` so a momentary event stays visible for the rest of the window. 0 = healthy; non-zero values are the Xid code (e.g. 119 = GSP RPC Timeout). Reference: https://docs.nvidia.com/deploy/xid-errors/",
+      "description": "Most recent Xid code per node, sustained via max_over_time so a momentary event stays visible for the rest of the window. 0 = healthy; non-zero values are the Xid code. Reference: https://docs.nvidia.com/deploy/xid-errors/",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -473,7 +473,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPUs with new volatile DBE (DCGM field 311) or any uncorrectable remapped rows (field 393) in the last 24h. Both warrant urgent hardware investigation.",
+      "description": "GPUs with new uncorrectable ECC events or any uncorrectable remapped HBM rows in the last 24h. Both warrant urgent hardware investigation.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -614,7 +614,7 @@
       "id": 7,
       "type": "stat",
       "title": "Active SBE GPUs",
-      "description": "GPUs currently reporting non-zero volatile SBE (DCGM field 310). Means actively correcting since last reset \u2014 usually benign on its own.",
+      "description": "GPUs currently reporting non-zero volatile single-bit ECC corrections. Means actively correcting since last reset \u2014 usually benign on its own.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -682,7 +682,7 @@
       "id": 8,
       "type": "stat",
       "title": "GPUs With Remapped Rows",
-      "description": "GPUs with at least one correctable HBM row remapped (DCGM field 394). Growing count over time is the classic 'HBM degrading' signal.",
+      "description": "GPUs with at least one correctable HBM row remapped. Growing count over time is the classic 'HBM degrading' signal.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -750,7 +750,7 @@
       "id": 9,
       "type": "stat",
       "title": "Uncorrectable Rows",
-      "description": "Cluster-wide count of permanently uncorrectable HBM rows (DCGM field 393). Should be 0; any non-zero value means at least one GPU has unfixable HBM.",
+      "description": "Cluster-wide count of permanently uncorrectable HBM rows. Should be 0; any non-zero value means at least one GPU has unfixable HBM.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -814,7 +814,7 @@
       "id": 10,
       "type": "stat",
       "title": "24h PCIe Replays",
-      "description": "Cluster-wide PCIe replay increase in 24h (DCGM field 202). Non-zero indicates physical-layer link issues \u2014 bus glitches, marginal connectors, or a failing bridge.",
+      "description": "Cluster-wide PCIe replay-counter increase in 24h. Non-zero indicates physical-layer link issues \u2014 bus glitches, marginal connectors, or a failing bridge.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -882,7 +882,7 @@
       "id": 11,
       "type": "stat",
       "title": "24h SBE Volatile \u0394",
-      "description": "Cluster-wide volatile SBE increase in 24h (DCGM field 310). Dozens to low thousands per GPU under sustained load is normal; runaway growth on one node is a slow-node candidate.",
+      "description": "Cluster-wide volatile single-bit ECC correction increase in 24h. Dozens to low thousands per GPU under sustained load is normal; runaway growth on one node is a slow-node candidate.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -950,7 +950,7 @@
       "id": 12,
       "type": "stat",
       "title": "Lifetime SBE (\u03a3)",
-      "description": "Fleet-wide lifetime aggregate of single-bit corrections (DCGM field 312). Reference number only \u2014 distribution matters; see leaderboard below.",
+      "description": "Fleet-wide lifetime aggregate of single-bit ECC corrections. Reference number only \u2014 distribution matters; see leaderboard below.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1010,7 +1010,7 @@
       "id": 13,
       "type": "table",
       "title": "Top 15 GPUs by Lifetime Aggregate SBE",
-      "description": "Lifetime single-bit ECC corrections per GPU (DCGM field 312). Useful for draining decisions or excluding from latency-critical jobs.",
+      "description": "Lifetime single-bit ECC corrections per GPU. Useful for draining decisions or excluding from latency-critical jobs.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1139,7 +1139,7 @@
       "id": 14,
       "type": "table",
       "title": "Top 15 GPUs by Correctable Remapped Rows",
-      "description": "GPUs with HBM rows already retired by DCGM (field 394). Still functional but with slightly less HBM; remap-region accesses can be marginally slower.",
+      "description": "GPUs with HBM rows already retired. Still functional but with slightly less HBM; remap-region accesses can be marginally slower.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1268,7 +1268,7 @@
       "id": 15,
       "type": "table",
       "title": "Top 15 GPUs by 24h SBE Volatile Growth",
-      "description": "GPUs correcting hardest right now \u2014 24h delta of DCGM field 310 (volatile SBE). Start here when chasing a same-day slow-node symptom.",
+      "description": "GPUs correcting hardest right now \u2014 24h delta of the volatile single-bit ECC counter. Start here when chasing a same-day slow-node symptom.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1397,7 +1397,7 @@
       "id": 16,
       "type": "table",
       "title": "Red Flag GPUs (Uncorrectable Rows or PCIe Replays in 24h)",
-      "description": "GPUs with an uncorrectable remapped row (DCGM field 393) OR a non-zero 24h PCIe replay increase (field 202). Either condition warrants pulling the node from training for hardware investigation.",
+      "description": "GPUs with an uncorrectable remapped HBM row OR a non-zero 24h PCIe replay increase. Either condition warrants pulling the node from training for hardware investigation.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1526,7 +1526,7 @@
       "id": 17,
       "type": "timeseries",
       "title": "SBE Volatile Rate by Node (last 6h)",
-      "description": "Per-GPU SBE correction rate, top 20 over 6h (DCGM field 310). Persistent elevation on one GPU = slow-node candidate; correlated bursts across many = HBM-stressing workload.",
+      "description": "Per-GPU single-bit ECC correction rate, top 20 over 6h. Persistent elevation on one GPU = slow-node candidate; correlated bursts across many = HBM-stressing workload.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1587,7 +1587,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Tensor Core Utilization by Node (last 1h)",
-      "description": "Tensor-core utilization per node, averaged across that node's 8 GPUs (DCGM_FI_PROF_PIPE_TENSOR_ACTIVE). A node consistently below its peers during steady-state training is dragging the collective.",
+      "description": "Tensor-core utilization per node, averaged across that node's GPUs. A node consistently below its peers during steady-state training is dragging the collective.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1648,7 +1648,7 @@
       "id": 19,
       "type": "table",
       "title": "Top GPUs by Lifetime Uncorrectable ECC (DBE)",
-      "description": "Lifetime double-bit ECC error count per GPU (DCGM field 313). DBEs are unrecoverable \u2014 candidates for extra scrutiny or RMA if growing.",
+      "description": "Lifetime double-bit ECC error count per GPU. DBEs are unrecoverable \u2014 candidates for extra scrutiny or RMA if growing.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1788,7 +1788,7 @@
       "id": 20,
       "type": "table",
       "title": "Reset Candidates (heuristic: heavy SBE + remapped rows)",
-      "description": "GPUs with 24h SBE growth >100 AND any correctable remapped rows. Canonical signal `DCGM_FI_DEV_ROW_REMAP_PENDING` (field 396) is not published by the Watch Agent, so this is a proxy.",
+      "description": "GPUs with 24h single-bit ECC growth >100 AND any correctable remapped rows. The canonical 'rows pending remap' signal is not yet collected, so this combination is a proxy.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1973,6 +1973,6 @@
   "timezone": "browser",
   "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
-  "version": 9,
+  "version": 10,
   "weekStart": ""
 }
