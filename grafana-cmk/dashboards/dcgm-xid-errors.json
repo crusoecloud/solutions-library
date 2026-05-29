@@ -86,7 +86,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Total Xid errors recorded across all GPUs in the last 24 hours. Any non-zero value warrants investigation.\n\nFor Xid error code meanings see: https://docs.nvidia.com/deploy/xid-errors/",
+      "description": "Cluster-wide increase in Xid events in the last 24h (DCGM field 230). Any non-zero value is a hard hardware/driver event \u2014 drill into the breakdown table below.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -163,7 +163,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Total ECC double-bit errors in the last 24 hours. DCGM_FI_DEV_ECC_DBE_VOL_TOTAL counts volatile (since-reset) double-bit errors. Persistent non-zero values indicate failing GPU memory.",
+      "description": "Cluster-wide increase in volatile DBE (uncorrectable ECC) in the last 24h (DCGM field 311). DBEs are unrecoverable \u2014 should normally be 0.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -244,7 +244,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Xid error rate per node over time. A sudden spike typically indicates a driver crash, hardware fault, or workload-induced GPU reset.\n\nFor Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
+      "description": "Per-node Xid rate over time (DCGM field 230). Spikes identify which node experienced the event; correlate timing with workload logs.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -337,7 +337,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Recent Xid errors grouped by node, GPU, and Xid error code. For Xid code meanings see: https://docs.nvidia.com/deploy/xid-errors/\n\nNote: the xid_id label name may differ \u2014 check the actual label names with the scrape discovery curl in the Troubleshooting section if this panel shows no data.",
+      "description": "Breakdown of Xid events in the last 24h by node, GPU, and Xid code. Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -467,7 +467,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Cluster-wide ECC DBE volatile increases and any GPU reporting uncorrectable HBM row remappings. Both are urgent: DBE volatile = a currently-running double-bit error correction; uncorrectable remapped rows = HBM regions DCGM has retired permanently. Either warrants pulling the node from a training run and filing for hardware investigation.",
+      "description": "GPUs with new volatile DBE (DCGM field 311) or any uncorrectable remapped rows (field 393) in the last 24h. Both warrant urgent hardware investigation.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -608,7 +608,7 @@
       "id": 7,
       "type": "stat",
       "title": "Active SBE GPUs",
-      "description": "Count of GPUs currently reporting a non-zero ECC single-bit error volatile counter. A non-zero volatile counter means the GPU is actively correcting SBEs since its last reset \u2014 usually benign on its own, but worth knowing when a slow-node hunt is underway.",
+      "description": "GPUs currently reporting non-zero volatile SBE (DCGM field 310). Means actively correcting since last reset \u2014 usually benign on its own.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -676,7 +676,7 @@
       "id": 8,
       "type": "stat",
       "title": "GPUs With Remapped Rows",
-      "description": "Count of GPUs that have any correctable HBM row remapping recorded. Once a row is remapped DCGM routes around it; the GPU still works but capacity is reduced and remapped-row accesses are slower. A growing count over time is the classic 'HBM is degrading' signal.",
+      "description": "GPUs with at least one correctable HBM row remapped (DCGM field 394). Growing count over time is the classic 'HBM degrading' signal.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -744,7 +744,7 @@
       "id": 9,
       "type": "stat",
       "title": "Uncorrectable Rows",
-      "description": "Cluster-total of HBM rows DCGM has marked uncorrectable. Should be 0. Any non-zero value means at least one GPU has bad HBM that cannot be remapped \u2014 the GPU should be drained and replaced.",
+      "description": "Cluster-wide count of permanently uncorrectable HBM rows (DCGM field 393). Should be 0; any non-zero value means at least one GPU has unfixable HBM.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -808,7 +808,7 @@
       "id": 10,
       "type": "stat",
       "title": "24h PCIe Replays",
-      "description": "Cluster-wide increase in PCIe replay events over the last 24h. Non-zero indicates physical-layer PCIe link issues \u2014 bus glitches, marginal connectors, or a failing host bridge. Even small numbers (10s/day) can indicate a developing problem.",
+      "description": "Cluster-wide PCIe replay increase in 24h (DCGM field 202). Non-zero indicates physical-layer link issues \u2014 bus glitches, marginal connectors, or a failing bridge.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -876,7 +876,7 @@
       "id": 11,
       "type": "stat",
       "title": "24h SBE Volatile \u0394",
-      "description": "Cluster-wide increase in single-bit ECC corrections in the last 24h. Per-GPU rates of dozens to low thousands per day under sustained load are normal on healthy HBM; runaway growth on one node is a slow-node candidate.",
+      "description": "Cluster-wide volatile SBE increase in 24h (DCGM field 310). Dozens to low thousands per GPU under sustained load is normal; runaway growth on one node is a slow-node candidate.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -944,7 +944,7 @@
       "id": 12,
       "type": "stat",
       "title": "Lifetime SBE (\u03a3)",
-      "description": "Fleet-wide lifetime aggregate of single-bit ECC corrections (across all HBM dies on all GPUs). Mainly useful as a reference point; the distribution (which GPUs contribute most) is what matters \u2014 see the leaderboard below.",
+      "description": "Fleet-wide lifetime aggregate of single-bit corrections (DCGM field 312). Reference number only \u2014 distribution matters; see leaderboard below.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1004,7 +1004,7 @@
       "id": 13,
       "type": "table",
       "title": "Top 15 GPUs by Lifetime Aggregate SBE",
-      "description": "Fleet quality leaderboard. GPUs at the top of this list have HBM dies that have produced the most single-bit corrections since first power-on. They are not necessarily failing, but are statistically more likely to slow down or degrade further. Useful for picking which nodes to drain when capacity allows or which to exclude from latency-critical jobs.",
+      "description": "Lifetime single-bit ECC corrections per GPU (DCGM field 312). Identifies HBM dies that have done the most correction work since first boot. Useful for draining decisions or excluding from latency-critical jobs.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1133,7 +1133,7 @@
       "id": 14,
       "type": "table",
       "title": "Top 15 GPUs by Correctable Remapped Rows",
-      "description": "GPUs that currently have correctable HBM rows remapped. Each remapped row is a region DCGM has retired because of repeated correctable errors. The GPU still works but has slightly less usable HBM, and accesses to the remap-region can be marginally slower than peers. Sudden increases or unusually high counts are reasons to drain.",
+      "description": "GPUs with HBM rows already retired by DCGM (field 394). Still functional but with slightly less HBM; remap-region accesses can be marginally slower.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1262,7 +1262,7 @@
       "id": 15,
       "type": "table",
       "title": "Top 15 GPUs by 24h SBE Volatile Growth",
-      "description": "Which GPUs are doing the most ECC correction work in the last 24h. This is the 'who is struggling right now' view, in contrast to the lifetime leaderboard. If you're chasing a slow-node symptom that emerged today, start here.",
+      "description": "GPUs correcting hardest right now \u2014 24h delta of DCGM field 310 (volatile SBE). Start here when chasing a same-day slow-node symptom.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1391,7 +1391,7 @@
       "id": 16,
       "type": "table",
       "title": "Red Flag GPUs (Uncorrectable Rows or PCIe Replays in 24h)",
-      "description": "GPUs with at least one of: an uncorrectable remapped row right now, or a non-zero PCIe replay-counter increase in the last 24h. Either condition warrants pulling the node from training and filing for hardware investigation \u2014 uncorrectable rows can manifest as silent data corruption, and sustained PCIe replays cap effective per-GPU bandwidth.",
+      "description": "GPUs with an uncorrectable remapped row (DCGM field 393) OR a non-zero 24h PCIe replay increase (field 202). Either condition warrants pulling the node from training for hardware investigation.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1520,7 +1520,7 @@
       "id": 17,
       "type": "timeseries",
       "title": "SBE Volatile Rate by Node (last 6h)",
-      "description": "Per-GPU SBE correction rate (15m windows, top 20). Spikes correlate with periods of heavy HBM bandwidth pressure \u2014 e.g., the gradient-allreduce of a training step. Persistently elevated rate on a single GPU is a slow-node candidate; correlated bursts across many GPUs usually mean the workload itself is HBM-stressing.",
+      "description": "Per-GPU SBE correction rate, top 20 over 6h (DCGM field 310). Persistent elevation on a single GPU is a slow-node candidate; correlated bursts across many GPUs usually mean the workload itself is HBM-stressing.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1581,7 +1581,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Tensor Core Utilization by Node (last 1h)",
-      "description": "Tensor-core utilization per node (avg across that node's GPUs). On a B200 under matmul-heavy training, healthy nodes typically average 50\u201380% during the steady-state of a step. A node consistently 20+ percentage points below its peers, while the rest are pushing tensors, is the strongest 'this node is dragging the collective' signal short of an outright Xid event.",
+      "description": "Tensor-core utilization per node, averaged across that node's 8 GPUs (DCGM_FI_PROF_PIPE_TENSOR_ACTIVE). A node consistently below its peers during steady-state training is dragging the collective.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1642,7 +1642,7 @@
       "id": 19,
       "type": "table",
       "title": "Top GPUs by Lifetime Uncorrectable ECC (DBE)",
-      "description": "Each row is one GPU with a non-zero `DCGM_FI_DEV_ECC_DBE_AGG_TOTAL` counter \u2014 the lifetime tally of double-bit (uncorrectable) ECC errors since the GPU was first powered on. Unlike correctable (SBE) errors, which DCGM transparently fixes, double-bit errors mean two flipped bits in the same 64-bit word: NOT recoverable, may cause silent data corruption or a hard Xid 48/63/64. Any GPU on this leaderboard has a history of suspect HBM and should be considered a candidate for extra scrutiny, exclusion from precision-critical workloads, or RMA if the count keeps growing. The Active SBE / 24h SBE Volatile stats above tell you about ongoing correctable activity; this table tells you about past hardware faults that already happened.",
+      "description": "Lifetime double-bit ECC error count per GPU (DCGM field 313). DBEs are unrecoverable \u2014 can cause silent data corruption or Xid 48/63/64. Any row here is a candidate for extra scrutiny or RMA if growing.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1782,7 +1782,7 @@
       "id": 20,
       "type": "table",
       "title": "Reset Candidates (heuristic: heavy SBE + remapped rows)",
-      "description": "Heuristic 'GPUs that may benefit from a reset' leaderboard. Each row is a GPU that meets BOTH conditions simultaneously: (1) more than 100 single-bit ECC corrections in the last 24h, AND (2) at least one HBM row already remapped by DCGM. The conjunction matters \u2014 a high SBE rate by itself is just a busy die, and remapped rows by themselves are a stable retired-page state. The combination implies a die that is actively correcting hard while also having already exhausted some replacement pages, suggesting the page-pool is under pressure. A GPU reset re-arms DCGM's remap budget; consider draining the workload off the node and rebooting it, then re-checking this table. Caveat: the canonical 'pending remap' signal (`DCGM_FI_DEV_ROW_REMAP_PENDING`, DCGM field 393) is NOT currently collected by the Crusoe Watch Agent; this is a proxy heuristic, not a direct measurement. Value column shows the 24h SBE count, sorted descending. Empty / 'No data' is the healthy state.",
+      "description": "GPUs meeting both: 24h SBE growth > 100 AND any correctable remapped rows. A reset re-arms DCGM's remap budget; the canonical signal (DCGM_FI_DEV_ROW_REMAP_PENDING, field 396) is not currently published by the Crusoe Watch Agent, so this heuristic is a proxy.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -1967,6 +1967,6 @@
   "timezone": "browser",
   "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
-  "version": 5,
+  "version": 6,
   "weekStart": ""
 }
