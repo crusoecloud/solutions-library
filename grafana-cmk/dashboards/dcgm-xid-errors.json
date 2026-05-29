@@ -86,7 +86,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Cluster-wide increase in Xid events in the last 24h (DCGM field 230). Any non-zero value is a hard hardware/driver event \u2014 drill into the breakdown table below.",
+      "description": "Distinct GPUs that fired any non-zero Xid in the last 24h (DCGM field 230). DCGM_FI_DEV_XID_ERRORS is a gauge holding the most recent Xid code per GPU \u2014 use `max_over_time(... [24h]) > 0` to detect events, not `increase()`.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -149,13 +149,13 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h]))",
+          "expr": "count(max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h]) > 0) or vector(0)",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Total Xid Errors (Last 24h)",
+      "title": "GPUs With Xid Events (Last 24h)",
       "type": "stat"
     },
     {
@@ -244,7 +244,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Per-node Xid rate over time (DCGM field 230). Spikes identify which node experienced the event; correlate timing with workload logs.",
+      "description": "Most recent Xid code per node, sustained via `max_over_time` so a momentary event stays visible for the rest of the window. 0 = healthy; non-zero values are the Xid code (e.g. 119 = GSP RPC Timeout). Reference: https://docs.nvidia.com/deploy/xid-errors/",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -324,12 +324,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (increase(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[5m]))",
+          "expr": "max by (vm_name) (max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[$__range])) > 0",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
-      "title": "Xid Error Rate by Node",
+      "title": "Xid Code by Node Over Time",
       "type": "timeseries"
     },
     {
@@ -337,7 +337,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Breakdown of Xid events in the last 24h by node, GPU, and Xid code. Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
+      "description": "GPUs with any non-zero Xid in the last 24h, broken down by node, GPU, and Xid code. Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -430,13 +430,13 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name, gpu, xid_id) (increase(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h])) > 0",
+          "expr": "max by (vm_name, gpu, err_code, err_msg) (max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h])) > 0",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Xid Errors by Node / GPU / Code (Last 24h)",
+      "title": "Xid Events by Node / GPU / Code (Last 24h)",
       "transformations": [
         {
           "id": "labelsToFields",
@@ -451,12 +451,18 @@
               "Time": true
             },
             "indexByName": {
-              "node": 0,
+              "vm_name": 0,
               "gpu": 1,
-              "xid_id": 2,
-              "Value": 3
+              "err_code": 2,
+              "err_msg": 3,
+              "Value": 4
             },
-            "renameByName": {}
+            "renameByName": {
+              "vm_name": "Node",
+              "gpu": "GPU",
+              "err_code": "Xid Code",
+              "err_msg": "Xid Message"
+            }
           }
         }
       ],
@@ -1967,6 +1973,6 @@
   "timezone": "browser",
   "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
-  "version": 7,
+  "version": 9,
   "weekStart": ""
 }
