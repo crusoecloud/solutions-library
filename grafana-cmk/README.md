@@ -67,8 +67,8 @@ What this is not: a full observability stack. Crusoe Metrics currently exposes i
   │  │  grafana-lb Svc  │                                 │
   │  │  (LoadBalancer)  │                                 │
   └──┴────────┬─────────┴─────────────────────────────────┘
-              │ :3000
-              ▼
+              │ HTTPS :443  (TLS terminated by Caddy
+              ▼              sidecar in the pod on :8443)
          User Browser
 ```
 
@@ -206,22 +206,64 @@ Wait for an external IP to be assigned (this can take 1–2 minutes on Crusoe):
 kubectl get svc grafana-lb -n monitoring -w
 ```
 
-Once `EXTERNAL-IP` shows an IP address, Grafana is accessible at `http://<EXTERNAL-IP>:3000`.
+Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<EXTERNAL-IP>` (port 443)**. The pod's `crusoe-public-tls-proxy` Caddy sidecar will start crash-looping until you complete Step 4.5 below — that's expected.
 
-> **Why port 3000 and not 80?** The Grafana Helm chart's ClusterIP service ends up on port 3000 on Crusoe Managed Kubernetes regardless of the `service.port` value passed in `grafana-values.yaml`, so this repo's `grafana-service-lb.yaml` exposes 3000 to match. If you need port 80 externally, add an ingress controller (recommended for production anyway).
-
-> **Security warning:** This service exposes Grafana directly to the public internet on port 3000 with no TLS. For production use, add an ingress controller with TLS termination and an authentication proxy (e.g. [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)). At minimum, restrict the LoadBalancer source ranges in `grafana-service-lb.yaml` to your IP range:
+> **Security note:** TLS is on by default but the cert is **self-signed and bound to the LB's IP** (no public CA, no DNS). Browsers will show a "Your connection is not private" warning that you must click through once per device. The transport is still encrypted. For a proper CA-issued cert once you have DNS, swap the `grafana-public-tls` Secret for a cert-manager-issued one — no manifest changes needed. To restrict who can reach the LB at all, add `loadBalancerSourceRanges` to `manifests/grafana-service-lb.yaml`:
 > ```yaml
 > spec:
 >   loadBalancerSourceRanges:
 >     - "203.0.113.0/24"   # replace with your CIDR
 > ```
 >
-> For a quick local test without a public IP, skip the LoadBalancer and use port-forward instead:
+> For a quick local test without a public IP, skip this step and use port-forward against Grafana's plaintext port instead:
 > ```bash
 > kubectl port-forward -n monitoring svc/grafana 3000:3000
 > # Then open http://localhost:3000
 > ```
+
+---
+
+## Step 4.5: Generate a self-signed cert for the LB IP
+
+The `crusoe-public-tls-proxy` sidecar mounts a Secret named `grafana-public-tls` (a standard `kubernetes.io/tls` Secret with `tls.crt` / `tls.key`). Without this Secret the sidecar will not start, and the LoadBalancer will refuse connections.
+
+Generate a self-signed cert whose `subjectAltName` contains the LB IP, and store it as the Secret:
+
+```bash
+LB_IP=$(kubectl get svc -n monitoring grafana-lb \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "Grafana LB IP: $LB_IP"
+
+openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+  -keyout /tmp/grafana-tls.key -out /tmp/grafana-tls.crt \
+  -subj "/CN=grafana-cmk" \
+  -addext "subjectAltName=IP:${LB_IP}"
+
+kubectl create secret tls grafana-public-tls \
+  --namespace monitoring \
+  --cert=/tmp/grafana-tls.crt \
+  --key=/tmp/grafana-tls.key
+
+rm -f /tmp/grafana-tls.key /tmp/grafana-tls.crt
+
+# Force the sidecar to pick up the Secret immediately
+kubectl rollout restart deployment/grafana -n monitoring
+kubectl rollout status deployment/grafana -n monitoring
+```
+
+Verify the handshake:
+
+```bash
+openssl s_client -connect ${LB_IP}:443 -showcerts </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -ext subjectAltName
+# Expect: subject=CN = grafana-cmk
+# Expect: IP Address:<LB_IP>
+
+curl --insecure https://${LB_IP}/api/health
+# Expect JSON: {"database":"ok","version":"12.x.x",...}
+```
+
+> **The cert is bound to this specific IP.** If the LB is ever recreated and gets a new IP, re-run this snippet. The cert is also valid for 365 days; renew before expiry.
 
 ---
 
@@ -234,7 +276,7 @@ kubectl get secret --namespace monitoring grafana \
   -o jsonpath="{.data.admin-password}" | base64 --decode; echo
 ```
 
-Log in at `http://<EXTERNAL-IP>:3000` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Change the password after first login.
+Log in at `https://<EXTERNAL-IP>` (or `http://localhost:3000` if using port-forward) with username `admin` and the password above. Click through the browser's "Not secure / unknown issuer" warning on first visit — the transport is encrypted, only the cert's issuer is untrusted. Change the password after first login.
 
 Verify the data source:
 
@@ -616,7 +658,7 @@ If you want `kubectl top` long-term, install the [metrics-server](https://github
 
 The repo ships a public LoadBalancer manifest for fast getting-started. Work through this checklist before pointing real users at it:
 
-- [ ] **TLS termination.** Install `cert-manager` and switch from the bare `grafana-lb` Service to an Ingress with a cert (Let's Encrypt or your CA). The current `grafana-service-lb.yaml` exposes plain HTTP on port 3000.
+- [ ] **TLS with a real CA.** The default deploy ships TLS on :443 with a self-signed cert tied to the LB IP (see Step 4.5). Once you have a hostname, replace the self-signed `grafana-public-tls` Secret with a cert-manager-issued one (same name, same keys), or migrate to ingress-nginx + cert-manager + an Ingress for the canonical pattern.
 - [ ] **Auth in front of Grafana's UI.** Three reasonable options:
   - [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) sidecar in front of the LB. Simplest if your org uses Google/GitHub/Okta SSO.
   - Grafana's native [OAuth integration](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/) (set `[auth.generic_oauth]` via `grafana.ini`).

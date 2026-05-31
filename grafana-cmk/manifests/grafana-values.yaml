@@ -152,3 +152,53 @@ extraContainers: |
       initialDelaySeconds: 10
       periodSeconds: 30
       failureThreshold: 3
+
+  # Public-facing TLS terminator. Listens on :8443 with a TLS cert mounted from
+  # the `grafana-public-tls` Secret (kubernetes.io/tls type, keys tls.crt and
+  # tls.key). Reverse-proxies plaintext to localhost:3000 where Grafana is
+  # listening. The LoadBalancer Service forwards public :443 to this container's
+  # :8443. The cert is self-signed and generated against the LB's public IP —
+  # see README Step 4.5 for the openssl bootstrap. auto_https is OFF because
+  # there is no public DNS and public CAs do not issue certs for bare IPs.
+  - name: crusoe-public-tls-proxy
+    image: caddy:2-alpine
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        cat > /tmp/Caddyfile <<'EOF'
+        {
+          admin off
+          auto_https off
+          persist_config off
+        }
+        :8443 {
+          tls /etc/caddy/tls/tls.crt /etc/caddy/tls/tls.key
+          reverse_proxy localhost:3000
+        }
+        EOF
+        exec caddy run --config /tmp/Caddyfile --adapter caddyfile
+    ports:
+      - name: public-tls
+        containerPort: 8443
+    volumeMounts:
+      - name: public-tls-cert
+        mountPath: /etc/caddy/tls
+        readOnly: true
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    # No livenessProbe — Caddy on :8443 expects TLS clients, and probes do not
+    # speak TLS without extra config. Process health is sufficient here.
+
+# Mount the TLS secret as a volume that the crusoe-public-tls-proxy sidecar
+# above consumes. The Secret is created by README Step 4.5 — Grafana will
+# crash-loop on first install until the Secret exists, which is the intended
+# fail-fast.
+extraContainerVolumes:
+  - name: public-tls-cert
+    secret:
+      secretName: grafana-public-tls
