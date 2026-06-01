@@ -208,7 +208,9 @@ kubectl get svc grafana-lb -n monitoring -w
 
 Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<EXTERNAL-IP>` (port 443)**. The pod's `crusoe-public-tls-proxy` Caddy sidecar will start crash-looping until you complete Step 4.5 below — that's expected.
 
-> **Security note:** TLS is on by default but the cert is **self-signed and bound to the LB's IP** (no public CA, no DNS). Browsers will show a "Your connection is not private" warning that you must click through once per device. The transport is still encrypted. For a proper CA-issued cert once you have DNS, swap the `grafana-public-tls` Secret for a cert-manager-issued one — no manifest changes needed. To restrict who can reach the LB at all, add `loadBalancerSourceRanges` to `manifests/grafana-service-lb.yaml`:
+> **Crusoe firewall: open the nodePort, not 443.** On Crusoe Managed Kubernetes, the LB external IP DNATs public packets to a worker node's nodePort *before* the project firewall is evaluated. By the time the firewall sees the packet, the destination port has been rewritten from 443 to the nodePort. This manifest pins **nodePort `32042`** so the rule stays stable across redeploys — your Crusoe firewall rule should be `allow inbound TCP 32042 from <your CIDR>`. (On AWS/GCP you'd open 443; that intuition does not apply here.)
+>
+> **Security note:** TLS is on by default but the cert is **self-signed and bound to the LB's IP** (no public CA, no DNS). Browsers will show a "Your connection is not private" warning that you must click through once per device. The transport is still encrypted. For a proper CA-issued cert once you have DNS, swap the `grafana-public-tls` Secret for a cert-manager-issued one — no manifest changes needed. To restrict who can reach the LB at the k8s layer (in addition to the Crusoe firewall above), add `loadBalancerSourceRanges` to `manifests/grafana-service-lb.yaml`:
 > ```yaml
 > spec:
 >   loadBalancerSourceRanges:
