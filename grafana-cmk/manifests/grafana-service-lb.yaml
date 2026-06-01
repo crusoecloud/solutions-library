@@ -3,14 +3,22 @@
 # Public Grafana LoadBalancer with HTTPS on :443.
 #
 # Traffic flow:
-#   browser  ──HTTPS:443──▶  this LB  ──TCP:8443──▶  crusoe-public-tls-proxy
-#                                                    sidecar in the Grafana pod
-#                                                    (Caddy, terminates TLS)
-#                                                    ──HTTP:3000──▶  Grafana
+#   browser  ──HTTPS:443──▶  this LB IP  ──DNAT to nodePort 32042──▶
+#     worker node :32042  ──kube-proxy──▶  Grafana pod :8443 (Caddy TLS sidecar)
+#                                                            │
+#                                                            ▼ localhost
+#                                                       Grafana :3000
 #
 # The TLS sidecar reads `grafana-public-tls` Secret (kubernetes.io/tls type,
 # keys tls.crt and tls.key). Generate that Secret with README Step 4.5 BEFORE
 # applying this Service — otherwise the sidecar will crash-loop on missing volume.
+#
+# Crusoe firewall note:
+#   On Crusoe Managed Kubernetes, the LB external IP DNATs public packets to a
+#   worker node's nodePort BEFORE the project firewall sees the packet. That
+#   means a firewall rule "allow 443 inbound to LB" does not match — the rule
+#   actually needs to allow inbound on the nodePort. We pin nodePort = 32042
+#   below so that firewall rule stays stable across redeploys.
 #
 # WARNING: This service exposes Grafana to the public internet. The default
 # install ships with a self-signed cert (no public CA, no DNS); browsers will
@@ -43,4 +51,5 @@ spec:
     - name: https
       port: 443
       targetPort: 8443
+      nodePort: 32042   # pinned so the Crusoe firewall rule stays stable
       protocol: TCP
