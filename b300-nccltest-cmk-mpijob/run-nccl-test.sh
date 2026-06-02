@@ -1,9 +1,37 @@
+#!/usr/bin/env bash
+# run-nccl-test.sh — submit an NCCL all_reduce_perf MPIJob scaled to NUM_NODES B300 nodes.
+#
+# Usage:
+#   ./run-nccl-test.sh <NUM_NODES>
+#
+# Example (4-node cluster):
+#   ./run-nccl-test.sh 4
+
+set -euo pipefail
+
+GPUS_PER_NODE=8
+
+usage() {
+  echo "Usage: $0 <NUM_NODES>"
+  echo "  NUM_NODES  Number of B300 worker nodes (each has ${GPUS_PER_NODE} GPUs)"
+  exit 1
+}
+
+[[ $# -eq 1 && "$1" =~ ^[1-9][0-9]*$ ]] || usage
+
+NUM_NODES=$1
+TOTAL_GPUS=$(( NUM_NODES * GPUS_PER_NODE ))
+JOB_NAME="nccl-tests-gdr-${TOTAL_GPUS}-b300"
+
+echo "Submitting MPIJob '${JOB_NAME}': ${NUM_NODES} nodes × ${GPUS_PER_NODE} GPUs = ${TOTAL_GPUS} total processes"
+
+kubectl apply -f - <<EOF
 apiVersion: kubeflow.org/v1
 kind: MPIJob
 metadata:
-  name: nccl-tests-gdr-8-b300
+  name: ${JOB_NAME}
 spec:
-  slotsPerWorker: 8
+  slotsPerWorker: ${GPUS_PER_NODE}
   runPolicy:
     cleanPodPolicy: Running
   mpiReplicaSpecs:
@@ -25,20 +53,20 @@ spec:
               capabilities:
                 add: ["IPC_LOCK"]
             env:
-             - name: NCCL_TOPO_FILE
-               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
-             - name: UCX_RNDV_SCHEME
-               value: "get_zcopy"   # UCX memory setting
-             - name: UCX_TLS
-               value: "self,sm,cuda_copy"   # UCX memory setting
+            - name: NCCL_TOPO_FILE
+              value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+            - name: UCX_RNDV_SCHEME
+              value: "get_zcopy"
+            - name: UCX_TLS
+              value: "self,sm,cuda_copy"
             command:
-            - /opt/amazon/openmpi/bin/mpirun 
+            - /opt/amazon/openmpi/bin/mpirun
             - --allow-run-as-root
             - --tag-output
             - -np
-            - "8"  # Total number of processes (8 GPUs per node, 2 nodes = 16 total if using 2 Worker Replicas)
+            - "${TOTAL_GPUS}"
             - -N
-            - "8"
+            - "${GPUS_PER_NODE}"
             - -bind-to
             - none
             - -map-by
@@ -70,8 +98,6 @@ spec:
             - NCCL_NVLS_ENABLE=1
             - -x
             - NCCL_IB_SL=1
-            - -x
-            - NCCL_DEBUG=info
             - /opt/nccl-tests/build/all_reduce_perf
             - -b
             - "2G"
@@ -88,7 +114,7 @@ spec:
             - -n
             - "100"
     Worker:
-      replicas: 1 # Specify the number of nodes in the CMK nodepool
+      replicas: ${NUM_NODES}
       template:
         spec:
           restartPolicy: OnFailure
@@ -106,23 +132,34 @@ spec:
               capabilities:
                 add: ["IPC_LOCK"]
             env:
-             - name: NCCL_TOPO_FILE
-               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
-             - name: NCCL_DEBUG
-               value: INFO
-             - name: UCX_RNDV_SCHEME
-               value: "get_zcopy"   # UCX memory setting
-             - name: UCX_TLS
-               value: "self,sm,cuda_copy"   # UCX memory setting
+            - name: NCCL_TOPO_FILE
+              value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+            - name: NCCL_DEBUG
+              value: INFO
+            - name: UCX_RNDV_SCHEME
+              value: "get_zcopy"
+            - name: UCX_TLS
+              value: "self,sm,cuda_copy"
             volumeMounts:
             - mountPath: /dev/shm
               name: dshm
             resources:
               limits:
-                nvidia.com/gpu: 8 # 8 GPUs per node
-                nvidia.com/hostdev: 8
+                nvidia.com/gpu: ${GPUS_PER_NODE}
+                nvidia.com/hostdev: ${GPUS_PER_NODE}
                 memory: 128000Mi
               requests:
-                nvidia.com/gpu: 8 # 8 GPUs per node
-                nvidia.com/hostdev: 8
+                nvidia.com/gpu: ${GPUS_PER_NODE}
+                nvidia.com/hostdev: ${GPUS_PER_NODE}
                 memory: 128000Mi
+EOF
+
+echo ""
+echo "Job submitted. Watch pod status:"
+echo "  kubectl get pods -l training.kubeflow.org/job-name=${JOB_NAME} -w"
+echo ""
+echo "Stream launcher logs (once the launcher pod is Running):"
+echo "  kubectl logs -f \$(kubectl get pods -l training.kubeflow.org/job-name=${JOB_NAME},training.kubeflow.org/replica-type=launcher -o name)"
+echo ""
+echo "After completion, retrieve full results:"
+echo "  kubectl logs \$(kubectl get pods -l training.kubeflow.org/job-name=${JOB_NAME},training.kubeflow.org/replica-type=launcher -o name)"
