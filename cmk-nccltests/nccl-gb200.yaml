@@ -1,0 +1,108 @@
+apiVersion: resource.nvidia.com/v1beta1
+kind: ComputeDomain
+metadata:
+  name: nccl-compute-domain
+spec:
+  numNodes: 0
+  channel:
+    resourceClaimTemplate:
+      name: nccl-compute-domain-channel
+---
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: nccl-tests-gb200
+spec:
+  slotsPerWorker: 4
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+          - image: ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1
+            imagePullPolicy: IfNotPresent
+            name: init
+            command: ["sh", "-c", "sleep 5"]
+          containers:
+          - image: ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1
+            imagePullPolicy: IfNotPresent
+            name: nccl-test-launcher
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            command:
+            - mpirun
+            - --allow-run-as-root
+            - -np
+            - "144" # for two racks
+            - -N
+            - "4"
+            - --mca
+            - coll
+            - ^hcoll
+            - -x
+            - UCX_TLS=self,tcp
+            - -x
+            - NCCL_IB_HCA=^m1x5_0
+            - -x
+            - LD_LIBRARY_PATH
+            - -x
+            - NCCL_DEBUG=WARN
+            - /opt/nccl-tests/build/all_reduce_perf
+            - -b
+            - "2G"
+            - -e
+            - "32G"
+            - -f
+            - "2"
+            - -t
+            - "1"
+            - -c
+            - "1"
+            - -g
+            - "1"
+            - -n
+            - "250"
+            - -w
+            - "150"
+    Worker:
+      replicas: 36 # Across two racks
+      template:
+        spec:
+          restartPolicy: OnFailure
+          volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 64Gi
+          resourceClaims:
+          - name: compute-domain-channel
+            resourceClaimTemplateName: nccl-compute-domain-channel
+          containers:
+          - image: ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1
+            imagePullPolicy: IfNotPresent
+            name: nccl-worker
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+             - name: NCCL_DEBUG
+               value: WARN
+            volumeMounts:
+            - mountPath: /dev/shm
+              name: dshm
+            resources:
+              limits:
+                nvidia.com/hostdev: 4
+                nvidia.com/gpu: 4
+                memory: 128000Mi
+              requests:
+                nvidia.com/gpu: 4
+                memory: 128000Mi
+                nvidia.com/hostdev: 4
+              claims:
+                - name: compute-domain-channel
