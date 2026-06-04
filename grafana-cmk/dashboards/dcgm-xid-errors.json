@@ -337,7 +337,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPUs with any non-zero Xid in the last 24h, broken down by node, GPU, and Xid code. Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
+      "description": "All GPUs that fired any non-zero Xid in the last 24h, broken down by node, GPU, and Xid code. Intentionally does not filter by the $cluster dropdown \u2014 this table always shows every GPU with an error so nothing gets hidden by a dropdown selection. Xid code reference: https://docs.nvidia.com/deploy/xid-errors/",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -400,10 +400,10 @@
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 12
+        "y": 12,
+        "w": 24,
+        "h": 10
       },
       "id": 4,
       "options": {
@@ -419,8 +419,8 @@
         "showHeader": true,
         "sortBy": [
           {
-            "desc": true,
-            "displayName": "Error Count"
+            "displayName": "Xid Code",
+            "desc": true
           }
         ]
       },
@@ -430,25 +430,21 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (vm_name, gpu, err_code, err_msg) (max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h])) > 0",
+          "expr": "max by (vm_name, gpu, err_code, err_msg) (max_over_time(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
           "instant": true,
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "format": "table"
         }
       ],
       "title": "Xid Events by Node / GPU / Code (Last 24h)",
       "transformations": [
         {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns"
-          }
-        },
-        {
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "__name__": true
             },
             "indexByName": {
               "vm_name": 0,
@@ -461,8 +457,29 @@
               "vm_name": "Node",
               "gpu": "GPU",
               "err_code": "Xid Code",
-              "err_msg": "Xid Message"
+              "err_msg": "Xid Message",
+              "Value": "Last Value"
             }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Xid Code",
+                "desc": true
+              },
+              {
+                "field": "Node",
+                "desc": false
+              },
+              {
+                "field": "GPU",
+                "desc": false
+              }
+            ]
           }
         }
       ],
@@ -540,10 +557,10 @@
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 12
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 6
       },
       "id": 5,
       "options": {
@@ -603,7 +620,7 @@
       "title": "GPU Health Indicators \u2014 Slow Node Detection",
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 30,
         "w": 24,
         "h": 1
       },
@@ -621,7 +638,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 31,
         "w": 4,
         "h": 4
       },
@@ -689,7 +706,7 @@
       },
       "gridPos": {
         "x": 4,
-        "y": 21,
+        "y": 31,
         "w": 4,
         "h": 4
       },
@@ -757,7 +774,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 21,
+        "y": 31,
         "w": 4,
         "h": 4
       },
@@ -821,7 +838,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 21,
+        "y": 31,
         "w": 4,
         "h": 4
       },
@@ -889,7 +906,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 21,
+        "y": 31,
         "w": 4,
         "h": 4
       },
@@ -957,7 +974,7 @@
       },
       "gridPos": {
         "x": 20,
-        "y": 21,
+        "y": 31,
         "w": 4,
         "h": 4
       },
@@ -1017,7 +1034,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 45,
         "w": 12,
         "h": 10
       },
@@ -1146,7 +1163,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 45,
         "w": 12,
         "h": 10
       },
@@ -1275,7 +1292,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 45,
+        "y": 55,
         "w": 12,
         "h": 10
       },
@@ -1404,7 +1421,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 45,
+        "y": 55,
         "w": 12,
         "h": 10
       },
@@ -1533,7 +1550,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 75,
         "w": 24,
         "h": 8
       },
@@ -1594,7 +1611,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 73,
+        "y": 83,
         "w": 24,
         "h": 8
       },
@@ -1655,7 +1672,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 35,
         "w": 24,
         "h": 10
       },
@@ -1795,7 +1812,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 65,
         "w": 24,
         "h": 10
       },
@@ -1973,6 +1990,6 @@
   "timezone": "browser",
   "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
-  "version": 10,
+  "version": 12,
   "weekStart": ""
 }
