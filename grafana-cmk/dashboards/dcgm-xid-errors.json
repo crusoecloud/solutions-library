@@ -419,8 +419,8 @@
         "showHeader": true,
         "sortBy": [
           {
-            "desc": true,
-            "displayName": "Error Count"
+            "displayName": "Xid Code",
+            "desc": true
           }
         ]
       },
@@ -433,22 +433,18 @@
           "expr": "max by (vm_name, gpu, err_code, err_msg) (max_over_time(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
           "instant": true,
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "format": "table"
         }
       ],
       "title": "Xid Events by Node / GPU / Code (Last 24h)",
       "transformations": [
         {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns"
-          }
-        },
-        {
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "__name__": true
             },
             "indexByName": {
               "vm_name": 0,
@@ -461,8 +457,29 @@
               "vm_name": "Node",
               "gpu": "GPU",
               "err_code": "Xid Code",
-              "err_msg": "Xid Message"
+              "err_msg": "Xid Message",
+              "Value": "Last Value"
             }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Xid Code",
+                "desc": true
+              },
+              {
+                "field": "Node",
+                "desc": false
+              },
+              {
+                "field": "GPU",
+                "desc": false
+              }
+            ]
           }
         }
       ],
@@ -1973,6 +1990,6 @@
   "timezone": "browser",
   "title": "DCGM & Xid Errors",
   "uid": "crusoe-dcgm-xid-errors",
-  "version": 11,
+  "version": 12,
   "weekStart": ""
 }
