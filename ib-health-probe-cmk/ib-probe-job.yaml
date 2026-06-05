@@ -10,10 +10,10 @@
 # drained, etc.).
 #
 # Templated with envsubst; render via apply.sh which fills:
-#   ${POOL_LABEL}        e.g. "slurm-h200-workers" or "slurm-b200-workers"
-#   ${NCCL_TOPO_FILE}    e.g. "h200-141gb-sxm-ib-cloud-hypervisor.xml"
-#   ${PARALLELISM}       e.g. "4"  (= node count to probe)
-#   ${PROBE_IMAGE}       e.g. "ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1"
+#   ${POOL_LABEL}        value of crusoe.ai/nodepool.name on GPU workers
+#   ${NCCL_TOPO_FILE}    NCCL topology XML filename in /etc/crusoe/nccl_topo/
+#   ${PARALLELISM}       node count to probe
+#   ${PROBE_IMAGE}       NCCL test container image
 ---
 apiVersion: batch/v1
 kind: Job
