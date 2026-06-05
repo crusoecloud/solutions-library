@@ -21,17 +21,32 @@ The Job runs with `hostNetwork: true` + `privileged: true` + hostPath `/dev/infi
 
 Tradeoff: if a real workload is **actively pushing traffic** while you run the probe, the bandwidth numbers will be skewed by the contention. For clean baseline readings, drain or pause your workloads first (`squeue` should be empty for a slurm cluster; check active pods otherwise). The probe itself works either way — but a clean result requires a quiet fabric.
 
-## Quick start (4-node H200 / poc-cluster)
+## Quick start
+
+`apply.sh` requires two positional arguments — the pool label and the NCCL topology filename — because both vary by cluster and SKU. Discover them on your cluster first:
 
 ```bash
 export KUBECONFIG=/path/to/your/kubeconfig
+
+# 1. find your GPU nodepool's label value:
+kubectl get nodes -L crusoe.ai/nodepool.name
+
+# 2. list NCCL topology XMLs on one of the GPU nodes (hostPath-mounted into the pod):
+kubectl debug node/<one-gpu-node> -it --image=busybox -- ls /host/etc/crusoe/nccl_topo
+#   typical filenames:
+#     h200-141gb-sxm-ib-cloud-hypervisor.xml
+#     b200-180gb-sxm-ib-cloud-hypervisor.xml
+
+# 3. run the probe (auto-detects node count for the pool):
 cd ib-health-probe-cmk
-./apply.sh
-kubectl get pods -l app=ib-probe -w               # watch
-kubectl logs -l app=ib-probe --tail=-1 | ./parse-results.sh
+./apply.sh <pool-label> <topo-filename>
+
+# 4. watch progress / read results:
+kubectl get pods -l app=ib-probe -w
+cat results.txt                     # written automatically when apply.sh finishes
 ```
 
-Expected on a healthy 4-node H200 cluster: 32 `IBHEALTH|...|OK` lines (8 HCAs × 4 nodes), 4 `NCCLHEALTH|...|OK` lines, exit code 0 from the Job.
+Expected on a healthy N-node 8-GPU SKU: `N × 8` `IBHEALTH|...|OK` lines (one per HCA), `N` `NCCLHEALTH|...|OK` lines, exit code 0 from the Job.
 
 ## How HCAs are discovered
 
@@ -71,8 +86,10 @@ Cluster integration test — `all_reduce_perf` across every GPU in the pool. Run
 kubectl apply --server-side -f \
   https://raw.githubusercontent.com/kubeflow/mpi-operator/v0.6.0/deploy/v2beta1/mpi-operator.yaml
 
-# B200 defaults — auto-detects replica count from the pool:
-./apply-multinode.sh <pool-label> b200-180gb-sxm-ib-cloud-hypervisor.xml
+# auto-detects replica count from the pool:
+./apply-multinode.sh <pool-label> <topo-filename> [<nccl-ib-list>]
+#   nccl-ib-list defaults to the B200 NDR400 layout (mlx5_5:1,...,mlx5_12:1).
+#   For H200, pass: mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1
 
 # Live tail:
 kubectl logs -f -l training.kubeflow.org/job-role=launcher
