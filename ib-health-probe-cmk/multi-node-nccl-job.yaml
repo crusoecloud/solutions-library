@@ -1,15 +1,23 @@
-# Multi-node NCCL all_reduce_perf — integration test for IB fabric end-to-end.
-# Pairs with ib-probe-job.yaml (per-node unit test) to give customers both
-# unit-level (per-HCA loopback) and integration-level (cross-node NCCL) checks.
+# Multi-node NCCL all_reduce_perf — cluster integration test.
+# Pairs with ib-probe-job.yaml (per-node unit test).
 #
-# Templated via envsubst (rendered by apply-multinode.sh — see README):
-#   ${POOL_LABEL}       e.g. "slurm-h200-workers"
-#   ${NCCL_TOPO_FILE}   e.g. "h200-141gb-sxm-ib-cloud-hypervisor.xml"
-#   ${WORKER_REPLICAS}  e.g. "4"  (= node count to include in the all_reduce ring)
-#   ${TOTAL_GPUS}       = WORKER_REPLICAS * 8
-#   ${PROBE_IMAGE}      same NCCL test image as the unit probe
+# Rendered via envsubst — apply-multinode.sh does this for you, or set the vars
+# yourself and pipe through envsubst. Parameters:
 #
-# Forked from: ../cmk-nccltests/nccl-b200.yaml
+#   POOL_LABEL           crusoe.ai/nodepool.name value
+#   NCCL_TOPO_FILE       filename in /etc/crusoe/nccl_topo/, SKU-specific
+#   WORKER_REPLICAS      node count (4, 64, 340, ...)
+#   TOTAL_GPUS           = WORKER_REPLICAS * 8
+#   PROBE_IMAGE          NCCL test image
+#   NCCL_IB_LIST         HCA allowlist with port suffix, comma-separated
+#                          B200:  mlx5_5:1,...,mlx5_12:1
+#                          H200:  mlx5_1:1,...,mlx5_8:1
+#                        Pinned identically on NCCL_IB_HCA and UCX_NET_DEVICES —
+#                        without the UCX pin, teardown hangs when UCX auto-picks
+#                        a non-compute HCA.
+#   NCCL_NITERS          iterations per size (default 20 — drop to 5 at >100
+#                        nodes for a quick smoke test)
+#   NCCL_BOOTSTRAP_TIMEOUT_SEC  default 120; bump at >100 nodes (try 600 at 340)
 ---
 apiVersion: kubeflow.org/v2beta1
 kind: MPIJob
@@ -25,11 +33,6 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
-          initContainers:
-            - name: init
-              image: ${PROBE_IMAGE}
-              imagePullPolicy: IfNotPresent
-              command: ["sh", "-c", "sleep 5"]
           volumes:
             - name: nccl-topo
               hostPath:
@@ -45,13 +48,8 @@ spec:
               env:
                 - name: NCCL_TOPO_FILE
                   value: /opt/nccl_topo/${NCCL_TOPO_FILE}
-                - name: UCX_RNDV_SCHEME
-                  value: "get_zcopy"
-                - name: UCX_TLS
-                  value: "self,sm,cuda_copy"
               volumeMounts:
-                - name: nccl-topo
-                  mountPath: /opt/nccl_topo
+                - { name: nccl-topo, mountPath: /opt/nccl_topo }
               command:
                 - mpirun
                 - --allow-run-as-root
@@ -67,6 +65,12 @@ spec:
                 - -mca
                 - coll_hcoll_enable
                 - "0"
+                # NCCL transport — IB HCA allowlist (UCX gets the same list so
+                # it doesn't auto-pick a non-compute endpoint and hang teardown)
+                - -x
+                - NCCL_IB_HCA=${NCCL_IB_LIST}
+                - -x
+                - UCX_NET_DEVICES=${NCCL_IB_LIST}
                 - -x
                 - NCCL_IB_PCI_RELAXED_ORDERING=1
                 - -x
@@ -76,21 +80,25 @@ spec:
                 - -x
                 - NCCL_IB_MERGE_VFS=0
                 - -x
-                # Exclude the Ethernet-layer HCA (mlx5_0 on H200; on B200 the
-                # ethernet HCA is mlx5_4 — adjust if your SKU differs)
-                - NCCL_IB_HCA=^mlx5_0:1
+                - NCCL_IB_SL=1
+                - -x
+                - NCCL_NVLS_ENABLE=1
+                - -x
+                - NCCL_DEBUG=WARN
+                - -x
+                - NCCL_BOOTSTRAP_TIMEOUT=${NCCL_BOOTSTRAP_TIMEOUT_SEC}
                 - -x
                 - NCCL_TOPO_FILE
                 - -x
                 - PATH
                 - -x
                 - LD_LIBRARY_PATH
-                - -x
-                - NCCL_DEBUG=INFO
-                - -x
-                - NCCL_NVLS_ENABLE=1
-                - -x
-                - NCCL_IB_SL=1
+                # Do NOT propagate UCX_TLS via -x. The Crusoe convention
+                # "self,sm,cuda_copy" excludes inter-node transports (rc/dc/ud).
+                # When set only on the launcher's env (not -x'd to ranks) it's
+                # harmless because the launcher doesn't run a rank. When -x'd,
+                # all ranks fail with "Destination is unreachable" on ucp_ep_create.
+                # UCX_NET_DEVICES pin (above) is the only UCX env var we need.
                 - /opt/nccl-tests/build/all_reduce_perf
                 - -b
                 - "2G"
@@ -98,14 +106,12 @@ spec:
                 - "32G"
                 - -f
                 - "2"
-                - -t
-                - "1"
                 - -g
                 - "1"
                 - -c
                 - "1"
                 - -n
-                - "20"
+                - "${NCCL_NITERS}"
     Worker:
       replicas: ${WORKER_REPLICAS}
       template:
@@ -130,20 +136,11 @@ spec:
               securityContext:
                 capabilities:
                   add: ["IPC_LOCK"]
-              env:
-                - name: NCCL_TOPO_FILE
-                  value: /opt/nccl_topo/${NCCL_TOPO_FILE}
-                - name: NCCL_DEBUG
-                  value: WARN
-                - name: UCX_RNDV_SCHEME
-                  value: "get_zcopy"
-                - name: UCX_TLS
-                  value: "self,sm,cuda_copy"
+              # No env block: mpirun -x propagates NCCL/UCX vars from launcher
+              # to each rank. Workers just need the mounts + IPC_LOCK + GPU/HCA.
               volumeMounts:
-                - mountPath: /dev/shm
-                  name: dshm
-                - name: nccl-topo
-                  mountPath: /opt/nccl_topo
+                - { mountPath: /dev/shm, name: dshm }
+                - { name: nccl-topo, mountPath: /opt/nccl_topo }
               resources:
                 limits:
                   nvidia.com/gpu: 8

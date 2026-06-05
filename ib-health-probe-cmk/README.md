@@ -64,20 +64,36 @@ Everything else (HCA names, line rate, NUMA layout, GPU count) is discovered at 
 
 ## Multi-node NCCL (optional)
 
-Apply the integration test once you've confirmed per-node health:
+Cluster integration test — `all_reduce_perf` across every GPU in the pool. Run *after* the per-node probe passes, and only on an idle cluster (this manifest uses device-plugin allocation, not coexist mode).
 
 ```bash
-POOL_LABEL=slurm-h200-workers \
-NCCL_TOPO_FILE=h200-141gb-sxm-ib-cloud-hypervisor.xml \
-WORKER_REPLICAS=4 \
-TOTAL_GPUS=32 \
-PROBE_IMAGE=ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1 \
-envsubst < multi-node-nccl-job.yaml | kubectl apply -f -
+# one-time setup if MPI Operator isn't already installed:
+kubectl apply --server-side -f \
+  https://raw.githubusercontent.com/kubeflow/mpi-operator/v0.6.0/deploy/v2beta1/mpi-operator.yaml
 
-kubectl logs -f nccl-integration-launcher
+# B200 defaults — auto-detects replica count from the pool:
+./apply-multinode.sh <pool-label> b200-180gb-sxm-ib-cloud-hypervisor.xml
+
+# Live tail:
+kubectl logs -f -l training.kubeflow.org/job-role=launcher
 ```
 
-Healthy busbw target: H200 ≥350 GB/s, B200 ≥400 GB/s on 2 nodes; falls off slowly with scale.
+Results land in `results-multinode.txt` (gitignored). Healthy busbw target: B200 ~390 GB/s on 4 nodes / ~350 GB/s at scale; H200 ~350 GB/s on 4 nodes. Plateau-by-size with `#wrong = 0` on every row is what you're looking for.
+
+### At scale (100+ nodes)
+
+No manifest change needed — only env vars:
+
+```bash
+NCCL_NITERS=5 NCCL_BOOTSTRAP_TIMEOUT_SEC=600 TIMEOUT_SECS=3600 \
+  ./apply-multinode.sh <pool-label> <topo-file>   # WORKER_REPLICAS auto-detects
+```
+
+- `NCCL_NITERS=5` — shorter test (default 20 takes ~50 min at 340 nodes due to per-rank scaling on 32 GB messages)
+- `NCCL_BOOTSTRAP_TIMEOUT_SEC=600` — NCCL bootstrap across 2720 ranks can exceed the 120 s default
+- `TIMEOUT_SECS=3600` — apply-multinode.sh's wait cap (default 1800)
+
+`NCCL_IB_LIST` stays the same — per-node HCA layout doesn't change with cluster size.
 
 ## Tunable thresholds
 
@@ -134,9 +150,10 @@ ib-health-probe-cmk/
 ├── README.md                  this file
 ├── probe.sh                   per-node script (source of truth)
 ├── ib-probe-job.yaml          Indexed Job manifest (envsubst template)
-├── apply.sh                   wrapper: builds ConfigMap from probe.sh + applies Job
+├── apply.sh                   per-node wrapper: builds ConfigMap, applies, writes results.txt
 ├── parse-results.sh           aggregates kubectl logs into a per-host table
-└── multi-node-nccl-job.yaml   MPIJob for multi-node integration test
+├── multi-node-nccl-job.yaml   MPIJob template for multi-node integration test
+└── apply-multinode.sh         multi-node wrapper: renders MPIJob, tails launcher, writes results-multinode.txt
 ```
 
 ## What this does NOT cover (yet)
