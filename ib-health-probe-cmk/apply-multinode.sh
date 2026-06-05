@@ -2,20 +2,29 @@
 # Render + apply the multi-node NCCL MPIJob, tail launcher, write results-multinode.txt.
 #
 # Usage:
-#   ./apply-multinode.sh [pool-label] [nccl-topo-filename] [worker-replicas] [nccl-ib-list]
+#   ./apply-multinode.sh <pool-label> <nccl-topo-filename> <nccl-ib-list> [worker-replicas]
 #
-# Defaults (B200, this cluster's pool):
-#   pool-label         = nodepool-thermal-inference-602
-#   nccl-topo-filename = b200-180gb-sxm-ib-cloud-hypervisor.xml
-#   worker-replicas    = <auto-detected node count in pool>
-#   nccl-ib-list       = mlx5_5:1,...,mlx5_12:1  (B200 NDR400)
+# Required arguments:
+#   pool-label          value of the crusoe.ai/nodepool.name label on GPU workers.
+#                       Find with: kubectl get nodes -L crusoe.ai/nodepool.name
+#   nccl-topo-filename  NCCL topology XML filename under /etc/crusoe/nccl_topo/ on host.
+#                       Common values:
+#                         h200-141gb-sxm-ib-cloud-hypervisor.xml
+#                         b200-180gb-sxm-ib-cloud-hypervisor.xml
+#   nccl-ib-list        comma-separated NDR IB HCA allowlist with :port suffix.
+#                       Standard layouts:
+#                         H200:  mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1
+#                         B200:  mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1,mlx5_10:1,mlx5_11:1,mlx5_12:1
+#
+# Optional:
+#   worker-replicas     number of nodes (default: all nodes in the pool)
 #
 # Env overrides:
-#   PROBE_IMAGE        default: ghcr.io/crusoecloud/nccl-tests:13.0.1-...
-#   NCCL_NITERS        default 20  (set to 5 at >100 nodes for a quick smoke test)
-#   NCCL_BOOTSTRAP_TIMEOUT_SEC  default 120  (bump to 600 at 340 nodes)
-#   NO_WAIT=1          submit and exit; don't tail / write results
-#   TIMEOUT_SECS       default 1800  (wait cap; raise at large scale)
+#   PROBE_IMAGE                 default: ghcr.io/crusoecloud/nccl-tests:13.0.1-...
+#   NCCL_NITERS                 default 20  (set to 5 at >100 nodes for a quick smoke test)
+#   NCCL_BOOTSTRAP_TIMEOUT_SEC  default 120 (bump to 600 at 340 nodes)
+#   NO_WAIT=1                   submit and exit; don't tail / write results
+#   TIMEOUT_SECS                default 1800 (launcher wait cap; raise at large scale)
 #
 # Prereqs:
 #   - MPI Operator installed:
@@ -27,10 +36,20 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-POOL_LABEL=${1:-nodepool-thermal-inference-602}
-NCCL_TOPO_FILE=${2:-b200-180gb-sxm-ib-cloud-hypervisor.xml}
-WORKER_REPLICAS=${3:-}
-NCCL_IB_LIST=${4:-mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1,mlx5_10:1,mlx5_11:1,mlx5_12:1}
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 <pool-label> <nccl-topo-filename> <nccl-ib-list> [worker-replicas]" >&2
+    echo >&2
+    echo "Discover values on your cluster:" >&2
+    echo "  pool-label:   kubectl get nodes -L crusoe.ai/nodepool.name" >&2
+    echo "  topo XMLs:    kubectl debug node/<one-gpu-node> --image=busybox -- ls /host/etc/crusoe/nccl_topo" >&2
+    echo "  HCA layout:   run ./apply.sh first — its log lists active HCAs" >&2
+    exit 1
+fi
+
+POOL_LABEL=$1
+NCCL_TOPO_FILE=$2
+NCCL_IB_LIST=$3
+WORKER_REPLICAS=${4:-}
 
 PROBE_IMAGE=${PROBE_IMAGE:-ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1}
 NCCL_NITERS=${NCCL_NITERS:-20}

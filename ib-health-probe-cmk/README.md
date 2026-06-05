@@ -23,30 +23,48 @@ Tradeoff: if a real workload is **actively pushing traffic** while you run the p
 
 ## Quick start
 
-`apply.sh` requires two positional arguments — the pool label and the NCCL topology filename — because both vary by cluster and SKU. Discover them on your cluster first:
+`apply.sh` requires **two positional arguments** — there are no cluster-specific defaults, because every cluster has a different pool label and (sometimes) a different SKU.
 
 ```bash
 export KUBECONFIG=/path/to/your/kubeconfig
-
-# 1. find your GPU nodepool's label value:
-kubectl get nodes -L crusoe.ai/nodepool.name
-
-# 2. list NCCL topology XMLs on one of the GPU nodes (hostPath-mounted into the pod):
-kubectl debug node/<one-gpu-node> -it --image=busybox -- ls /host/etc/crusoe/nccl_topo
-#   typical filenames:
-#     h200-141gb-sxm-ib-cloud-hypervisor.xml
-#     b200-180gb-sxm-ib-cloud-hypervisor.xml
-
-# 3. run the probe (auto-detects node count for the pool):
 cd ib-health-probe-cmk
-./apply.sh <pool-label> <topo-filename>
-
-# 4. watch progress / read results:
-kubectl get pods -l app=ib-probe -w
-cat results.txt                     # written automatically when apply.sh finishes
+./apply.sh <pool-label> <nccl-topo-filename>
 ```
 
-Expected on a healthy N-node 8-GPU SKU: `N × 8` `IBHEALTH|...|OK` lines (one per HCA), `N` `NCCLHEALTH|...|OK` lines, exit code 0 from the Job.
+| Argument | What | How to find on your cluster |
+|---|---|---|
+| `<pool-label>` | Value of the `crusoe.ai/nodepool.name` label on GPU workers | `kubectl get nodes -L crusoe.ai/nodepool.name` — pick the value next to your GPU workers |
+| `<nccl-topo-filename>` | NCCL topology XML filename under `/etc/crusoe/nccl_topo/` on the host | `kubectl debug node/<one-gpu-node> --image=busybox -- ls /host/etc/crusoe/nccl_topo` |
+
+**Typical NCCL topology filenames** (use whichever matches your GPU SKU):
+
+| SKU | Filename |
+|---|---|
+| H200 SXM IB | `h200-141gb-sxm-ib-cloud-hypervisor.xml` |
+| B200 SXM IB | `b200-180gb-sxm-ib-cloud-hypervisor.xml` |
+| B300 SXM IB | `b300-288gb-sxm-ib-cloud-hypervisor.xml` |
+
+Examples:
+
+```bash
+# H200 cluster where the GPU pool is labeled "my-h200-pool":
+./apply.sh my-h200-pool h200-141gb-sxm-ib-cloud-hypervisor.xml
+
+# B200 cluster:
+./apply.sh my-b200-pool b200-180gb-sxm-ib-cloud-hypervisor.xml
+
+# Explicit parallelism (default auto-detects all nodes in the pool):
+./apply.sh my-b200-pool b200-180gb-sxm-ib-cloud-hypervisor.xml 4
+```
+
+Watch and read results:
+
+```bash
+kubectl get pods -l app=ib-probe -w
+cat results.txt   # written automatically when apply.sh finishes
+```
+
+Expected on a healthy N-node 8-GPU SKU: `N × 8` `IBHEALTH|...|OK` lines, `N` `NCCLHEALTH|...|OK` lines, exit code 0 from the Job.
 
 ## How HCAs are discovered
 
@@ -86,29 +104,49 @@ Cluster integration test — `all_reduce_perf` across every GPU in the pool. Run
 kubectl apply --server-side -f \
   https://raw.githubusercontent.com/kubeflow/mpi-operator/v0.6.0/deploy/v2beta1/mpi-operator.yaml
 
-# auto-detects replica count from the pool:
-./apply-multinode.sh <pool-label> <topo-filename> [<nccl-ib-list>]
-#   nccl-ib-list defaults to the B200 NDR400 layout (mlx5_5:1,...,mlx5_12:1).
-#   For H200, pass: mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1
+./apply-multinode.sh <pool-label> <nccl-topo-filename> <nccl-ib-list>
+#   nccl-ib-list is required and varies by SKU — see the table below.
+#   replica count auto-detects from the pool.
 
 # Live tail:
 kubectl logs -f -l training.kubeflow.org/job-role=launcher
+```
+
+**NCCL IB allowlist** — comma-separated HCA list with `:1` port suffix, must match your SKU's NDR HCA layout:
+
+| SKU | `<nccl-ib-list>` value |
+|---|---|
+| H200 | `mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1` |
+| B200 | `mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1,mlx5_10:1,mlx5_11:1,mlx5_12:1` |
+
+Pinning the same list to UCX is also handled by the script (without it, UCX auto-picks a non-compute HCA and the test hangs in teardown).
+
+Examples:
+
+```bash
+# H200:
+./apply-multinode.sh my-h200-pool h200-141gb-sxm-ib-cloud-hypervisor.xml \
+  mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1
+
+# B200:
+./apply-multinode.sh my-b200-pool b200-180gb-sxm-ib-cloud-hypervisor.xml \
+  mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1,mlx5_10:1,mlx5_11:1,mlx5_12:1
 ```
 
 Results land in `results-multinode.txt` (gitignored). Healthy busbw target: B200 ~390 GB/s on 4 nodes / ~350 GB/s at scale; H200 ~350 GB/s on 4 nodes. Plateau-by-size with `#wrong = 0` on every row is what you're looking for.
 
 ### At scale (100+ nodes)
 
-No manifest change needed — only env vars:
+No manifest change needed — same args, just env-var bumps:
 
 ```bash
 NCCL_NITERS=5 NCCL_BOOTSTRAP_TIMEOUT_SEC=600 TIMEOUT_SECS=3600 \
-  ./apply-multinode.sh <pool-label> <topo-file>   # WORKER_REPLICAS auto-detects
+  ./apply-multinode.sh <pool-label> <nccl-topo-filename> <nccl-ib-list>
 ```
 
 - `NCCL_NITERS=5` — shorter test (default 20 takes ~50 min at 340 nodes due to per-rank scaling on 32 GB messages)
-- `NCCL_BOOTSTRAP_TIMEOUT_SEC=600` — NCCL bootstrap across 2720 ranks can exceed the 120 s default
-- `TIMEOUT_SECS=3600` — apply-multinode.sh's wait cap (default 1800)
+- `NCCL_BOOTSTRAP_TIMEOUT_SEC=600` — NCCL bootstrap across thousands of ranks can exceed the 120 s default
+- `TIMEOUT_SECS=3600` — `apply-multinode.sh`'s launcher wait cap (default 1800)
 
 `NCCL_IB_LIST` stays the same — per-node HCA layout doesn't change with cluster size.
 

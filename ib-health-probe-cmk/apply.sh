@@ -1,31 +1,45 @@
 #!/usr/bin/env bash
 # Render templates and apply the IB health probe Job to the current kubectl context.
-# By default, waits for the Job to complete and writes results.txt (gitignored).
+# Waits for the Job to complete and writes results.txt (gitignored).
 #
 # Usage:
-#   ./apply.sh [pool-label] [nccl-topo-filename] [parallelism]
+#   ./apply.sh <pool-label> <nccl-topo-filename> [parallelism]
 #
-# Defaults (poc-cluster H200):
-#   pool-label         = slurm-h200-workers
-#   nccl-topo-filename = h200-141gb-sxm-ib-cloud-hypervisor.xml
-#   parallelism        = <auto-detected node count for that pool>
+# Required arguments:
+#   pool-label          value of the crusoe.ai/nodepool.name label on your
+#                       GPU workers. Find with: kubectl get nodes -L crusoe.ai/nodepool.name
+#   nccl-topo-filename  NCCL topology XML filename in /etc/crusoe/nccl_topo/
+#                       on the host. Common values:
+#                         h200-141gb-sxm-ib-cloud-hypervisor.xml
+#                         b200-180gb-sxm-ib-cloud-hypervisor.xml
 #
-# Examples:
-#   ./apply.sh                                                            # H200 defaults
-#   ./apply.sh nodepool-thermal-pipeline-357 b200-180gb-sxm-ib-cloud-hypervisor.xml
-#   NO_WAIT=1 ./apply.sh ...                                              # fire and forget
-#   TIMEOUT_SECS=900 ./apply.sh ...                                       # custom wait timeout
+# Optional:
+#   parallelism         number of nodes to probe (default: all nodes in the pool)
+#
+# Env overrides:
+#   PROBE_IMAGE         default: ghcr.io/crusoecloud/nccl-tests:13.0.1-...
+#   TIMEOUT_SECS        default 600  (Job wait cap)
+#   NO_WAIT=1           submit and exit; don't tail / write results
 
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-POOL_LABEL=${1:-slurm-h200-workers}
-NCCL_TOPO_FILE=${2:-h200-141gb-sxm-ib-cloud-hypervisor.xml}
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <pool-label> <nccl-topo-filename> [parallelism]" >&2
+    echo >&2
+    echo "Discover values on your cluster:" >&2
+    echo "  pool-label:   kubectl get nodes -L crusoe.ai/nodepool.name" >&2
+    echo "  topo XMLs:    kubectl debug node/<one-gpu-node> --image=busybox -- ls /host/etc/crusoe/nccl_topo" >&2
+    exit 1
+fi
+
+POOL_LABEL=$1
+NCCL_TOPO_FILE=$2
 PROBE_IMAGE=${PROBE_IMAGE:-ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1}
 TIMEOUT_SECS=${TIMEOUT_SECS:-600}
 
-# Auto-detect node count
+# Auto-detect node count if not provided
 if [ -n "${3:-}" ]; then
     PARALLELISM=$3
 else
