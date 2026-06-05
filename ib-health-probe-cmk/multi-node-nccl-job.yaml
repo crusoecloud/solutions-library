@@ -1,0 +1,155 @@
+# Multi-node NCCL all_reduce_perf — integration test for IB fabric end-to-end.
+# Pairs with ib-probe-job.yaml (per-node unit test) to give customers both
+# unit-level (per-HCA loopback) and integration-level (cross-node NCCL) checks.
+#
+# Templated via envsubst (rendered by apply-multinode.sh — see README):
+#   ${POOL_LABEL}       e.g. "slurm-h200-workers"
+#   ${NCCL_TOPO_FILE}   e.g. "h200-141gb-sxm-ib-cloud-hypervisor.xml"
+#   ${WORKER_REPLICAS}  e.g. "4"  (= node count to include in the all_reduce ring)
+#   ${TOTAL_GPUS}       = WORKER_REPLICAS * 8
+#   ${PROBE_IMAGE}      same NCCL test image as the unit probe
+#
+# Forked from: ../cmk-nccltests/nccl-b200.yaml
+---
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: nccl-integration
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+            - name: init
+              image: ${PROBE_IMAGE}
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c", "sleep 5"]
+          volumes:
+            - name: nccl-topo
+              hostPath:
+                path: /etc/crusoe/nccl_topo
+                type: Directory
+          containers:
+            - name: launcher
+              image: ${PROBE_IMAGE}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+              env:
+                - name: NCCL_TOPO_FILE
+                  value: /opt/nccl_topo/${NCCL_TOPO_FILE}
+                - name: UCX_RNDV_SCHEME
+                  value: "get_zcopy"
+                - name: UCX_TLS
+                  value: "self,sm,cuda_copy"
+              volumeMounts:
+                - name: nccl-topo
+                  mountPath: /opt/nccl_topo
+              command:
+                - mpirun
+                - --allow-run-as-root
+                - --tag-output
+                - -np
+                - "${TOTAL_GPUS}"
+                - -N
+                - "8"
+                - -bind-to
+                - none
+                - -map-by
+                - slot
+                - -mca
+                - coll_hcoll_enable
+                - "0"
+                - -x
+                - NCCL_IB_PCI_RELAXED_ORDERING=1
+                - -x
+                - NCCL_IB_SPLIT_DATA_ON_QPS=0
+                - -x
+                - NCCL_IB_QPS_PER_CONNECTION=2
+                - -x
+                - NCCL_IB_MERGE_VFS=0
+                - -x
+                # Exclude the Ethernet-layer HCA (mlx5_0 on H200; on B200 the
+                # ethernet HCA is mlx5_4 — adjust if your SKU differs)
+                - NCCL_IB_HCA=^mlx5_0:1
+                - -x
+                - NCCL_TOPO_FILE
+                - -x
+                - PATH
+                - -x
+                - LD_LIBRARY_PATH
+                - -x
+                - NCCL_DEBUG=INFO
+                - -x
+                - NCCL_NVLS_ENABLE=1
+                - -x
+                - NCCL_IB_SL=1
+                - /opt/nccl-tests/build/all_reduce_perf
+                - -b
+                - "2G"
+                - -e
+                - "32G"
+                - -f
+                - "2"
+                - -t
+                - "1"
+                - -g
+                - "1"
+                - -c
+                - "1"
+                - -n
+                - "20"
+    Worker:
+      replicas: ${WORKER_REPLICAS}
+      template:
+        spec:
+          restartPolicy: OnFailure
+          runtimeClassName: nvidia
+          nodeSelector:
+            crusoe.ai/nodepool.name: ${POOL_LABEL}
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
+                sizeLimit: 64Gi
+            - name: nccl-topo
+              hostPath:
+                path: /etc/crusoe/nccl_topo
+                type: Directory
+          containers:
+            - name: worker
+              image: ${PROBE_IMAGE}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+              env:
+                - name: NCCL_TOPO_FILE
+                  value: /opt/nccl_topo/${NCCL_TOPO_FILE}
+                - name: NCCL_DEBUG
+                  value: WARN
+                - name: UCX_RNDV_SCHEME
+                  value: "get_zcopy"
+                - name: UCX_TLS
+                  value: "self,sm,cuda_copy"
+              volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm
+                - name: nccl-topo
+                  mountPath: /opt/nccl_topo
+              resources:
+                limits:
+                  nvidia.com/gpu: 8
+                  nvidia.com/hostdev: 8
+                  memory: 128000Mi
+                requests:
+                  nvidia.com/gpu: 8
+                  nvidia.com/hostdev: 8
+                  memory: 128000Mi
