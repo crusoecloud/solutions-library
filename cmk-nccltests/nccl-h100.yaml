@@ -76,6 +76,8 @@ spec:
             - NCCL_NVLS_ENABLE=1
             - -x
             - NCCL_IB_SL=1
+            - -x
+            - NCCL_IBEXT_DISABLE=1
             - /opt/nccl-tests/build/all_reduce_perf
             - -b
             - "2G"
@@ -89,6 +91,8 @@ spec:
             - "1"
             - -c
             - "1"
+            - -w # Warmup iterations - typically 1, but should be increased for larger clusters
+            - "50"
             - -n
             - "100"
     Worker:
@@ -97,6 +101,10 @@ spec:
         spec:
           restartPolicy: OnFailure
           runtimeClassName: nvidia
+          tolerations:
+          - key: "nvidia.com/gpu"
+            operator: "Exists"
+            effect: "NoSchedule"
           volumes:
           - name: dshm
             emptyDir:
