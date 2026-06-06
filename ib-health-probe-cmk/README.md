@@ -196,7 +196,7 @@ INFO|<host>|<message>
 ERROR|<host>|<message>
 ```
 
-Matches the convention used by the Solutions Engineering `/ib-health-check` skill (sysfs counter probe) so reports from both tools compose.
+Structured for easy grep/awk consumption — pipe `kubectl logs -l app=ib-probe --tail=-1` through `parse-results.sh` for the per-host summary, or extract individual fields yourself with awk on the `|` separator.
 
 ## Files
 
@@ -216,10 +216,9 @@ ib-health-probe-cmk/
 - **Multi-node binary-search isolation.** If the multi-node NCCL fails, you currently have to bisect manually. Planned for v2 as a driver that runs all-pairs `ib_write_bw` between nodes and binary-searches the failing partition.
 - **Recurring/scheduled mode.** v1 is on-demand. Wrapping in a CronJob is straightforward if you want it.
 - **Prometheus metrics emit.** Output is to pod logs. For continuous monitoring use the existing `grafana-cmk` solution which scrapes the same sysfs counters.
-- **PHY-level diagnostics** (BER, FEC margin) — those need `mlxlink` and root access. Use the Ansible-based `/ib-health-check` skill on bare metal for that.
+- **PHY-level diagnostics** (BER, FEC margin) — those need `mlxlink` and root access on the bare-metal host, which a containerized probe can't reach.
 
 ## Companion tools
 
-- **`/ib-health-check`** (Solutions Engineering skill) — sysfs counter read + NVLink check. Read-only, no traffic. Complementary to this probe: the skill catches accumulating errors that have already occurred; this probe catches degradation that only shows under live load.
 - **`../cmk-nccltests/nccl-b200.yaml`** — the multi-node MPIJob that `multi-node-nccl-job.yaml` is forked from.
 - **`../grafana-cmk/`** — continuous monitoring stack if you want trend data.
