@@ -10,6 +10,7 @@
 #   IB_DURATION       default 15   — ib_write_bw runtime (seconds) per direction
 #   IB_MSG_SIZE       default 8388608 (8 MiB) — message size for bandwidth test
 #   NCCL_THRESHOLD    default 350  — single-node all_reduce_perf busbw floor (GB/s)
+#   IB_EXPECTED_HCAS  default 8    — expected number of active top-rate HCAs; 0 = skip count check
 #   SKIP_NCCL         default 0    — set to 1 to skip the NCCL step
 #   SKIP_APT          default 0    — set to 1 if perftest+numactl are already baked in
 
@@ -17,6 +18,7 @@ set -uo pipefail
 
 HOST=$(hostname -s)
 THRESHOLD_PCT=${IB_THRESHOLD_PCT:-90}
+EXPECTED_HCAS=${IB_EXPECTED_HCAS:-8}
 DURATION=${IB_DURATION:-15}
 MSG_SIZE=${IB_MSG_SIZE:-8388608}
 NCCL_THRESHOLD=${NCCL_THRESHOLD:-350}
@@ -66,7 +68,7 @@ MAX_RATE=0
 for h in "${HCAS[@]}"; do
     [ "${HCA_RATE[$h]}" -gt "$MAX_RATE" ] && MAX_RATE=${HCA_RATE[$h]}
 done
-declare -a HCAS_FILTERED HCAS_DROPPED
+declare -a HCAS_FILTERED HCAS_DROPPED=()
 for h in "${HCAS[@]}"; do
     if [ "${HCA_RATE[$h]}" -eq "$MAX_RATE" ]; then
         HCAS_FILTERED+=("$h")
@@ -75,6 +77,14 @@ for h in "${HCAS[@]}"; do
     fi
 done
 HCAS=("${HCAS_FILTERED[@]}")
+
+# Initialize here so the HCA count check and NCCL block below can both set it.
+ANY_FAIL=0
+
+if [ "$EXPECTED_HCAS" -gt 0 ] && [ "${#HCAS[@]}" -ne "$EXPECTED_HCAS" ]; then
+    fail "HCA count mismatch: found ${#HCAS[@]} active top-rate HCAs, expected ${EXPECTED_HCAS}"
+    ANY_FAIL=1
+fi
 
 log "discovered ${#HCAS[@]} active IB HCAs at top rate (${MAX_RATE} Gbps): ${HCAS[*]}"
 for h in "${HCAS[@]}"; do
@@ -107,10 +117,6 @@ for numa in "${!NUMA_GROUPS[@]}"; do
 done
 
 log "discovered ${#PAIRS[@]} loopback pairs"
-
-# Initialize fail flag here, BEFORE the NCCL block, so an NCCL failure isn't
-# clobbered by the IB section's initialization later.
-ANY_FAIL=0
 
 # ---------- 3. Single-node NCCL FIRST ----------
 # Run NCCL before apt-get install, because installing perftest triggers ldconfig

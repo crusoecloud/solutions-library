@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Render templates and apply the IB health probe Job to the current kubectl context.
-# Waits for the Job to complete and writes results.txt (gitignored).
+# Waits for the Job to complete and writes a timestamped results file (gitignored).
 #
 # Usage:
 #   ./apply.sh <pool-label> <nccl-topo-filename> [parallelism]
@@ -17,7 +17,9 @@
 #   parallelism         number of nodes to probe (default: all nodes in the pool)
 #
 # Env overrides:
-#   PROBE_IMAGE         default: ghcr.io/crusoecloud/nccl-tests:13.0.1-...
+#   PROBE_IMAGE is auto-selected from the pool label:
+#       h100/h200 pools → nccl-tests:12.8.1-ubuntu24.04-nccl-2.26.5-1  (CUDA 12.8)
+#       all other pools → nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1  (CUDA 13.0)
 #   TIMEOUT_SECS        default 600  (Job wait cap)
 #   NO_WAIT=1           submit and exit; don't tail / write results
 
@@ -36,7 +38,14 @@ fi
 
 POOL_LABEL=$1
 NCCL_TOPO_FILE=$2
-PROBE_IMAGE=${PROBE_IMAGE:-ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1}
+if [ -z "${PROBE_IMAGE:-}" ]; then
+    if echo "$POOL_LABEL" | grep -qiE 'h100|h200'; then
+        PROBE_IMAGE=ghcr.io/crusoecloud/nccl-tests:12.8.1-ubuntu24.04-nccl-2.26.5-1
+    else
+        PROBE_IMAGE=ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1
+    fi
+fi
+OUTPUT_FILE=${OUTPUT_FILE:-results-$(date -u +%Y%m%d-%H%M%S).txt}
 TIMEOUT_SECS=${TIMEOUT_SECS:-600}
 
 # Auto-detect node count if not provided
@@ -104,7 +113,7 @@ done
 
 # backoffLimit=0 + per-node failure → Job marked Failed as soon as ONE pod exits 1.
 # Other pods may still be pulling images / running. Wait for ALL pods to reach a
-# terminal phase before collecting logs, so results.txt covers every node.
+# terminal phase before collecting logs, so the output file covers every node.
 echo
 echo ">>> waiting for all $PARALLELISM pods to reach terminal phase ..."
 PHASE_WAIT_DEADLINE=$(( $(date +%s) + 180 ))
@@ -118,7 +127,7 @@ while [ $(date +%s) -lt "$PHASE_WAIT_DEADLINE" ]; do
 done
 
 echo
-echo ">>> writing results.txt"
+echo ">>> writing $OUTPUT_FILE"
 
 # Capture logs once so parse-results.sh and the raw dump see the same data.
 RAW_LOGS=$(kubectl logs -l app=ib-probe --tail=-1 2>&1)
@@ -132,7 +141,7 @@ RAW_LOGS=$(kubectl logs -l app=ib-probe --tail=-1 2>&1)
     echo "# image:        $PROBE_IMAGE"
     echo "# generated:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo
-    echo "$RAW_LOGS" | ./parse-results.sh
+    echo "$RAW_LOGS" | ./parse-results.sh || true
     echo
     echo "## Raw per-pod output (for debugging)"
     echo
@@ -141,16 +150,19 @@ RAW_LOGS=$(kubectl logs -l app=ib-probe --tail=-1 2>&1)
         kubectl logs "$pod" 2>&1
         echo
     done
-} > results.txt
+} > "$OUTPUT_FILE"
 
-# Re-run parse-results.sh to get its exit code (above runs inside the heredoc subshell)
+# Re-run parse-results.sh to get its exit code (above runs inside the heredoc subshell).
+# Disable set -e locally so a nonzero exit doesn't abort before we capture it.
+set +e
 echo "$RAW_LOGS" | ./parse-results.sh >/dev/null 2>&1
-HEALTH_OK=$?
+HEALTH_OK=${PIPESTATUS[1]}
+set -e
 
-echo ">>> results.txt written ($(wc -l < results.txt) lines)"
+echo ">>> $OUTPUT_FILE written ($(wc -l < "$OUTPUT_FILE") lines)"
 echo
 echo "--- summary ---"
-head -60 results.txt
+head -60 "$OUTPUT_FILE"
 
 # Exit nonzero if EITHER the Job didn't reach a clean terminal state OR the
 # parse step found health failures. Lets CI/scripts detect "real" problems.

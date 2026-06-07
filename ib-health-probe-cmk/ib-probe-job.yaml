@@ -76,6 +76,8 @@ spec:
           env:
             - name: NCCL_TOPO_FILE
               value: /opt/nccl_topo/${NCCL_TOPO_FILE}
+            - name: IB_EXPECTED_HCAS
+              value: "8"
             - name: IB_THRESHOLD_PCT
               value: "90"
             - name: IB_DURATION
