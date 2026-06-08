@@ -45,6 +45,7 @@ if [ -z "${PROBE_IMAGE:-}" ]; then
         PROBE_IMAGE=ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1
     fi
 fi
+DCGM_LEVEL=${DCGM_LEVEL:-2}
 OUTPUT_FILE=${OUTPUT_FILE:-results-$(date -u +%Y%m%d-%H%M%S).txt}
 TIMEOUT_SECS=${TIMEOUT_SECS:-600}
 
@@ -75,7 +76,7 @@ kubectl delete configmap ib-probe-script --ignore-not-found 2>/dev/null
 
 kubectl create configmap ib-probe-script --from-file=probe.sh=probe.sh
 
-export POOL_LABEL NCCL_TOPO_FILE PARALLELISM PROBE_IMAGE
+export POOL_LABEL NCCL_TOPO_FILE PARALLELISM PROBE_IMAGE DCGM_LEVEL
 envsubst < ib-probe-job.yaml | kubectl apply -f -
 
 if [ "${NO_WAIT:-0}" = "1" ]; then

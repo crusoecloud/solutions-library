@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# IB Health Probe — per-HCA loopback bandwidth + single-node NCCL.
+# IB Health Probe — per-HCA loopback bandwidth + single-node NCCL + DCGM diagnostics.
 # Designed to be SKU-agnostic: discovers HCAs at runtime, infers line rate from
 # sysfs, groups by NUMA, pairs within group, and exercises each HCA as both
 # endpoint roles. Output is pipe-delimited so it can be grepped out of
@@ -11,6 +11,7 @@
 #   IB_MSG_SIZE       default 8388608 (8 MiB) — message size for bandwidth test
 #   NCCL_THRESHOLD    default 350  — single-node all_reduce_perf busbw floor (GB/s)
 #   IB_EXPECTED_HCAS  default 8    — expected number of active top-rate HCAs; 0 = skip count check
+#   DCGM_LEVEL        default 2    — dcgmi diag level (1=quick, 2=medium, 3=extended); 0=skip
 #   SKIP_NCCL         default 0    — set to 1 to skip the NCCL step
 #   SKIP_APT          default 0    — set to 1 if perftest+numactl are already baked in
 
@@ -22,6 +23,7 @@ EXPECTED_HCAS=${IB_EXPECTED_HCAS:-8}
 DURATION=${IB_DURATION:-15}
 MSG_SIZE=${IB_MSG_SIZE:-8388608}
 NCCL_THRESHOLD=${NCCL_THRESHOLD:-350}
+DCGM_LEVEL=${DCGM_LEVEL:-2}
 SKIP_NCCL=${SKIP_NCCL:-0}
 SKIP_APT=${SKIP_APT:-0}
 
@@ -185,6 +187,8 @@ if [ "$SKIP_NCCL" != "1" ] && [ -x /opt/nccl-tests/build/all_reduce_perf ]; then
                 nccl_status="FAIL: NVSwitch Fabric Manager not ready (fabric.state=${fab_state:-?}); run 'systemctl restart nvidia-fabricmanager' on host"
             elif grep -q 'driver version is insufficient' "$nccl_log" 2>/dev/null; then
                 nccl_status="FAIL: CUDA driver/runtime version mismatch (ldconfig disturbed by apt? probe.sh must run NCCL before apt install)"
+            elif grep -qiE 'Cuda failure 2|out of memory' "$nccl_log" 2>/dev/null; then
+                nccl_status="FAIL: rc=$nccl_rc CUDA out of memory (another workload may be holding GPU memory)"
             elif grep -qE 'NCCL.*error|Connection refused|peer.*not found' "$nccl_log" 2>/dev/null; then
                 nccl_status="FAIL: rc=$nccl_rc NCCL communication error"
             else
@@ -201,7 +205,32 @@ if [ "$SKIP_NCCL" != "1" ] && [ -x /opt/nccl-tests/build/all_reduce_perf ]; then
 fi
 # NCCLHEALTH line emitted at end of summary, after IB tests, for ordering consistency.
 
-# ---------- 4. Install perftest + numactl if missing ----------
+# ---------- 4. DCGM diagnostics ----------
+dcgm_status="SKIPPED"
+if [ "$DCGM_LEVEL" = "0" ]; then
+    dcgm_status="SKIPPED"
+elif ! command -v dcgmi >/dev/null 2>&1; then
+    log "dcgmi not found — skipping DCGM check (set DCGM_LEVEL=0 to suppress this message)"
+    dcgm_status="SKIPPED: dcgmi not found"
+else
+    log "running dcgmi diag -r $DCGM_LEVEL"
+    DCGM_TMPDIR=$(mktemp -d)
+    dcgm_log="$DCGM_TMPDIR/dcgm.log"
+    dcgmi diag -r "$DCGM_LEVEL" >"$dcgm_log" 2>&1
+    dcgm_rc=$?
+    if [ "$dcgm_rc" = "0" ]; then
+        dcgm_status="OK"
+    else
+        dcgm_status="FAIL: rc=$dcgm_rc"
+        ANY_FAIL=1
+    fi
+    log "DCGM diag output (rc=$dcgm_rc):"
+    while IFS= read -r line; do log "  $line"; done < "$dcgm_log"
+    rm -rf "$DCGM_TMPDIR"
+fi
+printf "DCGMHEALTH|%s|level=%s|%s\n" "$HOST" "$DCGM_LEVEL" "$dcgm_status"
+
+# ---------- 5. Install perftest + numactl if missing ----------
 # (deferred until after NCCL because it disturbs the CUDA stack)
 if [ "$SKIP_APT" != "1" ] && { ! command -v ib_write_bw >/dev/null 2>&1 || ! command -v numactl >/dev/null 2>&1; }; then
     log "installing perftest + numactl (post-NCCL, one-time per pod)"
@@ -213,7 +242,7 @@ if [ "$SKIP_APT" != "1" ] && { ! command -v ib_write_bw >/dev/null 2>&1 || ! com
     fi
 fi
 
-# ---------- 5. Per-pair ib_write_bw ----------
+# ---------- 6. Per-pair ib_write_bw ----------
 RESULTS_DIR=$(mktemp -d)
 PORT_BASE=18515
 
@@ -293,10 +322,10 @@ for numa in "${!NUMA_QUEUE[@]}"; do
 done
 for p in "${PIDS[@]}"; do wait "$p"; done
 
-# ---------- 6. Emit NCCL result (collected earlier, before apt) ----------
+# ---------- 7. Emit NCCL result (collected earlier, before apt) ----------
 printf "NCCLHEALTH|%s|%s|%s|%s\n" "$HOST" "$ngpu" "$nccl_busbw" "$nccl_status"
 
-# ---------- 7. Summary ----------
+# ---------- 8. Summary ----------
 if [ "$ANY_FAIL" = "0" ]; then
     printf "SUMMARY|%s|HEALTHY|hcas=%d|pairs=%d\n" "$HOST" "${#HCAS[@]}" "${#PAIRS[@]}"
 else
