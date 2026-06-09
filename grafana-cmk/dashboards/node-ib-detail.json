@@ -1,7 +1,7 @@
 {
   "uid": "crusoe-ib-node",
   "title": "InfiniBand Node View",
-  "description": "Per-HCA InfiniBand detail for selected nodes. All panels use [1h] rate windows due to the slow IB scrape cadence; see README for details.",
+  "description": "Per-HCA InfiniBand detail for selected nodes. Panels use 5-min display intervals with 5-min last_over_time and 10-min rate/increase windows.",
   "tags": [
     "crusoe",
     "infiniband",
@@ -104,11 +104,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8) or vector(0)",
+          "expr": "(sum(rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])) / 8) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 2,
@@ -155,11 +156,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8) or vector(0)",
+          "expr": "(sum(rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])) / 8) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 3,
@@ -210,11 +212,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]))) or vector(0)",
+          "expr": "(sum(increase(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m]))) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 4,
@@ -265,11 +268,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]))) or vector(0)",
+          "expr": "(sum(increase(crusoe_ib_local_link_integrity_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m]))) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 5,
@@ -310,10 +314,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8",
+          "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])) / 8",
           "legendFormat": "{{vm_name}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 6,
@@ -354,10 +359,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])) / 8",
+          "expr": "sum by (vm_name) (rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])) / 8",
           "legendFormat": "{{vm_name}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 7,
@@ -398,10 +404,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]) / 8",
+          "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m]) / 8",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 8,
@@ -442,10 +449,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]) / 8",
+          "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m]) / 8",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 9,
@@ -486,10 +494,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]) / 1e9 / ignoring(gig_bit_per_sec) last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]) * 100",
+          "expr": "rate(crusoe_ib_port_throughput_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m]) / 1e9 / ignoring(gig_bit_per_sec) last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[5m]) * 100",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 10,
@@ -530,10 +539,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]) / 1e9 / ignoring(gig_bit_per_sec) last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h]) * 100",
+          "expr": "rate(crusoe_ib_port_throughput_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m]) / 1e9 / ignoring(gig_bit_per_sec) last_over_time(crusoe_ib_port_line_rate{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[5m]) * 100",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 11,
@@ -574,10 +584,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_packets_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
+          "expr": "rate(crusoe_ib_port_packets_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 12,
@@ -618,10 +629,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_packets_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
+          "expr": "rate(crusoe_ib_port_packets_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 13,
@@ -662,10 +674,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
+          "expr": "rate(crusoe_ib_port_error_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     },
     {
       "id": 14,
@@ -706,10 +719,11 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[1h])",
+          "expr": "rate(crusoe_ib_port_tx_wait{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[10m])",
           "legendFormat": "{{vm_name}} {{hca_number}}"
         }
-      ]
+      ],
+      "interval": "5m"
     }
   ]
 }
