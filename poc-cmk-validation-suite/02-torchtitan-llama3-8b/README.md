@@ -15,11 +15,11 @@ yet, run that first — 5 minutes saves you 30 if the IB stack is misconfigured.
 
 ## Prerequisites
 
-- Kubeflow Training Operator v1.8.1 (PyTorchJob CRD):
-  ```bash
-  kubectl apply -k "github.com/kubeflow/training-operator/manifests/overlays/standalone?ref=v1.8.1"
-  kubectl -n kubeflow wait --for=condition=Available deploy/training-operator --timeout=120s
-  ```
+- Kubeflow Training Operator v1.8.1 (PyTorchJob CRD) — install via
+  `../00-prerequisites/install-training-operator.sh`. **Do not use the upstream
+  `kubectl apply -k` directly** unless you understand the MPIJob CRD conflict
+  it causes when the MPI Operator is also installed. See
+  `../00-prerequisites/README.md` for details.
 - A Hugging Face token with **approved access** to `meta-llama/Llama-3.1-8B`
   (request access at <https://huggingface.co/meta-llama/Llama-3.1-8B>, then create a
   Read token at <https://huggingface.co/settings/tokens>)

@@ -31,11 +31,7 @@ The cluster must have:
   `nvidia_network_operator`, `crusoe_csi`) — these come from the cluster's `--add-ons` list
   at create time
 - **Kubeflow MPI Operator v0.6.0** — installed by `00-prerequisites/install-mpi-operator.sh`
-- **Kubeflow Training Operator v1.8.1** (for PyTorchJob) — installed once via:
-  ```bash
-  kubectl apply -k "github.com/kubeflow/training-operator/manifests/overlays/standalone?ref=v1.8.1"
-  kubectl -n kubeflow wait --for=condition=Available deploy/training-operator --timeout=120s
-  ```
+- **Kubeflow Training Operator v1.8.1** (for PyTorchJob) — installed by `00-prerequisites/install-training-operator.sh`. The script also patches the deployment to disable the bundled MPIJob controller, which otherwise conflicts with the MPI Operator's v2beta1 CRD and causes the operator to CrashLoopBackOff. See `00-prerequisites/README.md` for the full story.
 
 Per-SKU configuration (NCCL_IB_HCA, NCCL_TOPO_FILE) is already encoded in each manifest — no
 edits required for the supported SKUs.
