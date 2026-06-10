@@ -20,6 +20,13 @@
 #   PROBE_IMAGE is auto-selected from the pool label:
 #       h100/h200 pools → nccl-tests:12.8.1-ubuntu24.04-nccl-2.26.5-1  (CUDA 12.8)
 #       all other pools → nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1  (CUDA 13.0)
+#   DCGM_LEVEL          default 0 — skip dcgmi diag. The dcgmi binary bundled
+#                       in the current Crusoe nccl-tests images is built
+#                       against a CUDA version that doesn't match the runtime,
+#                       so every diag returns rc=226 / "Detected unsupported
+#                       Cuda version". Set to 1 (quick), 2 (medium), or
+#                       3 (extended) on clusters using an image where dcgmi
+#                       and CUDA are version-aligned.
 #   TIMEOUT_SECS        default 600  (Job wait cap)
 #   NO_WAIT=1           submit and exit; don't tail / write results
 
@@ -45,7 +52,7 @@ if [ -z "${PROBE_IMAGE:-}" ]; then
         PROBE_IMAGE=ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1
     fi
 fi
-DCGM_LEVEL=${DCGM_LEVEL:-2}
+DCGM_LEVEL=${DCGM_LEVEL:-0}
 OUTPUT_FILE=${OUTPUT_FILE:-results-$(date -u +%Y%m%d-%H%M%S).txt}
 TIMEOUT_SECS=${TIMEOUT_SECS:-600}
 
