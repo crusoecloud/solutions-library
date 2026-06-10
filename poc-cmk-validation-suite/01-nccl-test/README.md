@@ -72,6 +72,49 @@ Reference run on 2× h200-141gb-sxm-ib.8x in `eu-iceland1-a` (2026-05-14):
 (`Avg bus bandwidth` is averaged across the full size range and is pulled down by the
 latency-dominated small sizes — focus on the large-size busbw row.)
 
+## Scaling to more nodes
+
+The committed manifests are configured for **2 worker nodes (16 GPUs)** to match the
+suite's H200 baseline. To run at larger scale (4, 8, etc. nodes), you must update
+**three values together** — they must be kept in sync:
+
+| Value | Where | Default | Example for 8 nodes |
+|---|---|---|---|
+| Worker replicas | `Worker.replicas:` | `2` | `8` |
+| mpirun `-np` (total processes) | mpirun args list | `"16"` (2 × 8 GPU) | `"64"` (8 × 8 GPU) |
+| Init-container DNS wait count | `N=` in initContainer command | `2` | `8` |
+
+If you forget the third one, the launcher's initContainer will exit early after
+only waiting for the first N=2 workers, and mpirun will fail when it tries to
+ssh to the unwaited workers.
+
+### One-liner to apply at scale
+
+```bash
+# Replace 8 with your desired worker count
+N=8
+sed -e "s|      replicas: 2$|      replicas: ${N}|" \
+    -e "s|            - \"16\"|            - \"$((N*8))\"|" \
+    -e "s|              N=2|              N=${N}|" \
+  nccl-test-h200.yaml \
+| kubectl -n nccl-test create -f -
+```
+
+### Why the DNS-wait initContainer matters at scale
+
+The launcher container is created at roughly the same time as the worker pods.
+At small scale (2 workers) all pods become Ready within seconds. At larger scale
+(8+ workers) — especially when **cluster-autoscaler** needs to provision new
+nodes — workers may take 5–15 minutes to all reach Ready.
+
+Without the initContainer, the launcher's mpirun starts immediately, tries to
+ssh to workers whose DNS records don't exist yet, fails fast, the Job retries,
+hits BackoffLimit before workers come online, and the whole job is marked Failed.
+
+The initContainer in these manifests blocks until all N workers are
+DNS-resolvable and stable for 10s. It costs ~5 seconds at 2-node scale
+(trivial) and unblocks 8+ node scale (essential).
+
 ## Cleanup
 
 ```bash

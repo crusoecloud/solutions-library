@@ -1,0 +1,253 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: torchtitan-llama3-8b-config
+data:
+  llama3_8B.toml: |
+    [job]
+    dump_folder = "/outputs"
+    description = "Llama 3.1 8B training on Crusoe Cloud"
+
+    [profiling]
+    enable_profiling = true
+    save_traces_folder = "/outputs/profile_trace"
+    profile_freq = 100
+
+    [metrics]
+    log_freq = 10
+    enable_tensorboard = true
+    save_tb_folder = "/outputs/tb"
+
+    [model]
+    name = "llama3"
+    flavor = "8B"
+    # Tokenizer assets are built into the Docker image.
+    hf_assets_path = "/workspace/torchtitan/assets/hf/Llama-3.1-8B"
+
+    [optimizer]
+    name = "AdamW"
+    lr = 3e-4
+    eps = 1e-8
+
+    [lr_scheduler]
+    warmup_steps = 200
+
+    [training]
+    local_batch_size = 2
+    seq_len = 8192
+    max_norm = 1.0
+    steps = 1000
+    dataset = "c4"
+
+    [parallelism]
+    data_parallel_replicate_degree = 1
+    # -1 means shard across all 16 GPUs (16-way FSDP across both nodes).
+    data_parallel_shard_degree = -1
+    tensor_parallel_degree = 1
+    pipeline_parallel_degree = 1
+    context_parallel_degree = 1
+
+    [checkpoint]
+    enable = true
+    folder = "/outputs/checkpoint"
+    interval = 500
+    last_save_model_only = true
+    export_dtype = "float32"
+    # Change async_mode to "disabled" if async checkpointing causes OOM crashes
+    async_mode = "async"
+
+    [compile]
+    enable = true
+    components = ["model", "loss"]
+
+    [activation_checkpoint]
+    mode = "none"
+    selective_ac_option = "op"
+
+    [quantize.linear.float8]
+    enable_fsdp_float8_all_gather = false
+    precompute_float8_dynamic_scale_for_fsdp = false
+    filter_fqns = ["output"]
+
+---
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: torchtitan-llama3-8b-streaming
+spec:
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:latest
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            workingDir: /workspace/torchtitan
+            command:
+            - /bin/bash
+            - -c
+            - |
+              torchrun \
+                --nproc_per_node=8 \
+                --nnodes=2 \
+                --node_rank=${RANK} \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                --rdzv_backend=c10d \
+                -m torchtitan.train \
+                --job.config_file /config/llama3_8B.toml
+            env:
+            - name: PYTORCH_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            # H200: exclude mlx5_0 (admin/IPoIB), use the 8 remaining IB HCAs
+            - name: NCCL_IB_HCA
+              value: "^mlx5_0"
+            # Aligned with Crusoe's known-working Slurm script (2 MB ring buffer)
+            - name: NCCL_BUFFSIZE
+              value: "2097152"
+            # NOTE: NCCL_IB_GID_INDEX and NCCL_NET_GDR_LEVEL deliberately omitted —
+            # the GID_INDEX=3 default in the template is for RoCE v2, not native IB.
+            # The proven Crusoe Slurm config sets neither; we follow that.
+            # HF token only needed for streaming-data variant (downloads c4 from Hugging Face).
+            - name: HF_TOKEN
+              value: "<YOUR HF TOKEN HERE>"
+            # H200 NCCL topology file (verified present on Crusoe icat H200 nodes)
+            - name: NCCL_TOPO_FILE
+              value: /opt/nccl_topo/h100-80gb-sxm-ib-cloud-hypervisor.xml
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+              requests:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+            volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: outputs
+              mountPath: /outputs
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            - name: infiniband
+              mountPath: /dev/infiniband
+          volumes:
+          - name: config
+            configMap:
+              name: torchtitan-llama3-8b-config
+          - name: outputs
+            emptyDir: {}
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "20Gi"
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          - name: infiniband
+            hostPath:
+              path: /dev/infiniband
+              type: Directory
+    Worker:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:latest
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            workingDir: /workspace/torchtitan
+            command:
+            - /bin/bash
+            - -c
+            - |
+              torchrun \
+                --nproc_per_node=8 \
+                --nnodes=2 \
+                --node_rank=${RANK} \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                --rdzv_backend=c10d \
+                -m torchtitan.train \
+                --job.config_file /config/llama3_8B.toml
+            env:
+            - name: PYTORCH_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            # H200: exclude mlx5_0 (admin/IPoIB), use the 8 remaining IB HCAs
+            - name: NCCL_IB_HCA
+              value: "^mlx5_0"
+            # Aligned with Crusoe's known-working Slurm script (2 MB ring buffer)
+            - name: NCCL_BUFFSIZE
+              value: "2097152"
+            # NOTE: NCCL_IB_GID_INDEX and NCCL_NET_GDR_LEVEL deliberately omitted —
+            # the GID_INDEX=3 default in the template is for RoCE v2, not native IB.
+            # The proven Crusoe Slurm config sets neither; we follow that.
+            # HF token only needed for streaming-data variant (downloads c4 from Hugging Face).
+            - name: HF_TOKEN
+              value: "<YOUR HF TOKEN HERE>"
+            # H200 NCCL topology file (verified present on Crusoe icat H200 nodes)
+            - name: NCCL_TOPO_FILE
+              value: /opt/nccl_topo/h100-80gb-sxm-ib-cloud-hypervisor.xml
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+              requests:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+            volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: outputs
+              mountPath: /outputs
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            - name: infiniband
+              mountPath: /dev/infiniband
+          volumes:
+          - name: config
+            configMap:
+              name: torchtitan-llama3-8b-config
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          - name: infiniband
+            hostPath:
+              path: /dev/infiniband
+              type: Directory
+          - name: outputs
+            emptyDir: {}
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "20Gi"

@@ -13,10 +13,47 @@ spec:
         spec:
           restartPolicy: OnFailure
           initContainers:
+          # The init container waits for all worker pods' DNS records to be
+          # resolvable AND stable for 10s before yielding to the main mpirun.
+          # Without this, the launcher races ahead of slow worker creation
+          # (especially during cluster-autoscaler scale-up at larger node counts),
+          # mpirun ssh fails to resolve missing workers, and the launcher hits
+          # BackoffLimitExceeded before workers come online.
+          # ────────────────────────────────────────────────────────────────────
+          # IMPORTANT: when scaling Worker.replicas, you MUST also update N
+          # below AND the mpirun -np value to keep all three in sync. See
+          # README.md "Scaling to more nodes" for the one-liner.
           - image: public.ecr.aws/hpc-cloud/nccl-tests:latest
             imagePullPolicy: IfNotPresent
             name: init
-            command: ["sh", "-c", "sleep 5"]
+            command:
+            - sh
+            - -c
+            - |-
+              N=2
+              SVC=nccl-tests-gdr-16-h100
+              while true; do
+                for i in $(seq 0 $((N-1))); do
+                  peer="${SVC}-worker-${i}.${SVC}"
+                  until getent hosts "$peer" > /dev/null 2>&1; do
+                    echo "waiting for $peer..."; sleep 5
+                  done
+                  echo "$peer resolved"
+                done
+                ok=1
+                for _ in $(seq 1 10); do
+                  for i in $(seq 0 $((N-1))); do
+                    peer="${SVC}-worker-${i}.${SVC}"
+                    if \! getent hosts "$peer" > /dev/null 2>&1; then
+                      echo "$peer dropped during stability check; re-discovering..."
+                      ok=0; break 2
+                    fi
+                  done
+                  sleep 1
+                done
+                [ "$ok" = "1" ] && break
+              done
+              echo "All $N workers DNS-stable; launcher can proceed"
           volumes:
           - name: nccl-topo
             hostPath:
