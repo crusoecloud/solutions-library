@@ -61,8 +61,12 @@ data:
     enable = true
     components = ["model", "loss"]
 
+    # H100 80GB has less HBM headroom than H200 141GB. With batch=2 + torch.compile
+    # active, raw activations + compile-graph overhead push past 80GB at scale.
+    # Selective AC drops re-computable activations to save ~25 GB per GPU at
+    # the cost of ~5 percentage points of MFU. Required on H100 at this scale.
     [activation_checkpoint]
-    mode = "none"
+    mode = "selective"
     selective_ac_option = "op"
 
     [quantize.linear.float8]
