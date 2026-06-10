@@ -25,6 +25,7 @@
 #   NCCL_BOOTSTRAP_TIMEOUT_SEC  default 120 (bump to 600 at 340 nodes)
 #   NO_WAIT=1                   submit and exit; don't tail / write results
 #   TIMEOUT_SECS                default 1800 (launcher wait cap; raise at large scale)
+#   SKIP_PREFLIGHT=1            skip the allocatable GPU/hostdev check (default: enabled)
 #
 # Prereqs:
 #   - MPI Operator installed:
@@ -55,6 +56,7 @@ PROBE_IMAGE=${PROBE_IMAGE:-ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-ncc
 NCCL_NITERS=${NCCL_NITERS:-20}
 NCCL_BOOTSTRAP_TIMEOUT_SEC=${NCCL_BOOTSTRAP_TIMEOUT_SEC:-120}
 TIMEOUT_SECS=${TIMEOUT_SECS:-1800}
+SKIP_PREFLIGHT=${SKIP_PREFLIGHT:-0}
 
 if [ -z "$WORKER_REPLICAS" ]; then
     WORKER_REPLICAS=$(kubectl get nodes \
@@ -83,6 +85,27 @@ if ! kubectl get crd mpijobs.kubeflow.org >/dev/null 2>&1; then
     exit 1
 fi
 
+# ---------- preflight: every selected node must have 8 GPUs + 8 hostdevs ----------
+if [ "$SKIP_PREFLIGHT" != "1" ]; then
+    echo
+    echo ">>> preflight: checking allocatable nvidia.com/gpu and nvidia.com/hostdev per node ..."
+    FLAGGED=$(kubectl get nodes -l "crusoe.ai/nodepool.name=${POOL_LABEL}" -o json 2>/dev/null \
+      | jq -r '.items[]
+          | select(
+              ((.status.allocatable["nvidia.com/gpu"]     // "0") | tonumber) < 8
+              or ((.status.allocatable["nvidia.com/hostdev"] // "0") | tonumber) < 8
+            )
+          | "  FLAG \(.metadata.name)  gpu=\(.status.allocatable["nvidia.com/gpu"] // "0")  hostdev=\(.status.allocatable["nvidia.com/hostdev"] // "0")"')
+    if [ -n "$FLAGGED" ]; then
+        echo "$FLAGGED" >&2
+        echo >&2
+        echo "ERROR: at least one node in pool '$POOL_LABEL' has fewer than 8 allocatable GPUs or hostdevs." >&2
+        echo "       Drain conflicting workloads or pass SKIP_PREFLIGHT=1 to run on a partial cluster." >&2
+        exit 1
+    fi
+    echo "    OK: all $WORKER_REPLICAS nodes have 8 GPUs + 8 hostdevs allocatable"
+fi
+
 kubectl delete mpijob nccl-integration --ignore-not-found 2>/dev/null
 
 export POOL_LABEL NCCL_TOPO_FILE WORKER_REPLICAS TOTAL_GPUS PROBE_IMAGE \
@@ -98,7 +121,6 @@ fi
 
 echo
 echo ">>> waiting for launcher (timeout=${TIMEOUT_SECS}s) ..."
-# Launcher pod takes a few seconds to appear after MPIJob create
 sleep 5
 LAUNCHER=$(kubectl get pods -l training.kubeflow.org/job-role=launcher -o name 2>/dev/null | head -1)
 if [ -z "$LAUNCHER" ]; then
@@ -107,6 +129,7 @@ if [ -z "$LAUNCHER" ]; then
 fi
 
 START=$(date +%s)
+JOB_OK=0
 while [ $(date +%s) -lt $((START + TIMEOUT_SECS)) ]; do
     P=$(kubectl get "$LAUNCHER" -o jsonpath='{.status.phase}' 2>/dev/null)
     ELAPSED=$(( $(date +%s) - START ))
@@ -118,7 +141,6 @@ while [ $(date +%s) -lt $((START + TIMEOUT_SECS)) ]; do
     esac
     sleep 30
 done
-JOB_OK=${JOB_OK:-0}
 
 echo
 echo ">>> writing results-multinode.txt"
