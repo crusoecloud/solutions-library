@@ -40,7 +40,10 @@ spec:
       nodeSelector:
         crusoe.ai/nodepool.name: ${POOL_LABEL}
       tolerations:
-        - operator: Exists                # tolerate any taint so we can land everywhere
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: present
+          effect: NoSchedule
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname

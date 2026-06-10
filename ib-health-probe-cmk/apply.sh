@@ -56,17 +56,47 @@ DCGM_LEVEL=${DCGM_LEVEL:-0}
 OUTPUT_FILE=${OUTPUT_FILE:-results-$(date -u +%Y%m%d-%H%M%S).txt}
 TIMEOUT_SECS=${TIMEOUT_SECS:-600}
 
+# Count nodes in the pool, broken down by schedulability and GPU taint presence.
+POOL_NODES_ALL=$(kubectl get nodes \
+    -l "crusoe.ai/nodepool.name=${POOL_LABEL}" \
+    --no-headers 2>/dev/null)
+POOL_TOTAL=$(echo "$POOL_NODES_ALL" | grep -c . || true)
+POOL_TOTAL=${POOL_TOTAL:-0}
+
+# Schedulable = not cordoned (SchedulingDisabled)
+POOL_SCHEDULABLE=$(echo "$POOL_NODES_ALL" | grep -v SchedulingDisabled | wc -l | tr -d ' ')
+
+# Fetch taint+schedulability info once for reuse below.
+POOL_NODE_TAINTS=$(kubectl get nodes \
+    -l "crusoe.ai/nodepool.name=${POOL_LABEL}" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.unschedulable}{"\t"}{range .spec.taints[*]}{.key}={.value}:{.effect}{" "}{end}{"\n"}{end}' \
+    2>/dev/null)
+
+# GPU taint = schedulable nodes carrying the nvidia.com/gpu=present:NoSchedule taint
+GPU_TAINTED_NODES=$(echo "$POOL_NODE_TAINTS" | grep 'nvidia.com/gpu=present:NoSchedule' || true)
+GPU_TAINTED_NODES=$(echo "$GPU_TAINTED_NODES" | grep -v $'\ttrue\t' || true)
+POOL_GPU_TAINTED=$(echo "$GPU_TAINTED_NODES" | grep -c . || true)
+POOL_GPU_TAINTED=${POOL_GPU_TAINTED:-0}
+
+# Auto-detect: if any schedulable nodes carry the GPU taint, report that count;
+# otherwise fall back to all schedulable nodes.
+if [ "$POOL_GPU_TAINTED" -gt 0 ]; then
+    TARGET_COUNT=$POOL_GPU_TAINTED
+    TARGET_DESC="GPU-tainted (nvidia.com/gpu=present:NoSchedule)"
+else
+    TARGET_COUNT=$POOL_SCHEDULABLE
+    TARGET_DESC="all schedulable (no GPU taint detected)"
+fi
+
 # Auto-detect node count if not provided
 if [ -n "${3:-}" ]; then
     PARALLELISM=$3
 else
-    PARALLELISM=$(kubectl get nodes \
-        -l "crusoe.ai/nodepool.name=${POOL_LABEL}" \
-        --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    PARALLELISM=$TARGET_COUNT
 fi
 
 if [ -z "$PARALLELISM" ] || [ "$PARALLELISM" -lt 1 ]; then
-    echo "ERROR: no nodes match crusoe.ai/nodepool.name=${POOL_LABEL}" >&2
+    echo "ERROR: no schedulable nodes match crusoe.ai/nodepool.name=${POOL_LABEL}" >&2
     echo "Available pools in this cluster:" >&2
     kubectl get nodes -L crusoe.ai/nodepool.name --no-headers 2>&1 | awk '{print "  "$NF}' | sort -u >&2
     exit 1
@@ -75,11 +105,13 @@ fi
 echo ">>> context:      $(kubectl config current-context)"
 echo ">>> pool:         $POOL_LABEL"
 echo ">>> nccl topo:    $NCCL_TOPO_FILE"
-echo ">>> parallelism:  $PARALLELISM (= node count)"
+echo ">>> pool nodes:   $POOL_TOTAL total  |  $POOL_SCHEDULABLE schedulable  |  $POOL_GPU_TAINTED with nvidia.com/gpu=present:NoSchedule taint"
+echo ">>> targeting:    $TARGET_COUNT ${TARGET_DESC} nodes"
+echo ">>> parallelism:  $PARALLELISM pods requested"
 echo ">>> probe image:  $PROBE_IMAGE"
 
-kubectl delete job ib-probe --ignore-not-found 2>/dev/null
-kubectl delete configmap ib-probe-script --ignore-not-found 2>/dev/null
+kubectl delete job ib-probe --ignore-not-found 2>/dev/null || true
+kubectl delete configmap ib-probe-script --ignore-not-found 2>/dev/null || true
 
 kubectl create configmap ib-probe-script --from-file=probe.sh=probe.sh
 
@@ -145,7 +177,9 @@ RAW_LOGS=$(kubectl logs -l app=ib-probe --tail=-1 2>&1)
     echo "# context:      $(kubectl config current-context)"
     echo "# pool:         $POOL_LABEL"
     echo "# nccl topo:    $NCCL_TOPO_FILE"
-    echo "# nodes:        $PARALLELISM"
+    echo "# pool nodes:   $POOL_TOTAL total  |  $POOL_SCHEDULABLE schedulable  |  $POOL_GPU_TAINTED with nvidia.com/gpu=present:NoSchedule taint"
+    echo "# targeting:    $TARGET_COUNT ${TARGET_DESC} nodes"
+    echo "# pods requested: $PARALLELISM"
     echo "# image:        $PROBE_IMAGE"
     echo "# generated:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo
@@ -155,7 +189,7 @@ RAW_LOGS=$(kubectl logs -l app=ib-probe --tail=-1 2>&1)
     echo
     for pod in $(kubectl get pods -l app=ib-probe -o name 2>/dev/null); do
         echo "--- $pod ---"
-        kubectl logs "$pod" 2>&1
+        kubectl logs "$pod" 2>&1 || true
         echo
     done
 } > "$OUTPUT_FILE"
