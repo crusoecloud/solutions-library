@@ -14,7 +14,7 @@ set -euo pipefail
 INPUT=$(cat)
 
 # All hosts seen
-HOSTS=$(echo "$INPUT" | awk -F'|' '/^(IBHEALTH|NCCLHEALTH|DCGMHEALTH|SUMMARY)/{print $2}' | sort -u)
+HOSTS=$(echo "$INPUT" | awk -F'|' '/^(IBHEALTH|NCCLHEALTH|DCGMHEALTH|DCGMDIAG|SUMMARY)/{print $2}' | sort -u)
 N_HOSTS=$(echo "$HOSTS" | grep -c . || true)
 
 echo "=== IB HEALTH REPORT ==="
@@ -36,11 +36,12 @@ for host in $HOSTS; do
     status=$(echo "$summary" | awk -F'|' '{print $3}')
     hcas=$(echo "$summary"  | awk -F'|' '{print $4}' | sed 's/hcas=//')
     nccl=$(echo "$INPUT" | awk -F'|' -v h="$host" '/^NCCLHEALTH/ && $2==h {print $4}' | head -1)
-    dcgm=$(echo "$INPUT" | awk -F'|' -v h="$host" '/^DCGMHEALTH/ && $2==h {print $3}' | head -1)
+    dcgm=$(echo "$INPUT" | awk -F'|' -v h="$host" '/^DCGMHEALTH/ && $2==h {print $4}' | head -1)
     fails=$(echo "$INPUT" | awk -F'|' -v h="$host" '
         /^IBHEALTH/   && $2==h && $NF ~ /FAIL/ {n++}
         /^NCCLHEALTH/ && $2==h && $NF ~ /FAIL/ {n++}
         /^DCGMHEALTH/ && $2==h && $NF ~ /FAIL/ {n++}
+        /^DCGMDIAG/   && $2==h && $NF ~ /FAIL/ {n++}
         END {print n+0}')
     printf "%-30s | %-9s | %-8s | %-10s | %-6s | %s\n" "$host" "$status" "$hcas" "${nccl:-?}" "${dcgm:--}" "$fails"
 done
@@ -51,6 +52,7 @@ FAIL_LINES=$(echo "$INPUT" | awk -F'|' '
     /^IBHEALTH/   && $NF ~ /FAIL/ {print}
     /^NCCLHEALTH/ && $NF ~ /FAIL/ {print}
     /^DCGMHEALTH/ && $NF ~ /FAIL/ {print}
+    /^DCGMDIAG/   && $NF ~ /FAIL/ {print}
 ')
 if [ -z "$FAIL_LINES" ]; then
     echo "  (none — all HCAs pass threshold, NCCL OK on every node)"

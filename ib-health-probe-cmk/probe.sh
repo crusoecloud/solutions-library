@@ -219,7 +219,37 @@ if [ "$SKIP_NCCL" != "1" ] && [ -x /opt/nccl-tests/build/all_reduce_perf ]; then
 fi
 # NCCLHEALTH line emitted at end of summary, after IB tests, for ordering consistency.
 
-# ---------- 4. DCGM diagnostics ----------
+# ---------- 4a. DCGM health check (always runs if dcgmi is present) ----------
+dcgm_health_status="SKIPPED"
+if ! command -v dcgmi >/dev/null 2>&1; then
+    log "dcgmi not found — skipping DCGM health check"
+    dcgm_health_status="SKIPPED: dcgmi not found"
+else
+    log "running dcgmi health check"
+    # nv-hostengine must be running; start it if not already up.
+    if ! dcgmi discovery -l >/dev/null 2>&1; then
+        nv-hostengine >/dev/null 2>&1 || true
+        sleep 1
+    fi
+    # Enable all health watches then query.
+    dcgmi health -s a >/dev/null 2>&1 || true
+    DCGM_HEALTH_TMPDIR=$(mktemp -d)
+    health_log="$DCGM_HEALTH_TMPDIR/health.log"
+    dcgmi health -c >"$health_log" 2>&1
+    health_rc=$?
+    if [ "$health_rc" = "0" ] && grep -q "Healthy" "$health_log"; then
+        dcgm_health_status="OK"
+    else
+        dcgm_health_status="FAIL: rc=$health_rc"
+        ANY_FAIL=1
+    fi
+    log "DCGM health output (rc=$health_rc):"
+    while IFS= read -r line; do log "  $line"; done < "$health_log"
+    rm -rf "$DCGM_HEALTH_TMPDIR"
+fi
+printf "DCGMHEALTH|%s|health|%s\n" "$HOST" "$dcgm_health_status"
+
+# ---------- 4b. DCGM diagnostics ----------
 dcgm_status="SKIPPED"
 if [ "$DCGM_LEVEL" = "0" ]; then
     dcgm_status="SKIPPED"
@@ -244,7 +274,7 @@ else
         rm -rf "$DCGM_TMPDIR"
     fi
 fi
-printf "DCGMHEALTH|%s|level=%s|%s\n" "$HOST" "$DCGM_LEVEL" "$dcgm_status"
+printf "DCGMDIAG|%s|level=%s|%s\n" "$HOST" "$DCGM_LEVEL" "$dcgm_status"
 
 # ---------- 5. Install perftest + numactl if missing ----------
 # (deferred until after NCCL because it disturbs the CUDA stack)
