@@ -1,0 +1,4 @@
+langchain-crusoe>=0.1.0
+langchain-groq>=1.1.0
+langchain-core>=1.0.0
+python-dotenv
