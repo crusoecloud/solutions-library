@@ -1,0 +1,97 @@
+# ib-health-probe — per-node IB loopback + single-node NCCL (coexist mode).
+#
+# This manifest does NOT request nvidia.com/gpu or nvidia.com/hostdev — it uses
+# `privileged: true` + hostPath /dev/infiniband to access HCAs and GPUs directly.
+# That lets it co-schedule with Slurm workers (or any other workload) that's already
+# holding the device-plugin resource pool.
+#
+# Tradeoff: if a real workload is *actively* pushing traffic, the bandwidth numbers
+# will be skewed. Run when the cluster is idle for clean results (queue empty, jobs
+# drained, etc.).
+#
+# Templated with envsubst; render via apply.sh which fills:
+#   ${POOL_LABEL}        e.g. "slurm-h200-workers" or "slurm-b200-workers"
+#   ${NCCL_TOPO_FILE}    e.g. "h200-141gb-sxm-ib-cloud-hypervisor.xml"
+#   ${PARALLELISM}       e.g. "4"  (= node count to probe)
+#   ${PROBE_IMAGE}       e.g. "ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ib-probe
+  labels:
+    app: ib-probe
+spec:
+  parallelism: ${PARALLELISM}
+  completions: ${PARALLELISM}
+  completionMode: Indexed
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: ib-probe
+    spec:
+      restartPolicy: Never
+      runtimeClassName: nvidia
+      hostNetwork: true
+      hostIPC: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        crusoe.ai/nodepool.name: ${POOL_LABEL}
+      tolerations:
+        - operator: Exists                # tolerate any taint so we can land everywhere
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: ib-probe
+      volumes:
+        - name: probe
+          configMap:
+            name: ib-probe-script
+            defaultMode: 0755
+        - name: nccl-topo
+          hostPath:
+            path: /etc/crusoe/nccl_topo
+            type: DirectoryOrCreate
+        - name: dev-infiniband
+          hostPath:
+            path: /dev/infiniband
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+      containers:
+        - name: probe
+          image: ${PROBE_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "/probe/probe.sh"]
+          securityContext:
+            privileged: true                 # need /dev/nvidia* + /dev/infiniband
+            capabilities:
+              add: ["IPC_LOCK", "SYS_ADMIN"] # IPC_LOCK for RDMA pinning, SYS_ADMIN belt-and-braces
+          env:
+            - name: NCCL_TOPO_FILE
+              value: /opt/nccl_topo/${NCCL_TOPO_FILE}
+            - name: IB_THRESHOLD_PCT
+              value: "90"
+            - name: IB_DURATION
+              value: "15"
+            - name: NCCL_THRESHOLD
+              value: "350"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          volumeMounts:
+            - name: probe
+              mountPath: /probe
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            - name: dev-infiniband
+              mountPath: /dev/infiniband
+            - name: dshm
+              mountPath: /dev/shm
