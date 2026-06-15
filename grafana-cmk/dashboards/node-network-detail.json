@@ -54,6 +54,33 @@
         "skipUrlSync": false
       },
       {
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": true
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "crusoe-metrics"
+        },
+        "definition": "label_values(crusoe_vm_network_receive_bytes_total, nodepool_name)",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Nodepool",
+        "multi": false,
+        "name": "nodepool",
+        "options": [],
+        "query": {
+          "query": "label_values(crusoe_vm_network_receive_bytes_total, nodepool_name)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
         "name": "node",
         "label": "Node",
         "type": "query",
@@ -62,10 +89,10 @@
           "uid": "crusoe-metrics"
         },
         "query": {
-          "query": "label_values(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}, vm_name)",
+          "query": "label_values(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\", nodepool_name=~\"$nodepool\"}, vm_name)",
           "refId": "B"
         },
-        "definition": "label_values(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\"}, vm_name)",
+        "definition": "label_values(crusoe_vm_network_receive_bytes_total{cluster_id=~\"$cluster\", nodepool_name=~\"$nodepool\"}, vm_name)",
         "includeAll": true,
         "multi": true,
         "allValue": ".+",
@@ -136,7 +163,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval]))",
+          "expr": "sum(rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval]))",
           "legendFormat": ""
         }
       ]
@@ -193,7 +220,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval]))",
+          "expr": "sum(rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval]))",
           "legendFormat": ""
         }
       ]
@@ -250,7 +277,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"})",
+          "expr": "sum(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"})",
           "legendFormat": ""
         }
       ]
@@ -307,7 +334,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"})",
+          "expr": "sum(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"})",
           "legendFormat": ""
         }
       ]
@@ -368,7 +395,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+          "expr": "rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval])",
           "legendFormat": "{{vm_name}} ({{device}})"
         }
       ]
@@ -429,7 +456,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+          "expr": "rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval])",
           "legendFormat": "{{vm_name}} ({{device}})"
         }
       ]
@@ -490,7 +517,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+          "expr": "rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval])",
           "legendFormat": "RX {{vm_name}}"
         },
         {
@@ -498,7 +525,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval])",
+          "expr": "rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval])",
           "legendFormat": "TX {{vm_name}}"
         }
       ]
@@ -559,7 +586,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "increase(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[1h])",
+          "expr": "increase(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[1h])",
           "legendFormat": "{{vm_name}}"
         }
       ]
@@ -620,7 +647,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "increase(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[1h])",
+          "expr": "increase(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[1h])",
           "legendFormat": "{{vm_name}}"
         }
       ]
@@ -677,7 +704,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(50, sort_desc(rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\"}[$__rate_interval]) + rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\"}[$__rate_interval])))",
+          "expr": "topk(50, sort_desc(rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval]) + rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval])))",
           "format": "table",
           "instant": true
         }
