@@ -16,11 +16,11 @@ large files.
 
 ---
 
-## TL;DR
+## Quick Start 
 
 ```bash
-cp .env.example .env          # fill in OCI creds, namespace, region, bucket
-make sizing                   # show the BDP/target concurrency plan (no cluster)
+cp .env.example .env          # fill in OCI / other object storage creds, namespace, region, bucket
+make sizing                   # (OPTIONAL) show the BDP/target concurrency plan (no cluster)
 make dry-run                  # render manifests + preflight checks (launches nothing)
 make preflight                # measure the VAST write ceiling with fio (safe, no egress)
 make run                      # full pipeline; PROMPTS before the large transfer
@@ -32,7 +32,7 @@ make run                      # full pipeline; PROMPTS before the large transfer
 
 ```
         operator workstation (this repo, python3 + kubectl)
-        │  build rclone.conf → K8s Secret (creds never touch the repo)
+        │  build rclone.conf → K8s Secret 
         │  list (via master) → bin-pack shards locally → push to shared disk
         ▼
 ┌──────────────────────────── Crusoe Managed Kubernetes ───────────────────────┐
@@ -80,34 +80,8 @@ contention). Each worker pod:
 
 ---
 
-## The AWS → OCI adaptation
 
-| Aspect | AWS reference | This repo (OCI) |
-|---|---|---|
-| Source backend | rclone `s3`, `provider = AWS`, `env_auth` | rclone `s3`, `provider = Other`, explicit `endpoint` + `force_path_style` |
-| Endpoint | AWS default | `https://<namespace>.compat.objectstorage.<region>.oraclecloud.com` |
-| Credential | AWS access/secret key | **OCI Customer Secret Key** (S3-compat access/secret pair) |
-| Credential delivery | env vars from a Secret | full `rclone.conf` in a Secret, **mounted read-only** at `/config` |
-| Listing | `boto3` on the workstation | `rclone lsf` **in-cluster** (no boto3, no WAN listing, works for OCI) |
-| Sharding | greedy LPT bin-pack (local) | same LPT bin-pack (local), pushed to the shared disk |
-| Node pinning | `nodeSelector` only, pods land unevenly | `nodeSelector` **+ topology-spread (even K/node)** + auto-sized requests |
-| `--files-from` copy | no `--no-traverse` | **`--no-traverse`** (don't list the destination tree) |
-| Concurrency | fixed `--transfers=40 --multi-thread-streams=40` | **derived from `TARGET_GBPS`, node count, NIC, and the 150 ms BDP** |
-| Instance class | `s1a` | `s2a` |
 
-A native `oracleobjectstorage` backend is also available (see
-[Alternative: native OCI backend](#alternative-native-oci-backend)), but it uses
-OCI IAM (user/instance/resource principal) rather than the access/secret key the
-customer has, so the **S3-compatible path is the default**.
-
-> **Bugs fixed from the reference script** (for anyone comparing):
-> the reference's worker `rclone.conf` heredoc was missing its `>` redirect, its
-> prefix expression had a malformed comparison, and it set no `--no-traverse`.
-> It also used `nodeSelector` alone with **no spread constraint**, so its 8 pods
-> could land unevenly across nodes; here `topologySpreadConstraints` + auto-sized
-> requests place exactly `PODS_PER_NODE` workers on every node.
-
----
 
 ## Why concurrency, not file size: the 150 ms BDP
 
@@ -459,17 +433,12 @@ file-size distribution.
   prefixes helps.
 - **VAST write ceiling** may be the real limit well before the NIC line rate —
   always run the fio preflight so a plateau is attributed correctly.
-- **CSI mount vs. NFS mount:** if the fs CSI driver falls back to an unroutable
-  IP and mounts time out, use `DEST_MODE=nfs` to mount the VAST DNS endpoint
-  directly. Verify mountability before a big run with a one-off pod that writes
-  to the PVC.
 - **`hostNetwork: true`** means workers share the node's network namespace and
   bind host ports — each worker's rclone rc listens on `localhost:5572+index`,
   so the ports are unique per pod even when several run on one node. Don't
   co-schedule other workloads that grab those ports; raise `PODS_PER_NODE`
   thoughtfully (each pod = one more rc port + CPU/mem slice).
-- **`1000Ti` PVC** is a request ceiling, not a reservation; size it to your
-  dataset.
+
 
 ---
 
