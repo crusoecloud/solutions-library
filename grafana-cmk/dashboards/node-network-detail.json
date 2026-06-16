@@ -531,6 +531,130 @@
       ]
     },
     {
+      "id": 11,
+      "type": "timeseries",
+      "title": "RX Combined by Node (stacked) \u2014 inbound only",
+      "description": "Aggregate inbound traffic across all nodes in the $nodepool / $node selection, stacked per node. Top of the stack = cluster-wide RX. Answers 'how many bytes are coming in?' without TX traffic mixed in.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 9
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval])",
+          "legendFormat": "{{vm_name}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "TX Combined by Node (stacked) \u2014 outbound only",
+      "description": "Aggregate outbound traffic across all nodes in the $nodepool / $node selection, stacked per node. Top of the stack = cluster-wide TX. Answers 'how many bytes are going out?' (e.g., writes to remote storage) without RX traffic mixed in.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 9
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval])",
+          "legendFormat": "{{vm_name}}"
+        }
+      ]
+    },
+    {
       "id": 8,
       "type": "timeseries",
       "title": "RX bytes increase (last 1h)",
@@ -541,7 +665,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -602,7 +726,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 22,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -663,7 +787,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 48,
         "w": 24,
         "h": 10
       },
