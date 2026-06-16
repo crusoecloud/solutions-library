@@ -260,6 +260,8 @@ via a diagnostic pod):
 | NIC | single 200 Gbps (Mellanox `mlx5`) |
 | 4-node fleet line rate | 800 Gbps ≈ 100 GB/s |
 
+Other SKU/cloud? Override `NODE_VCPU` / `NODE_RAM_GIB` / `NODE_NIC_GBPS`.
+
 ---
 
 ## Configuration
@@ -276,6 +278,7 @@ flags — **never hardcoded**. CLI flags > process env > `.env`.
 | `TARGET_GBPS` | **the single sizing knob** (default 30) |
 | `NUM_NODES` / `PODS_PER_NODE` | fleet size; total pods = nodes × pods/node (`NUM_PODS` forces an absolute total) |
 | `RTT_MS` / `PER_STREAM_MBPS` / `STREAM_SAFETY` | BDP model inputs |
+| `NODE_VCPU` / `NODE_RAM_GIB` / `NODE_NIC_GBPS` | per-node hardware for sizing (defaults = s2a.80x) |
 | `DEST_PATH` | **where objects are saved** — folder under the `/data` mount (default `/data/dataset`) |
 | `STORAGE_CLASS` / `PVC_NAME` / `PVC_SIZE` | VAST destination disk |
 | `DEST_MODE` | `dynamic` / `import` / `nfs` destination (see below) |
