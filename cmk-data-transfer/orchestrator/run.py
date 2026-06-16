@@ -138,12 +138,24 @@ def shard_locally(cfg, kc: Kubectl, run_dir: str) -> int:
 
 def launch_workers(cfg, kc: Kubectl, sizing) -> list[str]:
     banner("Launching worker pods")
+    # Honor NUM_NODES for PLACEMENT: pin workers to exactly num_nodes nodes
+    # (round-robin via nodeName) so "N nodes x K pods/node" lands as N x K,
+    # instead of topology-spreading across every schedulable s2a node. nodeName
+    # bypasses the scheduler, so the manifest's spread constraint is inert here.
+    chosen = sorted(kc.list_ready_nodes(cfg.instance_class))[:cfg.num_nodes]
+    if len(chosen) < cfg.num_nodes:
+        die(f"only {len(chosen)} schedulable {cfg.instance_class} nodes; "
+            f"need NUM_NODES={cfg.num_nodes}.")
+    print(f"  pinning {cfg.effective_num_pods()} workers to {len(chosen)} "
+          f"node(s): " + ", ".join(n.split('.')[0] for n in chosen))
     names = []
     for i in range(cfg.effective_num_pods()):
         pod = manifests.worker_pod(cfg, sizing, i)
+        pod["spec"]["nodeName"] = chosen[i % len(chosen)]   # hard pin
         kc.apply(pod)
         names.append(pod["metadata"]["name"])
-        print(f"  launched {pod['metadata']['name']} (shard {i})")
+    print(f"  launched {len(names)} workers "
+          f"({cfg.effective_pods_per_node()}/node x {len(chosen)})")
     return names
 
 
