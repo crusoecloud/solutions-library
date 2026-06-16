@@ -1097,6 +1097,72 @@
           "legendFormat": "write {{device}}"
         }
       ]
+    },
+    {
+      "id": 15,
+      "title": "Per-Node CPU Utilization Over Time",
+      "description": "One line per node in the current $nodepool / $node selection, showing CPU utilization % over time. Useful for spotting outliers and persistent high-CPU nodes within a pool.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "interval": "1m",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "100 * (1 - avg by (vm_name) (rate(crusoe_vm_cpu_seconds_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\", mode=\"idle\"}[$__rate_interval])))",
+          "legendFormat": "{{vm_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      },
+      "pluginVersion": "12.3.1"
     }
   ],
   "refresh": "1m",
