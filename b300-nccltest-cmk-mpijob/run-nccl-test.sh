@@ -57,10 +57,8 @@ spec:
               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
             - name: UCX_RNDV_SCHEME
               value: "get_zcopy"
-            - name: UCX_TLS
-              value: "self,sm,cuda_copy"
             command:
-            - /opt/amazon/openmpi/bin/mpirun
+            - mpirun
             - --allow-run-as-root
             - --tag-output
             - -np
@@ -138,8 +136,6 @@ spec:
               value: INFO
             - name: UCX_RNDV_SCHEME
               value: "get_zcopy"
-            - name: UCX_TLS
-              value: "self,sm,cuda_copy"
             volumeMounts:
             - mountPath: /dev/shm
               name: dshm

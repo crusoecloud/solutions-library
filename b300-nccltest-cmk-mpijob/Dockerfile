@@ -2,7 +2,7 @@
 #   docker build -t <REGISTRY>/nccl-tests-b300:latest -f .
 #   docker push <REGISTRY>/nccl-tests-b300:latest
 
-FROM nvcr.io/nvidia/cuda:12.8.0-devel-ubuntu24.04
+FROM nvcr.io/nvidia/cuda-dl-base:26.05-cuda13.2-devel-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
