@@ -26,6 +26,14 @@ make preflight                # (OPTIONAL) measure the shared-disk write ceiling
 make run                      # full pipeline; PROMPTS before the large transfer
 ```
 
+> **Where does the data land?** The shared disk is mounted at **`/data`** in
+> every pod, and objects are copied to **`DEST_PATH`** (default `/data/dataset`).
+> Set `DEST_PATH` in `.env` to choose the folder — e.g.
+> `DEST_PATH=/data/fineweb-edu`.
+> **Using an existing disk?** Set `DEST_MODE=import` (or `nfs`) + the disk id,
+> then point `DEST_PATH` at where on *that* disk you want the files. See
+> [Destination modes](#destination-modes-dest_mode).
+
 ---
 
 ## Architecture
@@ -268,6 +276,7 @@ flags — **never hardcoded**. CLI flags > process env > `.env`.
 | `TARGET_GBPS` | **the single sizing knob** (default 30) |
 | `NUM_NODES` / `PODS_PER_NODE` | fleet size; total pods = nodes × pods/node (`NUM_PODS` forces an absolute total) |
 | `RTT_MS` / `PER_STREAM_MBPS` / `STREAM_SAFETY` | BDP model inputs |
+| `DEST_PATH` | **where objects are saved** — folder under the `/data` mount (default `/data/dataset`) |
 | `STORAGE_CLASS` / `PVC_NAME` / `PVC_SIZE` | VAST destination disk |
 | `DEST_MODE` | `dynamic` / `import` / `nfs` destination (see below) |
 | `EXISTING_DISK_ID` / `_NAME` / `_SERIAL` / `NFS_SERVER` | bind an existing disk (import/nfs modes) |
@@ -344,6 +353,19 @@ The tool can target the VAST shared disk three ways:
 Find the disk's identity with `crusoe storage disks list -f json` (pick the
 `shared-volume` in your region): `.id`, `.name`, `.serial_number`. All modes use
 `reclaimPolicy: Retain`, so deleting the PVC/PV never deletes the disk or data.
+
+**Where the files go (all modes):** whichever disk you bind is mounted at
+`/data`, and objects are written to **`DEST_PATH`** (default `/data/dataset`).
+Point it wherever you want them on the disk — for example, to pull a dataset
+into a folder alongside existing data on an **existing** disk:
+
+```bash
+DEST_MODE=import  EXISTING_DISK_ID=<id>  EXISTING_DISK_NAME=<name>  EXISTING_DISK_SERIAL=<serial> \
+  DEST_PATH=/data/datasets/fineweb-edu  make run
+```
+
+Because `rclone copy` is idempotent, you can safely point `DEST_PATH` at a folder
+that already holds part of the dataset — only missing/changed objects are pulled.
 
 ### `nfs` mode — when the CSI mount times out
 
