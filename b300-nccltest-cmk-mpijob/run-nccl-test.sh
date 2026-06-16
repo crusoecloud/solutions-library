@@ -41,12 +41,12 @@ spec:
         spec:
           restartPolicy: OnFailure
           initContainers:
-          - image: abesharphpe/nccl-tests-b300:latest
+          - image: ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2
             imagePullPolicy: Always
             name: init
             command: ["sh", "-c", "sleep 5"]
           containers:
-          - image: abesharphpe/nccl-tests-b300:latest
+          - image: ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2
             imagePullPolicy: Always
             name: nccl-test-launcher
             securityContext:
@@ -123,7 +123,7 @@ spec:
               medium: Memory
               sizeLimit: 64Gi
           containers:
-          - image: abesharphpe/nccl-tests-b300:latest
+          - image: ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2
             imagePullPolicy: Always
             name: nccl-worker
             securityContext:
