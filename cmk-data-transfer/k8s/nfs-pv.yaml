@@ -1,0 +1,51 @@
+# Bind an existing VAST shared disk via an in-tree NFS PV (bypasses the CSI
+# driver). Use this where the fs CSI driver's mount times out on an unroutable
+# fallback IP (the disk returns no "data path connectivity fields"): the VAST
+# DNS endpoint resolves to the in-VPC data IPs and mounts cleanly with
+# remoteports=dns.
+#
+# The orchestrator generates the authoritative versions when DEST_MODE=nfs; this
+# is the manual / envsubst equivalent.
+#
+# 1) Find the disk id:  crusoe storage disks list -f json   (the `id` field)
+# 2) envsubst < k8s/nfs-pv.yaml | kubectl apply -f -   (PV first, then PVC)
+#
+# reclaimPolicy: Retain — deleting the PVC/PV never deletes the disk or its data.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ${PVC_NAME}-pv
+spec:
+  capacity:
+    storage: ${PVC_SIZE}                 # e.g. 1000Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  volumeMode: Filesystem
+  mountOptions:                          # VAST multipath NFS over DNS
+    - vers=3
+    - nconnect=16
+    - spread_reads
+    - spread_writes
+    - remoteports=dns
+  nfs:
+    server: ${NFS_SERVER}                # nfs.crusoecloudcompute.com
+    path: /volumes/${EXISTING_DISK_ID}   # the crusoe disk `id`
+  claimRef:
+    namespace: ${NAMESPACE}
+    name: ${PVC_NAME}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${PVC_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: ${PVC_NAME}-pv
+  resources:
+    requests:
+      storage: ${PVC_SIZE}

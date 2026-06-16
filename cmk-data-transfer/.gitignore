@@ -1,0 +1,39 @@
+# --- Secrets / credentials (NEVER commit) ---
+.env
+*.env
+!.env.example
+rclone.conf
+*.rclone.conf
+# real secrets (the committed k8s/secret.example.yaml is intentionally kept)
+secret.yaml
+*-secret.yaml
+*.pem
+*.key
+.oci/
+
+# --- Generated runtime artifacts ---
+generated/
+run-*/
+manifests-local/
+*.shard.txt
+shard-*.txt
+listing.json
+
+# --- Benchmark output ---
+bench/results/
+*.bench.csv
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Editor / OS / agent ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.claude/

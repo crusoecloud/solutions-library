@@ -1,0 +1,14 @@
+# Crusoe VAST shared-filesystem (ReadWriteMany) StorageClass.
+#
+# This cluster ships the fs CSI driver (fs.csi.crusoe.ai) but does not always
+# create the StorageClass object. The orchestrator creates this automatically
+# in preflight if it is absent; this file is the manual equivalent:
+#   kubectl apply -f k8s/storageclass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: crusoe-csi-driver-fs-sc
+provisioner: fs.csi.crusoe.ai
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

@@ -1,0 +1,15 @@
+# Destination shared disk: ReadWriteMany so every worker mounts it.
+# Substitute ${...} (e.g. `envsubst < k8s/pvc.yaml | kubectl apply -f -`)
+# or just let the orchestrator apply the authoritative version.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${PVC_NAME}            # default: cmk-data-transfer-fs
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ${STORAGE_CLASS}   # crusoe-csi-driver-fs-sc (VAST)
+  resources:
+    requests:
+      storage: ${PVC_SIZE}    # e.g. 1000Ti
+  volumeMode: Filesystem

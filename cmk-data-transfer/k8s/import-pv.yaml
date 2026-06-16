@@ -1,0 +1,57 @@
+# Import an EXISTING Crusoe shared disk as a static PV + PVC.
+#
+# Use this when you already have a shared disk (e.g. created in the Crusoe
+# console or `crusoe storage disks create`) and wants to migrate data INTO it,
+# rather than provisioning a fresh disk. The orchestrator generates the
+# authoritative versions when EXISTING_DISK_* are set; this is the manual
+# equivalent.
+#
+# 1) Find the disk:
+#      crusoe storage disks list -f json
+#    Pick the `shared-volume` entry in your region and note three fields:
+#      .id             -> volumeHandle            (a UUID)
+#      .name           -> csi.crusoe.ai/disk-name (a UUID)
+#      .serial_number  -> csi.crusoe.ai/serial-number
+#
+# 2) Substitute ${...} and apply (PV first, then PVC):
+#      envsubst < k8s/import-pv.yaml | kubectl apply -f -
+#
+# reclaimPolicy: Retain is deliberate — deleting the PVC/PV must NOT delete the
+# customer's disk or its data. claimRef pre-binds the PV to our PVC so nothing
+# else can claim it.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ${PVC_NAME}-pv
+spec:
+  capacity:
+    storage: ${PVC_SIZE}                 # PV capacity (match/exceed the disk)
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""                   # static binding; no dynamic provisioning
+  volumeMode: Filesystem
+  csi:
+    driver: fs.csi.crusoe.ai
+    volumeHandle: ${EXISTING_DISK_ID}
+    fsType: ${EXISTING_DISK_FSTYPE}      # ext4
+    volumeAttributes:
+      csi.crusoe.ai/disk-name: ${EXISTING_DISK_NAME}
+      csi.crusoe.ai/serial-number: ${EXISTING_DISK_SERIAL}
+  claimRef:
+    namespace: ${NAMESPACE}
+    name: ${PVC_NAME}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${PVC_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""                   # bind to the static PV above
+  volumeName: ${PVC_NAME}-pv
+  resources:
+    requests:
+      storage: ${PVC_SIZE}

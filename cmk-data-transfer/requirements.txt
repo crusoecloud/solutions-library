@@ -1,0 +1,9 @@
+# Orchestrator runs on stdlib only and shells out to `kubectl` (mirrors the
+# Crusoe reference implementation). No third-party packages are required.
+#
+# Optional, only if you prefer richer .env parsing locally:
+#   python-dotenv>=1.0
+#
+# Hard requirements on the operator workstation:
+#   - python3 >= 3.9
+#   - kubectl (configured KUBECONFIG with access to the CMK cluster)
