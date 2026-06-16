@@ -343,45 +343,240 @@
     },
     {
       "id": 7,
-      "type": "bargauge",
-      "title": "Per-Disk Capacity Used (all disks)",
-      "description": "Per-disk capacity used. Unfiltered \u2014 every SDisk in this project is listed regardless of dropdown selection. Legend shows `disk_id` (Crusoe Console) and `disk_name` (K8s PVC UID) so you can map between them.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "crusoe-metrics"
-      },
+      "title": "Per-Disk Capacity (used / provisioned)",
+      "description": "All Crusoe SDisks in the project. Used = crusoe_sdisk_disk_capacity_used_bytes. Provisioned + % Used are joined from kube_persistentvolume_capacity_bytes via the PV's csi.volumeHandle (CSI-mounted disks only \u2014 NFS-mounted SDisks have their disk_id in spec.nfs.path which kube-state-metrics doesn't expose as a label, so those rows show '\u2014' for Provisioned and % Used).",
+      "type": "table",
       "gridPos": {
         "x": 0,
         "y": 4,
         "w": 24,
         "h": 10
       },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
           "expr": "last_over_time(crusoe_sdisk_disk_capacity_used_bytes[2m])",
+          "format": "table",
           "instant": true,
-          "legendFormat": "{{disk_id}}  ({{disk_name}})"
+          "legendFormat": "Used"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "max by (disk_id) (label_replace(last_over_time(kube_persistentvolume_capacity_bytes[2m]) * on(persistentvolume) group_left(csi_volume_handle) last_over_time(kube_persistentvolume_info[2m]), \"disk_id\", \"$1\", \"csi_volume_handle\", \"(.*)\") and on(disk_id) last_over_time(crusoe_sdisk_disk_capacity_used_bytes[2m]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Provisioned"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "100 * (last_over_time(crusoe_sdisk_disk_capacity_used_bytes[2m]) / on(disk_id) group_left max by (disk_id) (label_replace(last_over_time(kube_persistentvolume_capacity_bytes[2m]) * on(persistentvolume) group_left(csi_volume_handle) last_over_time(kube_persistentvolume_info[2m]), \"disk_id\", \"$1\", \"csi_volume_handle\", \"(.*)\") and on(disk_id) last_over_time(crusoe_sdisk_disk_capacity_used_bytes[2m])))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "% Used"
         }
-      ]
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "disk_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "fieldName": "disk_id",
+                "config": {
+                  "id": "isNotNull",
+                  "options": {}
+                }
+              }
+            ],
+            "type": "include",
+            "match": "all"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "__name__ 3": true,
+              "tenant_name": true,
+              "location": true,
+              "cluster_id": true,
+              "crusoe_resource": true,
+              "metrics_source": true,
+              "project_id": true,
+              "persistentvolume": true,
+              "csi_volume_handle": true
+            },
+            "indexByName": {
+              "disk_id": 0,
+              "disk_name": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4
+            },
+            "renameByName": {
+              "disk_id": "Disk ID",
+              "disk_name": "Disk Name",
+              "Value #A": "Used",
+              "Value #B": "Provisioned",
+              "Value #C": "% Used"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Used"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Provisioned"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "noValue",
+                "value": "\u2014"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% Used"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "noValue",
+                "value": "\u2014"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 80
+                    },
+                    {
+                      "color": "red",
+                      "value": 90
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "% Used",
+            "desc": true
+          },
+          {
+            "displayName": "Used",
+            "desc": true
+          }
+        ]
+      },
+      "pluginVersion": "12.3.1"
     },
     {
       "id": 8,
