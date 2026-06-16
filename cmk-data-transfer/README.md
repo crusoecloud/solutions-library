@@ -182,6 +182,62 @@ set `RCLONE_TRANSFERS=40 RCLONE_MULTI_THREAD_STREAMS=40`.
 > TCP buffers or OCI gives you more per-connection throughput, fewer streams are
 > needed; the sweep harness finds the real knee empirically.
 
+### Tuning `PODS_PER_NODE` (1–2 node experiments)
+
+Most transfers run on **1–2 nodes**, where the WAN path — not the cluster — is
+the bottleneck. There you usually can't raise *steady* throughput past the path
+ceiling, so the lever that matters is **`PODS_PER_NODE`**: more pods = smaller
+shards = a **shorter straggler tail**, and the tail is what dominates total
+transfer time. Experiment like this:
+
+1. **See the plan for a baseline** (no cluster access needed):
+
+   ```bash
+   make sizing NUM_NODES=2 PODS_PER_NODE=8
+   ```
+
+2. **Right-size memory so pods pack densely.** Each rclone pod uses well under
+   1 GiB even at high concurrency (memory tracks concurrency, not file count),
+   so the default request over-reserves and limits how many can schedule. Lower
+   it so CPU — not an inflated memory request — is the packing limit:
+
+   ```ini
+   # .env
+   WORKER_MEM_REQUEST=2Gi      # actual use is small; lets many more pods schedule
+   ```
+
+   CPU per pod is `(vCPU − headroom) / PODS_PER_NODE`, so on an 80-vCPU node
+   16 pods ≈ 4 vCPU each and 32 pods ≈ 2 vCPU each — both schedule comfortably.
+
+3. **Run a time-boxed experiment** (bounds egress cost) at a few pod counts and
+   compare the rates:
+
+   ```bash
+   python3 bench/oci_experiment.py --nodes 2 --pods-per-node 8  --label ppn-8  --max-seconds 120
+   python3 bench/oci_experiment.py --nodes 2 --pods-per-node 16 --label ppn-16 --max-seconds 120
+   python3 bench/oci_experiment.py --nodes 2 --pods-per-node 24 --label ppn-24 --max-seconds 120
+   # compare avg_GBps / steady_GBps in each bench/results/oci-exp-ppn-*/summary.json
+   ```
+
+4. **Find the knee** by watching utilization while a run is live:
+
+   ```bash
+   kubectl top nodes
+   kubectl top pods -l app=cmk-data-transfer-worker
+   ```
+
+   - Rate still rising and CPU climbing toward the node total → add more pods.
+   - Rate flat while CPU/mem stay low → you're **path-capped**; more pods won't
+     raise steady throughput, but a higher count still shortens the finishing
+     tail on the full run.
+
+5. **Lock it in:** put the best value in `.env` (`PODS_PER_NODE=…`) and run the
+   full transfer with `make run`.
+
+> **Rule of thumb on `s2a`:** start around **16–24 pods/node** for 1–2 node
+> transfers. Raise it when a run shows a long finishing tail; back off if CPU
+> saturates before the path does.
+
 ---
 
 ## Discovered `s2a` hardware
