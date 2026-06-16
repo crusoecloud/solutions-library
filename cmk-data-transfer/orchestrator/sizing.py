@@ -30,7 +30,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .config import Config, S2A_VCPU, S2A_RAM_GIB, S2A_NIC_GBPS
+from .config import Config
 
 # leave this many vCPUs per node for the kubelet / CSI / system daemons
 SYSTEM_CPU_HEADROOM = 8
@@ -47,6 +47,7 @@ class Sizing:
     per_stream_mbps: float
     nic_gbps: int
     vcpu: int
+    ram_gib: int
 
     # derived
     per_node_gbps: float
@@ -102,7 +103,7 @@ class Sizing:
             "GiB actual)",
             "-" * 62,
             f"  per-node in-flight streams   : {self.in_flight_per_node} "
-            f"(of {S2A_VCPU} vCPU, {S2A_RAM_GIB} GiB)",
+            f"(of {self.vcpu} vCPU, {self.ram_gib} GiB)",
             f"  fleet in-flight streams      : "
             f"{self.in_flight_per_node * self.num_nodes}",
             f"  fleet worker pods            : {self.total_pods}",
@@ -125,8 +126,8 @@ def _parse_size_to_bytes(s: str) -> int:
 def compute_sizing(cfg: Config) -> Sizing:
     pods_per_node = cfg.effective_pods_per_node()
     total_pods = cfg.effective_num_pods()
-    nic_gbps = S2A_NIC_GBPS
-    vcpu = S2A_VCPU
+    nic_gbps = cfg.node_nic_gbps
+    vcpu = cfg.node_vcpu
 
     # 1) split the target across nodes, cap at 90% of NIC line rate (GB/s)
     per_node_gbps = cfg.target_gbps / cfg.num_nodes
@@ -195,6 +196,7 @@ def compute_sizing(cfg: Config) -> Sizing:
         per_stream_mbps=cfg.per_stream_mbps,
         nic_gbps=nic_gbps,
         vcpu=vcpu,
+        ram_gib=cfg.node_ram_gib,
         per_node_gbps=per_node_gbps,
         per_node_gbps_capped=per_node_gbps_capped,
         bdp_bytes_per_node=bdp_bytes_per_node,

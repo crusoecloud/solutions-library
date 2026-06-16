@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Optional
 
 
-# --- s2a.80x SKU baseline (drives the sizing model) ---
-# 80 vCPU, ~676 GiB RAM, single 200 Gbps NIC. Adjust for other SKUs.
+# --- Default node hardware baseline (s2a.80x): drives the sizing model. ---
+# Override per-SKU via NODE_VCPU / NODE_RAM_GIB / NODE_NIC_GBPS.
 S2A_VCPU = 80
 S2A_RAM_GIB = 676
 S2A_NIC_GBPS = 200
@@ -99,6 +99,10 @@ class Config:
     pods_per_node: int = 8          # multiple workers per node (more = shorter tail)
     num_pods: Optional[int] = None  # absolute override; default = nodes*per_node
     instance_class: str = "s2a"
+    # Node hardware (defaults = s2a.80x); set for other SKUs/clouds.
+    node_vcpu: int = S2A_VCPU
+    node_ram_gib: int = S2A_RAM_GIB
+    node_nic_gbps: int = S2A_NIC_GBPS
     rtt_ms: float = 150.0
     per_stream_mbps: float = 250.0
     stream_safety: float = 1.5
@@ -254,6 +258,9 @@ _ENV_MAP = {
     "PODS_PER_NODE": "pods_per_node",
     "NUM_PODS": "num_pods",
     "INSTANCE_CLASS": "instance_class",
+    "NODE_VCPU": "node_vcpu",
+    "NODE_RAM_GIB": "node_ram_gib",
+    "NODE_NIC_GBPS": "node_nic_gbps",
     "RTT_MS": "rtt_ms",
     "PER_STREAM_MBPS": "per_stream_mbps",
     "STREAM_SAFETY": "stream_safety",
