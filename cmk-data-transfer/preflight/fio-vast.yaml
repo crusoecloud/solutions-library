@@ -1,0 +1,45 @@
+# Reference fio pod for the VAST write-ceiling preflight (one per s2a node).
+# preflight/run_fio.py templates N of these (anti-affinity => one per node),
+# runs a sequential write to the shared PVC, and sums the write bandwidth so a
+# later throughput plateau can be attributed to VAST vs network vs OCI.
+#
+# Why this matters: if the download plateaus at, say, 18 GB/s and fio shows the
+# VAST mount also tops out near there, the binding constraint is the write path,
+# not OCI or the NIC. Run it BEFORE the big pull.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cmk-data-transfer-fio-0
+  labels:
+    app: cmk-data-transfer-fio
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    crusoe.ai/instance.class: ${INSTANCE_CLASS}   # s2a
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: cmk-data-transfer-fio
+          topologyKey: kubernetes.io/hostname
+  containers:
+    - name: fio
+      image: alpine:3.20
+      command:
+        - /bin/sh
+        - -c
+        - >
+          apk add --no-cache fio >/dev/null &&
+          mkdir -p /data/fio/$(hostname) &&
+          fio --name=vastwrite --directory=/data/fio/$(hostname)
+          --rw=write --bs=${FIO_BS} --size=${FIO_SIZE} --numjobs=${FIO_JOBS}
+          --ioengine=libaio --iodepth=32 --direct=0 --group_reporting
+          --output-format=json
+      volumeMounts:
+        - name: shared
+          mountPath: /data
+  volumes:
+    - name: shared
+      persistentVolumeClaim:
+        claimName: ${PVC_NAME}
