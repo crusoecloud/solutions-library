@@ -1,14 +1,14 @@
-# cmk-data-transfer
+# CMK Cross Region Object Storage Data Transfer
 
 Parallel-pull a dataset from **any S3-compatible object store** to a
-**VAST-backed shared disk** on **Crusoe Managed Kubernetes (CMK)**, engineered to
+**VAST-backed PB Scale shared disk** on **Crusoe Managed Kubernetes (CMK)**, engineered to
 saturate worker hosts across a high-latency path. **OCI Object Storage is the
-worked example throughout** (it's the case this was built for), but the source
+worked example throughout** but the source
 backend is rclone's generic `provider = Other`, so AWS S3, MinIO/Ceph, GCS (S3
 interop), Cloudflare R2, Backblaze B2, etc. work too — point `OCI_ENDPOINT` at
 the store (see [Other S3-compatible sources](#other-s3-compatible-sources)).
 
-The shape follows Crusoe's AWS-S3 "rclone parallel streams" reference: a master
+The shape follows Crusoe's AWS-S3 ["rclone parallel streams"](https://support.crusoecloud.com/hc/en-us/articles/37041258573723-How-To-Download-Data-From-AWS-S3-Using-Rclone-Parallel-Streams) reference: a master
 pod lists the source and writes balanced shard manifests to a shared disk; N
 worker pods each take one shard and `rclone copy` it in parallel — tuned for a
 **high-RTT path** where throughput comes from **massive concurrency**, not from
@@ -22,7 +22,7 @@ large files.
 cp .env.example .env          # fill in OCI / other object storage creds, namespace, region, bucket
 make sizing                   # (OPTIONAL) show the BDP/target concurrency plan (no cluster)
 make dry-run                  # render manifests + preflight checks (launches nothing)
-make preflight                # measure the VAST write ceiling with fio (safe, no egress)
+make preflight                # (OPTIONAL) measure the shared-disk write ceiling with fio (safe, no third party egress)
 make run                      # full pipeline; PROMPTS before the large transfer
 ```
 
@@ -56,7 +56,7 @@ make run                      # full pipeline; PROMPTS before the large transfer
           │              │                    │              │  hundreds of parallel
           ▼              ▼                    ▼              ▼  ranged-GET streams
         ┌──────────────────────────────────────────────────┐
-        │   OCI Object Storage  (S3-compatible endpoint)     │   >150 ms RTT
+        │   OCI Object Storage  (S3-compatible endpoint)     │   > e.g. 150 ms RTT
         │   https://<ns>.compat.objectstorage.<region>....   │   (intercontinental)
         └──────────────────────────────────────────────────┘
 ```
@@ -97,7 +97,7 @@ With a typical autotuned window of ~16 MB:
 16 MB × 8 bits / 0.150 s  ≈  853 Mbps  per stream
 ```
 
-…and that's the ceiling **regardless of how large the file is**. A 100 GB file
+At high latencies, that's the ceiling **regardless of how large the file is**. A 100 GB file
 pulled on one stream still moves at ~0.85 Gbps. So aggregate throughput has to
 come from running **many streams in parallel** to fill the bandwidth-delay
 product (BDP) of each node's NIC.
