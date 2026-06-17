@@ -475,6 +475,11 @@ kubectl logs -f cmk-data-transfer-worker-0                      # live rclone pr
 kubectl exec cmk-data-transfer-worker-0 -- \
   rclone rc core/stats --rc-addr localhost:5572                 # live bytes/speed for that pod
 kubectl top nodes ; kubectl top pods -l app=cmk-data-transfer-worker   # CPU/mem
+
+# overall progress in flight: sum bytes across the whole fleet (RC_PORT = 5572 + index)
+kubectl get po -l app=cmk-data-transfer-worker -o jsonpath='{range .items[*]}{.metadata.name} {range .spec.containers[0].env[?(@.name=="RC_PORT")]}{.value}{end}{"\n"}{end}' \
+  | xargs -P16 -n2 sh -c 'kubectl exec $0 -- rclone rc core/stats --rc-addr localhost:$1 2>/dev/null' \
+  | grep -o '"bytes":[0-9]*' | awk -F: '{s+=$2} END{printf "fleet transferred: %.2f TB\n", s/1e12}'
 ```
 The runner also prints a per-tick line (`elapsed`, est TB, ~rate, active/failed
 pods). **Note:** rclone's own `MiB/s` in the logs is a *cumulative average* — on
