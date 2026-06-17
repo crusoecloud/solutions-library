@@ -340,6 +340,120 @@
       ]
     },
     {
+      "id": 13,
+      "type": "stat",
+      "title": "Peak RX (in range)",
+      "description": "Highest cluster-wide RX rate observed across the dashboard's time range (max over time of the per-second sum across selected nodes). Useful for spotting when data-transfer peaked.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_vm_network_receive_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval]))",
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Peak TX (in range)",
+      "description": "Highest cluster-wide TX rate observed across the dashboard's time range (max over time of the per-second sum across selected nodes). Useful for spotting when egress peaked.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(rate(crusoe_vm_network_transmit_bytes_total{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$__rate_interval]))",
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
       "id": 5,
       "type": "timeseries",
       "title": "RX by Node",
@@ -350,7 +464,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 4,
+        "y": 8,
         "w": 12,
         "h": 9
       },
@@ -411,7 +525,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 4,
+        "y": 8,
         "w": 12,
         "h": 9
       },
@@ -472,7 +586,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 17,
         "w": 24,
         "h": 9
       },
@@ -541,7 +655,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 26,
         "w": 24,
         "h": 9
       },
@@ -603,7 +717,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 35,
         "w": 24,
         "h": 9
       },
@@ -665,7 +779,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 44,
         "w": 12,
         "h": 8
       },
@@ -726,7 +840,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 40,
+        "y": 44,
         "w": 12,
         "h": 8
       },
@@ -787,7 +901,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 52,
         "w": 24,
         "h": 10
       },
