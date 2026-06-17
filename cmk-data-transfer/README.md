@@ -476,10 +476,12 @@ kubectl exec cmk-data-transfer-worker-0 -- \
   rclone rc core/stats --rc-addr localhost:5572                 # live bytes/speed for that pod
 kubectl top nodes ; kubectl top pods -l app=cmk-data-transfer-worker   # CPU/mem
 
-# overall progress in flight: sum each worker's transferred bytes (RC_PORT = 5572 + index)
-kubectl get po -l app=cmk-data-transfer-worker -o jsonpath='{range .items[*]}{.metadata.name} {range .spec.containers[0].env[?(@.name=="RC_PORT")]}{.value}{end}{"\n"}{end}' \
-  | xargs -P16 -n2 sh -c 'kubectl exec $0 -- rclone rc core/stats --rc-addr localhost:$1 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get(\"bytes\",0))"' \
-  | awk '{s+=$1} END{printf "fleet transferred: %.2f TB\n", s/1e12}'
+# overall progress in flight: sum each Running worker's bytes (RC_PORT = 5572 + index).
+# Filters to Running pods + guards non-JSON so starting/terminating pods don't error.
+kubectl get po -l app=cmk-data-transfer-worker --field-selector=status.phase=Running \
+  -o jsonpath='{range .items[*]}{.metadata.name} {range .spec.containers[0].env[?(@.name=="RC_PORT")]}{.value}{end}{"\n"}{end}' \
+  | xargs -P16 -n2 sh -c 'kubectl exec "$0" -- rclone rc core/stats --rc-addr localhost:"$1" 2>/dev/null | python3 -c "import json,sys;s=sys.stdin.read().strip();print(json.loads(s).get(\"bytes\",0) if s.startswith(\"{\") else 0)"' \
+  | awk '{s+=$1; n++} END{printf "fleet: %.2f TB across %d pods\n", s/1e12, n}'
 ```
 The runner also prints a per-tick line (`elapsed`, est TB, ~rate, active/failed
 pods). **Note:** rclone's own `MiB/s` in the logs is a *cumulative average* — on
