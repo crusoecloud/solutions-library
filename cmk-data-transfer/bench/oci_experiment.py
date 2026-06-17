@@ -27,6 +27,7 @@ import os
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -142,18 +143,71 @@ def main(argv=None) -> int:
     ts_csv = os.path.join(out, "timeseries.csv")
     fh = open(ts_csv, "w", newline="")
     w = csv.writer(fh)
-    w.writerow(["elapsed_s", "agg_bytes", "interval_GBps", "running_avg_GBps",
-                "active_pods"])
+    w.writerow(["elapsed_s", "rclone_agg_bytes", "rclone_interval_GBps",
+                "nic_interval_GBps", "active_pods"])
+
+    # --- measurement helpers ---
+    # (1) rclone-reported bytes: sum core/stats across ALL pods, in parallel.
+    #     No sampling/extrapolation (the old 6-pod x len(pods) estimate biased
+    #     high because pods[:6] are the fast starters).
+    def fleet_bytes(pods):
+        names = [(p["metadata"]["name"], collect.rc_port(p)) for p in pods
+                 if p["status"]["phase"] == "Running"]
+        if not names:
+            return 0, 0
+
+        def one(np):
+            st = collect.pod_stats(ns, np[0], np[1])
+            return int(st.get("bytes", 0)) if st else None
+        with ThreadPoolExecutor(max_workers=min(32, len(names))) as ex:
+            vals = [v for v in ex.map(one, names) if v is not None]
+        return sum(vals), len(vals)
+
+    # (2) GROUND TRUTH: node NIC receive counters. Workers are hostNetwork, so
+    #     /proc/net/dev inside a worker reports the NODE's interfaces. One worker
+    #     per node; take the busiest non-virtual iface (the physical data NIC).
+    _VIRT = ("lo", "veth", "cni", "flannel", "docker", "cali", "lxc", "kube",
+             "dummy", "nodelocal", "ovn", "genev", "br-", "tunl", "ip6tnl")
+
+    def node_rx(pod_name):
+        try:
+            r = kc.exec(pod_name, ["cat", "/proc/net/dev"])
+            best = 0
+            for line in (r.stdout or b"").decode().splitlines():
+                if ":" not in line:
+                    continue
+                iface, _, rest = line.partition(":")
+                if iface.strip().startswith(_VIRT):
+                    continue
+                cols = rest.split()
+                if cols:
+                    best = max(best, int(cols[0]))   # cumulative rx_bytes
+            return best
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def fleet_nic_rx(pods):
+        reps = {}
+        for p in pods:
+            n = p["spec"].get("nodeName")
+            if n and n not in reps and p["status"]["phase"] == "Running":
+                reps[n] = p["metadata"]["name"]
+        if not reps:
+            return 0
+        with ThreadPoolExecutor(max_workers=min(16, len(reps))) as ex:
+            return sum(ex.map(node_rx, reps.values()))
 
     t0 = time.time()
     prev_bytes, prev_t = 0, t0
-    peak = 0.0
-    est_agg = 0
-    steady_rates = []      # post-ramp interval rates, for steady-state
+    prev_nic = None            # cumulative NIC counter baseline (set on tick 1)
+    peak = 0.0                 # rclone-reported peak interval
+    peak_nic = 0.0             # NIC ground-truth peak interval
+    agg_bytes = 0
+    nic_delta_total = 0        # bytes seen on the wire since baseline
+    steady_rates, nic_steady = [], []
     completed = False
     failed_pods = 0
-    print(f"  --- transferring (phase-poll + rc-stats sample of "
-          f"{args.stats_sample} pods/tick) ---")
+    print("  --- transferring (rclone rc-stats ALL pods + node NIC counters) ---")
     while True:
         time.sleep(args.poll)
         now = time.time()
@@ -162,29 +216,28 @@ def main(argv=None) -> int:
         active = sum(1 for p in pods
                      if p["status"]["phase"] not in ("Succeeded", "Failed"))
         failed_pods = sum(1 for p in pods if p["status"]["phase"] == "Failed")
-        # bounded rc-stats sample -> extrapolate to the fleet (live estimate
-        # only; the authoritative total uses expected_bytes on completion)
-        sbytes, scount = 0, 0
-        for pod in pods[:args.stats_sample]:
-            st = collect.pod_stats(ns, pod["metadata"]["name"],
-                                   collect.rc_port(pod))
-            if st:
-                sbytes += int(st.get("bytes", 0))
-                scount += 1
-        if scount:
-            est_agg = sbytes / scount * len(pods)
-        interval_rate = (est_agg - prev_bytes) / max(0.1, now - prev_t)
-        avg_rate = est_agg / max(0.1, elapsed)
+
+        agg_bytes, responded = fleet_bytes(pods)
+        nic_now = fleet_nic_rx(pods)
+        if prev_nic is None:
+            prev_nic = nic_now                       # baseline (cumulative)
+
+        dt = max(0.1, now - prev_t)
+        interval_rate = (agg_bytes - prev_bytes) / dt
+        nic_rate = (nic_now - prev_nic) / dt if nic_now >= prev_nic else 0.0
         peak = max(peak, interval_rate)
-        if elapsed >= args.ramp_seconds and scount:
+        peak_nic = max(peak_nic, nic_rate)
+        nic_delta_total += max(0, nic_now - prev_nic)
+        if elapsed >= args.ramp_seconds:
             steady_rates.append(interval_rate)
-        w.writerow([f"{elapsed:.0f}", int(est_agg), f"{interval_rate/GB:.3f}",
-                    f"{avg_rate/GB:.3f}", active])
+            nic_steady.append(nic_rate)
+        w.writerow([f"{elapsed:.0f}", int(agg_bytes),
+                    f"{interval_rate/GB:.3f}", f"{nic_rate/GB:.3f}", active])
         fh.flush()
-        print(f"  [{elapsed:6.0f}s] est {est_agg/1e12:5.2f} TB  "
-              f"~now={human_gbps(interval_rate)}  "
-              f"active={active}/{sizing.total_pods} failed={failed_pods}")
-        prev_bytes, prev_t = est_agg, now
+        print(f"  [{elapsed:6.0f}s] rclone {agg_bytes/1e12:5.2f} TB  "
+              f"rclone~{human_gbps(interval_rate)}  NIC~{human_gbps(nic_rate)}  "
+              f"act={active}/{sizing.total_pods} resp={responded} fail={failed_pods}")
+        prev_bytes, prev_nic, prev_t = agg_bytes, nic_now, now
         if active == 0 and pods:
             completed = (failed_pods == 0)
             break
@@ -196,23 +249,20 @@ def main(argv=None) -> int:
             break
     fh.close()
     elapsed = time.time() - t0
-    # Accurate transferred bytes = what actually landed on the destination disk
-    # (straggler-proof, unlike the per-tick sampled estimate). Measured via
-    # `rclone size` on the local dest path from the still-running master pod.
-    disk_bytes = None
-    try:
-        r = kc.exec(cfg.master_pod_name,
-                    ["rclone", "size", "--json", cfg.dest_path])
-        disk_bytes = int(json.loads((r.stdout or b"{}").decode())["bytes"])
-    except Exception as e:  # noqa: BLE001
-        print(f"  (could not measure dest size: {e})")
-    total_bytes = (disk_bytes if disk_bytes is not None
-                   else (expected_bytes if completed else int(est_agg)))
+
+    # transferred bytes = rclone rc-stats sum across ALL pods (actual downloaded
+    # bytes). NOT `rclone size`, which counts in-flight sparse multi-thread files
+    # at full allocated size and overstates the total.
+    total_bytes = int(agg_bytes)
     total_time = elapsed
     pct = 100.0 * total_bytes / max(1, expected_bytes)
     avg = total_bytes / max(0.1, total_time)
     steady = (sorted(steady_rates)[len(steady_rates) // 2]
-              if steady_rates else avg)   # median post-ramp interval rate
+              if steady_rates else avg)
+    # NIC ground truth (independent of rclone's self-report)
+    nic_avg = nic_delta_total / max(0.1, total_time)
+    nic_steady_med = (sorted(nic_steady)[len(nic_steady) // 2]
+                      if nic_steady else nic_avg)
 
     # throttling / errors from worker logs
     throttle = 0
@@ -231,10 +281,14 @@ def main(argv=None) -> int:
         "expected_bytes": expected_bytes, "transferred_bytes": total_bytes,
         "pct_complete": round(pct, 1),
         "total_transfer_time_s": round(total_time, 1),
-        "avg_GBps": round(avg / GB, 3),
+        "avg_GBps": round(avg / GB, 3),                 # rclone-reported
         "avg_GBps_per_node": round(avg / GB / cfg.num_nodes, 3),
         "steady_GBps": round(steady / GB, 3),
         "peak_GBps": round(peak / GB, 3),
+        "nic_avg_GBps": round(nic_avg / GB, 3),         # GROUND TRUTH: node NIC rx
+        "nic_avg_GBps_per_node": round(nic_avg / GB / cfg.num_nodes, 3),
+        "nic_steady_GBps": round(nic_steady_med / GB, 3),
+        "nic_peak_GBps": round(peak_nic / GB, 3),
         "throttle_signals": throttle,
     }
     with open(os.path.join(out, "summary.json"), "w") as sfh:
@@ -246,9 +300,11 @@ def main(argv=None) -> int:
     print(f"  status            : {status}  ({pct:.1f}% of bucket on disk)")
     print(f"  TOTAL TRANSFER TIME: {total_time:.0f}s ({mins:.1f} min) for "
           f"{total_bytes/1e12:.3f} TB")
-    print(f"  AVERAGE rate      : {human_gbps(avg)}  "
-          f"({avg/GB/cfg.num_nodes:.2f} GB/s/node)")
-    print(f"  steady (sampled)  : {human_gbps(steady)}   peak: {human_gbps(peak)}")
+    print(f"  rclone  avg/steady/peak: {avg/GB:.2f} / {steady/GB:.2f} / "
+          f"{peak/GB:.2f} GB/s")
+    print(f"  NIC     avg/steady/peak: {nic_avg/GB:.2f} / {nic_steady_med/GB:.2f} / "
+          f"{peak_nic/GB:.2f} GB/s  <- GROUND TRUTH "
+          f"({nic_avg/GB/cfg.num_nodes:.2f} GB/s/node)")
     print(f"  OCI throttle signals: {throttle}")
     print(f"  -> {out}/summary.json , timeseries.csv")
 
