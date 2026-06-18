@@ -5,14 +5,13 @@ Parallel-pull a dataset from **any S3-compatible object store** to a
 saturate worker hosts across a high-latency path. **OCI Object Storage is the
 worked example throughout** but the source
 backend is rclone's generic `provider = Other`, so AWS S3, MinIO/Ceph, GCS (S3
-interop), Cloudflare R2, Backblaze B2, etc. work too — point `OCI_ENDPOINT` at
+interop), Cloudflare R2, Backblaze B2, etc. work too -  point `OCI_ENDPOINT` at
 the store (see [Other S3-compatible sources](#other-s3-compatible-sources)).
 
 The shape follows Crusoe's AWS-S3 ["rclone parallel streams"](https://support.crusoecloud.com/hc/en-us/articles/37041258573723-How-To-Download-Data-From-AWS-S3-Using-Rclone-Parallel-Streams) reference: a master
 pod lists the source and writes balanced shard manifests to a shared disk; N
-worker pods each take one shard and `rclone copy` it in parallel — tuned for a
-**high-RTT path** where throughput comes from **massive concurrency**, not from
-large files.
+worker pods each take one shard and `rclone copy` it in parallel - tuned for a
+**high-RTT path** where throughput comes from **massive concurrency**.
 
 ---
 
