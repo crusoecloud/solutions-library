@@ -10,9 +10,9 @@ Source Location                        Destination Location
 │  nginx-server-0         │            │  Kubernetes Cluster (CMK)            │
 │  nginx-server-1   :8080 │──internet──│  ┌────────────────────────────────┐  │
 │  ...                    │            │  │  aria2c-worker pods (×NUM_PODS)│  │
-│                         │            │  │  downloading in parallel        │  │
+│                         │            │  │  downloading in parallel       │  │
 │  [Source Shared Disk]   │            │  └────────────────────────────────┘  │
-│  mounted at /vast        │            │                                      │
+│  mounted at /vast       │            │                                      │
 └─────────────────────────┘            │  [Destination Shared Disk]           │
                                        │  mounted as PVC at /vast             │
                                        └──────────────────────────────────────┘
