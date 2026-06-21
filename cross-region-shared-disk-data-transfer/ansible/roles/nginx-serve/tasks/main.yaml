@@ -1,0 +1,132 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install nginx and apache2-utils (for htpasswd)
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - apache2-utils
+    state: present
+
+- name: Create data directory
+  ansible.builtin.file:
+    path: "{{ data_path }}"
+    state: directory
+    mode: "0755"
+
+- name: Mount VAST NFS share
+  ansible.posix.mount:
+    path: "{{ data_path }}"
+    src: "{{ vast_nfs_server_host }}:/volumes/{{source_disk_id}}"
+    fstype: nfs
+    opts: "vers=3,nconnect=16,spread_reads,spread_writes,remoteports={{ vast_nfs_remoteports }},rsize=1048576,noatime,nodiratime"
+    state: mounted
+  when: vast_nfs_server_host is defined and vast_nfs_server_host != ""
+  register: nfs_mount_result
+
+# nconnect and tcp_slot_table_entries can only be set at mount time.
+# If fstab changed, stop nginx and force a full unmount/mount cycle.
+- name: Stop nginx before NFS remount
+  ansible.builtin.systemd:
+    name: nginx
+    state: stopped
+  failed_when: false
+  when: nfs_mount_result is defined and nfs_mount_result.changed
+
+- name: Remount NFS with updated options
+  ansible.builtin.shell: "umount {{ data_path }} && mount {{ data_path }}"
+  when: nfs_mount_result is defined and nfs_mount_result.changed
+  changed_when: nfs_mount_result is defined and nfs_mount_result.changed
+
+# Set NFS read-ahead to 16 MB via sysfs. Uses /proc/fs/nfsfs/volumes to find
+# the BDI device ID for each NFS mount, then writes to only those BDI entries.
+# Runs after mount to ensure the NFS BDI device exists.
+- name: Set NFS read-ahead to {{ read_ahead_kb_size }}KB
+  ansible.builtin.shell: |
+    changed=false
+    awk 'NR>1 {print $4}' /proc/fs/nfsfs/volumes | while read bdi; do
+      path="/sys/class/bdi/${bdi}/read_ahead_kb"
+      if [ -f "$path" ]; then
+        current=$(cat "$path")
+        if [ "$current" != "{{ read_ahead_kb_size }}" ]; then
+          echo {{ read_ahead_kb_size }} | tee "$path" > /dev/null && changed=true
+        fi
+      fi
+    done
+    echo "$changed"
+  register: readahead_result
+  changed_when: "'true' in readahead_result.stdout"
+
+- name: Create serve path directory
+  ansible.builtin.file:
+    path: "{{ serve_path }}"
+    state: directory
+    mode: "0755"
+  when: serve_path != data_path
+
+- name: Create htpasswd file for nginx basic auth
+  ansible.builtin.command:
+    cmd: htpasswd -cb /etc/nginx/.htpasswd {{ http_user }} {{ http_password }}
+    creates: /etc/nginx/.htpasswd
+  no_log: true
+
+- name: Disable default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Deploy nginx transfer configuration
+  ansible.builtin.template:
+    src: nginx-transfer.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: nginx_conf_result
+
+- name: Create nginx systemd override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/nginx.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Increase nginx systemd startup timeout for high worker count
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nginx.service.d/timeout.conf
+    content: |
+      [Service]
+      TimeoutStartSec=120
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Restart nginx when configuration changes
+  ansible.builtin.systemd:
+    name: nginx
+    state: restarted
+    enabled: true
+    daemon_reload: true
+  when: nginx_conf_result.changed or (nfs_mount_result is defined and nfs_mount_result.changed)
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Wait for nginx to start
+  ansible.builtin.pause:
+    seconds: 2
+  when: nginx_conf_result.changed or (nfs_mount_result is defined and nfs_mount_result.changed)
+
+- name: Verify nginx is running
+  ansible.builtin.systemd:
+    name: nginx
+  register: nginx_service_state
+  failed_when: nginx_service_state.status.ActiveState != "active"
