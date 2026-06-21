@@ -1,0 +1,182 @@
+---
+# =============================================================================
+# Play 1: Network tuning on all source and destination VMs
+# =============================================================================
+- name: Tune network on all transfer VMs
+  hosts: source_servers:destination_nodes
+  become: true
+  gather_facts: true
+  roles:
+    - network-tune
+
+# =============================================================================
+# Play 2: Configure nginx HTTP servers on source VMs
+# =============================================================================
+- name: Configure nginx source servers
+  hosts: source_servers
+  become: true
+  gather_facts: true
+  roles:
+    - nginx-serve
+    - build-file-metadata
+
+# =============================================================================
+# Play 3: Configure destination cluster (storage + optional Grafana CMK)
+# =============================================================================
+- name: Configure destination cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    kubeconfig_path: "{{ playbook_dir }}/../kubeconfig-{{ destination_cluster_id }}"
+  tasks:
+    - name: Configure aria2c-download.py with Terraform-derived values
+      ansible.builtin.lineinfile:
+        path: "{{ playbook_dir }}/../aria2c-download.py"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^NUM_PODS\s*=',       line: 'NUM_PODS = {{ aria2c_num_pods }}' }
+        - { regexp: '^DATA_MOUNT\s*=',     line: 'DATA_MOUNT = "{{ aria2c_data_mount }}"' }
+        - { regexp: '^HTTP_USER\s*=',      line: 'HTTP_USER = "{{ aria2c_http_user }}"' }
+        - { regexp: '^HTTP_PASSWD\s*=',    line: 'HTTP_PASSWD = "{{ aria2c_http_password }}"' }
+      no_log: true
+
+    - name: Get kubeconfig for destination cluster
+      ansible.builtin.command:
+        cmd: crusoe kubernetes clusters get-credentials --project-id {{ destination_project_id }} {{ destination_cluster_id }} -y
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      args:
+        creates: "{{ kubeconfig_path }}"
+
+    - name: Apply storage class
+      ansible.builtin.command:
+        cmd: kubectl apply -f {{ playbook_dir }}/files/storage-class.yaml --kubeconfig {{ kubeconfig_path }}
+
+    - name: Fetch all disks from Crusoe
+      ansible.builtin.command:
+        cmd: crusoe storage disks list --project-id {{ destination_project_id }} -f json
+      register: disk_list_raw
+      changed_when: false
+
+    - name: Find destination disk in list
+      ansible.builtin.set_fact:
+        _matched_disks: "{{ (disk_list_raw.stdout | from_json) | selectattr('id', 'equalto', destination_disk_id) | list }}"
+
+    - name: Fail if destination disk not found
+      ansible.builtin.fail:
+        msg: >
+          Disk with ID '{{ destination_disk_id }}' not found in project '{{ destination_project_id }}'.
+          Run: crusoe storage disks list --project-id {{ destination_project_id }} -f json
+      when: _matched_disks | length == 0
+
+    - name: Parse destination disk details
+      ansible.builtin.set_fact:
+        disk_info: "{{ _matched_disks | first }}"
+        # Crusoe returns sizes like "1024GiB" or "1024000GiB"; Kubernetes requires "Gi"/"Ti" (no trailing B).
+        disk_size_k8s: "{{ (_matched_disks | first).size | regex_replace('B$', '') }}"
+
+    - name: Apply PersistentVolume for destination disk
+      ansible.builtin.shell:
+        cmd: |
+          cat <<'EOF' | kubectl apply -f - --kubeconfig {{ kubeconfig_path }}
+          kind: PersistentVolume
+          apiVersion: v1
+          metadata:
+            name: aria2c-vast-csi-import
+          spec:
+            capacity:
+              storage: {{ disk_size_k8s }}
+            accessModes:
+              - ReadWriteMany
+            storageClassName: crusoe-csi-driver-fs-sc
+            volumeMode: Filesystem
+            persistentVolumeReclaimPolicy: Retain
+            csi:
+              driver: fs.csi.crusoe.ai
+              readOnly: false
+              volumeHandle: {{ disk_info.id }}
+              volumeAttributes:
+                csi.crusoe.ai/disk-name: {{ disk_info.name }}
+                csi.crusoe.ai/serial-number: {{ disk_info.serial_number }}
+          EOF
+        executable: /bin/bash
+
+    - name: Apply PersistentVolumeClaim for destination disk
+      ansible.builtin.shell:
+        cmd: |
+          cat <<'EOF' | kubectl apply -f - --kubeconfig {{ kubeconfig_path }}
+          kind: PersistentVolumeClaim
+          apiVersion: v1
+          metadata:
+            name: aria2c-vast-csi-import
+          spec:
+            accessModes:
+              - ReadWriteMany
+            storageClassName: crusoe-csi-driver-fs-sc
+            resources:
+              requests:
+                storage: {{ disk_size_k8s }}
+            volumeMode: Filesystem
+          EOF
+        executable: /bin/bash
+
+    - name: Skip Grafana CMK installation when monitoring token is not set
+      ansible.builtin.meta: end_play
+      when: grafana_monitoring_token is not defined or grafana_monitoring_token == ""
+
+    - name: Apply Grafana CMK namespace
+      ansible.builtin.command:
+        cmd: kubectl apply -f {{ grafana_cmk_manifests }}/namespace.yaml --kubeconfig {{ kubeconfig_path }}
+
+    # Base64-encode the token and project ID before embedding them in the YAML so that
+    # tokens containing special characters (e.g. $) are safe from shell and YAML parsing.
+    - name: Create monitoring token Kubernetes secret
+      ansible.builtin.shell:
+        cmd: |
+          cat <<'EOF' | kubectl apply -f - --kubeconfig {{ kubeconfig_path }}
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: crusoe-monitoring-token
+            namespace: monitoring
+          data:
+            MONITORING_TOKEN: {{ grafana_monitoring_token | b64encode }}
+            PROJECT_ID: {{ destination_project_id | b64encode }}
+          EOF
+        executable: /bin/bash
+      no_log: true
+
+    - name: Apply Grafana CMK StorageClass
+      ansible.builtin.command:
+        cmd: kubectl apply -f {{ grafana_cmk_manifests }}/ssd-storageclass.yaml --kubeconfig {{ kubeconfig_path }}
+
+    - name: Apply Grafana PVC
+      ansible.builtin.command:
+        cmd: kubectl apply -f {{ grafana_cmk_manifests }}/grafana-pvc.yaml --kubeconfig {{ kubeconfig_path }}
+
+    - name: Apply Grafana dashboards ConfigMap
+      ansible.builtin.command:
+        cmd: kubectl apply -f {{ grafana_cmk_manifests }}/grafana-dashboards-configmap.yaml --kubeconfig {{ kubeconfig_path }}
+
+    - name: Apply Grafana datasource ConfigMap
+      ansible.builtin.command:
+        cmd: kubectl apply -f {{ grafana_cmk_manifests }}/grafana-datasource-configmap.yaml --kubeconfig {{ kubeconfig_path }}
+
+    - name: Add Grafana Helm repository
+      ansible.builtin.command:
+        cmd: helm repo add grafana https://grafana.github.io/helm-charts --force-update
+
+    - name: Update Helm repositories
+      ansible.builtin.command:
+        cmd: helm repo update grafana
+
+    - name: Install Grafana via Helm
+      ansible.builtin.command:
+        cmd: >
+          helm upgrade --install grafana grafana/grafana
+          --namespace monitoring
+          --values {{ grafana_cmk_manifests }}/grafana-values.yaml
+          --values {{ playbook_dir }}/files/grafana-overrides.yaml
+          --kubeconfig {{ kubeconfig_path }}

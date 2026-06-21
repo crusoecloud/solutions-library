@@ -1,0 +1,56 @@
+worker_processes auto;
+worker_rlimit_nofile 1048576;
+pid /run/nginx.pid;
+
+# Named thread pool for async NFS I/O with larger queue depth.
+# 32 threads per pool allows more concurrent NFS reads without blocking workers.
+thread_pool nfs_pool threads=32 max_queue=65536;
+
+events {
+    worker_connections 8192;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    # Zero-copy file serving — data goes directly from NFS page cache
+    # to the TCP socket in kernel space, never touching userspace memory.
+    sendfile on;
+    sendfile_max_chunk 2m;
+    tcp_nopush on;
+    tcp_nodelay on;
+
+    # Use the named thread pool for async NFS I/O — prevents workers from
+    # blocking on slow NFS reads. Each read is dispatched to a pool thread.
+    aio threads=nfs_pool;
+
+    # Cache open file descriptors and metadata to reduce NFS stat/open calls.
+    open_file_cache max=100000 inactive=300s;
+    open_file_cache_valid 120s;
+    open_file_cache_min_uses 1;
+    open_file_cache_errors on;
+
+    # Keep-alive for persistent connections from aria2c workers.
+    keepalive_timeout 300s;
+    keepalive_requests 100000;
+
+    # Output buffering tuned for large file transfers over high-BDP links.
+    output_buffers 8 512k;
+
+    # Disable access log for performance; errors only.
+    access_log off;
+    error_log /var/log/nginx/transfer-error.log warn;
+
+    server {
+        listen {{ serve_addr }}:8080 reuseport;
+        server_name _;
+
+        auth_basic "Transfer";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+
+        location / {
+            root {{ serve_path }};
+            autoindex on;
+        }
+    }
+}

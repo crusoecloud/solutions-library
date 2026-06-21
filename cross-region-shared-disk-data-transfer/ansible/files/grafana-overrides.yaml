@@ -1,0 +1,54 @@
+# Override grafana-cmk/manifests/grafana-values.yaml for port-forward-only access.
+# Removes the crusoe-public-tls-proxy sidecar and associated TLS volume —
+# only the crusoe-auth-proxy (Crusoe metrics auth) is kept.
+extraContainers: |
+  - name: crusoe-auth-proxy
+    image: caddy:2-alpine
+    env:
+      - name: MONITORING_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: crusoe-monitoring-token
+            key: MONITORING_TOKEN
+      - name: PROJECT_ID
+        valueFrom:
+          secretKeyRef:
+            name: crusoe-monitoring-token
+            key: PROJECT_ID
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        cat > /tmp/Caddyfile <<'EOF'
+        {
+          admin off
+          auto_https off
+          persist_config off
+        }
+        :8888 {
+          uri replace /api/v1 /v1alpha5/projects/{$PROJECT_ID}/metrics/timeseries/api/v1
+          reverse_proxy https://api.crusoecloud.com {
+            header_up Authorization "Bearer {$MONITORING_TOKEN}"
+            header_up Host api.crusoecloud.com
+          }
+        }
+        EOF
+        exec caddy run --config /tmp/Caddyfile --adapter caddyfile
+    ports:
+      - name: auth-proxy
+        containerPort: 8888
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    livenessProbe:
+      httpGet:
+        path: /api/v1/labels
+        port: 8888
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      failureThreshold: 3
+
+extraContainerVolumes: []

@@ -1,0 +1,33 @@
+---
+# This role runs on the first source server only and generates downloads.txt,
+# which is then fetched to the local machine for use with aria2c-download.py.
+
+- name: Collect all source server public IPs
+  ansible.builtin.set_fact:
+    source_server_ips: "{{ groups['source_servers'] | map('extract', hostvars, 'ansible_host') | list }}"
+  run_once: true
+
+- name: Copy download-links.sh to primary source server
+  ansible.builtin.copy:
+    src: download-links.sh
+    dest: /tmp/download-links.sh
+    mode: "0755"
+  run_once: true
+
+- name: Generate downloads.txt file manifest
+  ansible.builtin.command:
+    cmd: /tmp/download-links.sh {{ serve_path }} 8080 {{ destination_mount_path }} {{ source_server_ips | join(' ') }}
+  register: manifest_result
+  run_once: true
+
+- name: Show manifest generation result
+  ansible.builtin.debug:
+    msg: "{{ manifest_result.stdout }}"
+  run_once: true
+
+- name: Fetch downloads.txt to local machine
+  ansible.builtin.fetch:
+    src: /tmp/downloads.txt
+    dest: "{{ playbook_dir }}/../downloads.txt"
+    flat: true
+  run_once: true
