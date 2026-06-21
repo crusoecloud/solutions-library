@@ -1,0 +1,3 @@
+---
+# The desired NFS read-ahead cache size in kilobytes (16MB).
+read_ahead_kb_size: 16384

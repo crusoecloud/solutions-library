@@ -1,0 +1,80 @@
+---
+# NFS RPC slot table — must be set before NFS mounts so new mounts
+# inherit 512 slots per connection instead of the default 2.
+- name: Set NFS RPC slot table entries
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop:
+    - { name: sunrpc.tcp_slot_table_entries,     value: 512 }
+    - { name: sunrpc.tcp_max_slot_table_entries, value: 512 }
+
+- name: Tune kernel parameters for high-BDP cross-region transfers
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop:
+    # TCP congestion control and socket buffers
+    - { name: net.core.default_qdisc,                  value: fq }
+    - { name: net.ipv4.tcp_congestion_control,         value: bbr }
+    - { name: net.core.rmem_max,                       value: 268435456 }
+    - { name: net.core.wmem_max,                       value: 268435456 }
+    - { name: net.ipv4.tcp_rmem,                       value: "4096 131072 268435456" }
+    - { name: net.ipv4.tcp_wmem,                       value: "4096 131072 268435456" }
+    - { name: net.core.netdev_max_backlog,              value: 250000 }
+    # Connection capacity
+    - { name: net.core.somaxconn,                      value: 65535 }
+    - { name: net.ipv4.tcp_max_syn_backlog,            value: 65535 }
+    - { name: fs.file-max,                             value: 1048576 }
+    # Ephemeral port range and TIME_WAIT reuse
+    - { name: net.ipv4.ip_local_port_range,            value: "1024 65535" }
+    - { name: net.ipv4.tcp_tw_reuse,                   value: 1 }
+    # Avoid swapping under heavy I/O
+    - { name: vm.swappiness,                           value: 1 }
+
+- name: Ensure MTU is set under the 'alleths' configuration
+  ansible.builtin.lineinfile:
+    path: /etc/netplan/00-netplan.yaml
+    regexp: '^\s*mtu:'
+    line: '      mtu: 9000'
+    insertafter: '^\s*dhcp4: true'
+  notify: Restart netplan
+
+- name: Create the ring buffer configuration script
+  ansible.builtin.copy:
+    dest: "/usr/local/sbin/apply-ring-buffers.sh"
+    owner: root
+    group: root
+    mode: '0744'
+    content: |
+      #!/bin/sh
+      /sbin/ethtool -G {{ interface_name }} rx {{ rx_buffer_size }} tx {{ tx_buffer_size }}
+
+- name: Create the ring buffer systemd service file
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/ring-buffers.service"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Set persistent ring buffer sizes for {{ interface_name }}
+      After=network.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/apply-ring-buffers.sh
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Reload systemd
+
+- name: Enable and start the ring buffer service
+  ansible.builtin.systemd:
+    name: ring-buffers.service
+    state: started
+    enabled: yes

@@ -1,0 +1,72 @@
+# =============================================================================
+# Cross-Region Shared Disk Data Transfer — terraform.tfvars
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in the values for your deployment:
+#   cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+# Shared
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+# =============================================================================
+# SOURCE — nginx file server VMs
+# =============================================================================
+
+source_server_location       = "us-east1-a"
+source_server_project_id     = "YOUR_SOURCE_PROJECT_ID"
+source_server_vpc_subnet_id  = "YOUR_SOURCE_SUBNET_ID"
+
+# Source server VM groups — mix instance types freely, one entry per group.
+source_server_groups = [
+  { vm_type = "c1a.176x", vm_count = 4 },
+]
+
+# HTTP credentials used by nginx and aria2c clients.
+http_user     = "transfer-user"
+http_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+
+# UUID of the existing Crusoe shared disk to serve from the source location.
+source_disk_id = "YOUR_SOURCE_DISK_ID"
+
+# Filesystem path where the source disk is mounted on the source VMs.
+source_disk_mount_path = "/vast"
+
+# Path to serve over HTTP. Can be a subdirectory of the mount point.
+# Example: "/vast/dataset" to serve only the dataset subdirectory.
+source_serve_path = "/vast"
+
+
+# =============================================================================
+# DESTINATION — Kubernetes cluster + storage
+# =============================================================================
+
+destination_location      = "us-west1-a"
+destination_project_id    = "YOUR_DESTINATION_PROJECT_ID"
+
+# Kubernetes cluster configuration
+cluster_name      = "data-transfer-cluster"
+cluster_version   = "1.35.5-cmk.7"
+cluster_subnet_id = "YOUR_DESTINATION_SUBNET_ID"
+
+# Node pool groups for aria2c workers — mix instance types freely.
+nodepool_version = "1.35.5-cmk.10"
+nodepool_groups = [
+  { vm_type = "s2a.80x", vm_count = 4 },
+]
+
+# UUID of the destination shared disk to write data to.
+destination_disk_id = "YOUR_DESTINATION_DISK_ID"
+
+# Mount path on the destination PVC (used as the dir= prefix in downloads.txt).
+destination_disk_mount_path = "/vast"
+
+# =============================================================================
+# Grafana CMK (optional — observability for the destination cluster)
+# =============================================================================
+
+# Path to grafana-cmk/manifests from the solutions-library repo.
+grafana_cmk_manifests_path = "../grafana-cmk/manifests"
+
+# Crusoe monitoring token. Create with: crusoe monitoring tokens create
+# Leave empty to skip Grafana CMK installation.
+grafana_monitoring_token = ""
