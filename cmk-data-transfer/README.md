@@ -90,7 +90,7 @@ contention). Each worker pod:
 
 
 
-## Why concurrency, not file size: the 150 ms BDP
+## Why concurrency: TCP windows and Bandwidth Delay Product (BDP)
 
 Over a >150 ms intercontinental path a single TCP stream is **window-limited**:
 
@@ -125,10 +125,10 @@ untuned stream, with a 1.5× safety factor):
 
 rclone exposes two multiplicative concurrency levers:
 
-- **`--transfers`** — number of files copied in parallel (also the *only*
+- **`--transfers`** - number of files copied in parallel (also the *only*
   parallelism for files **below** `--multi-thread-cutoff`, since each gets one
   stream).
-- **`--multi-thread-streams`** — ranged-GET streams per *single* file, for files
+- **`--multi-thread-streams`** - ranged-GET streams per *single* file, for files
   **above** the cutoff (default 256 MiB). This is what fills the per-large-file
   BDP. (Multi-thread **downloads** are supported since rclone v1.63.)
 
@@ -569,3 +569,9 @@ preflight/              fio VAST write-ceiling test (yaml + run_fio.py)
   pip install required; the orchestrator shells out to `kubectl`).
 - A `KUBECONFIG` with access to the CMK cluster and schedulable `s2a` nodes.
 - OCI Customer Secret Key with read access to the source bucket.
+
+---
+
+## Disclaimer
+
+This solution is provided **AS IS, WITHOUT WARRANTY OF ANY KIND**, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. The orchestrator, manifests, scripts, and documentation in this directory are reference implementations intended to help you get started — they are not a supported Crusoe product and may not be appropriate for every deployment without customization. Running transfers incurs object-store egress and compute cost, and throughput depends on factors outside this tooling (source-provider limits, network path, and storage backend). Use at your own risk; review the manifests and cost/egress implications against your security and operational requirements before applying them to production clusters.
