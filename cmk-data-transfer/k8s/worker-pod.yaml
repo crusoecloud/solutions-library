@@ -1,0 +1,76 @@
+# Worker pod (one shard each, PODS_PER_NODE per node). REFERENCE template — the
+# orchestrator generates the authoritative spec per shard with the sizing-derived
+# rclone flags filled in. Shown here for review / manual use.
+#
+# Design:
+#   hostNetwork: true            -> use the node NIC directly (bypass the CNI).
+#   topologySpreadConstraints    -> spread workers EVENLY (maxSkew=1 on hostname)
+#                                   so each node gets PODS_PER_NODE, not a pile-up.
+#   unique rc port 5572+index    -> hostNetwork pods share the node netns, so each
+#                                   worker's rclone rc must bind a distinct port.
+#   resources.requests           -> sized so exactly PODS_PER_NODE pack per node.
+#   --no-traverse                -> with --files-from, never list the dest tree.
+#   --checkers                   -> omitted by default (set RCLONE_CHECKERS to add).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cmk-data-transfer-worker-0          # -<shard index>
+  labels:
+    app: cmk-data-transfer-worker
+    shard: "0"
+spec:
+  restartPolicy: Never
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+  nodeSelector:
+    crusoe.ai/instance.class: ${INSTANCE_CLASS}     # s2a
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: cmk-data-transfer-worker
+  containers:
+    - name: worker
+      image: ${RCLONE_IMAGE}                        # rclone/rclone:latest
+      env:
+        - { name: SHARD_INDEX, value: "0" }
+        - { name: RC_PORT, value: "5572" }          # 5572 + pod index (unique/node)
+      command:
+        - /bin/sh
+        - -c
+        - >
+          set -eu;
+          mkdir -p /data/dataset /data/logs;
+          rclone copy
+          --files-from /data/shards/shard-${SHARD_INDEX}.txt
+          oci:${OCI_BUCKET}/${OCI_PREFIX} /data/dataset
+          --config /config/rclone.conf
+          --transfers ${RCLONE_TRANSFERS}
+          --multi-thread-streams ${RCLONE_MULTI_THREAD_STREAMS}
+          --multi-thread-cutoff ${RCLONE_MULTI_THREAD_CUTOFF}
+          --multi-thread-chunk-size ${RCLONE_MULTI_THREAD_CHUNK_SIZE}
+          --no-traverse
+          --s3-chunk-size ${RCLONE_S3_CHUNK_SIZE}
+          --buffer-size ${RCLONE_BUFFER_SIZE}
+          --rc --rc-addr localhost:$RC_PORT --rc-no-auth
+          --stats 10s --stats-one-line -v
+          2>&1 | tee /data/logs/worker-${SHARD_INDEX}.log
+      resources:
+        requests:
+          cpu: "${WORKER_CPU_REQUEST}"              # auto: (vCPU - headroom) / PODS_PER_NODE
+          memory: ${WORKER_MEM_REQUEST}
+      volumeMounts:
+        - { name: shared, mountPath: /data }
+        - { name: rclone-conf, mountPath: /config, readOnly: true }
+  volumes:
+    - name: shared
+      persistentVolumeClaim:
+        claimName: ${PVC_NAME}
+    - name: rclone-conf
+      secret:
+        secretName: ${SECRET_NAME}
+        defaultMode: 0400
+        items:
+          - { key: rclone.conf, path: rclone.conf }

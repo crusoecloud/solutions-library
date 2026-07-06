@@ -1,0 +1,87 @@
+# Disk benchmark: one fio pod per s2a node, against the shared VAST PVC.
+#
+# Runs four stonewalled (sequential) fio profiles against a single per-node file
+# so reads measure data actually on VAST (direct=1 bypasses the page cache):
+#   seqwrite  (1M)  -> sequential write bandwidth
+#   seqread   (1M)  -> sequential read bandwidth (re-reads the written file)
+#   randwrite (4k)  -> random write IOPS
+#   randread  (4k)  -> random read IOPS
+#
+# Reproducible standalone:
+#   export INSTANCE_CLASS=s2a PVC_NAME=cmk-data-transfer-nfs IMAGE=alpine:3.20 \
+#          COMPLETIONS=4 PARALLELISM=4 FIO_SIZE=4G FIO_JOBS=16 FIO_IODEPTH=32 \
+#          FIO_RUNTIME=30 FIO_DIRECT=1
+#   envsubst < bench/fio/fio-bench-job.yaml | kubectl apply -f -
+#   kubectl wait --for=condition=complete job/cmk-fio-bench --timeout=900s
+#   kubectl logs -l app=cmk-fio-bench --tail=-1     # fio JSON per pod
+#
+# Or drive it (auto node count + results capture) with:
+#   python3 bench/fio/run_fio_bench.py
+#
+# completions == parallelism == node count, with hostname anti-affinity => exactly
+# one pod per node. backoffLimit 0 so a failure surfaces instead of retrying.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cmk-fio-bench
+  labels:
+    app: cmk-fio-bench
+spec:
+  completions: ${COMPLETIONS}
+  parallelism: ${PARALLELISM}
+  completionMode: Indexed
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: cmk-fio-bench
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        crusoe.ai/instance.class: ${INSTANCE_CLASS}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: cmk-fio-bench
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: fio
+          image: ${IMAGE}
+          env:
+            - { name: FIO_SIZE,    value: "${FIO_SIZE}" }      # per-job file size
+            - { name: FIO_JOBS,    value: "${FIO_JOBS}" }      # parallel jobs/node
+            - { name: FIO_IODEPTH, value: "${FIO_IODEPTH}" }   # async queue depth/job
+            - { name: FIO_RUNTIME, value: "${FIO_RUNTIME}" }   # seconds per phase
+            - { name: FIO_DIRECT,  value: "${FIO_DIRECT}" }
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              DIR=/data/_fiobench/$(hostname)
+              mkdir -p "$DIR"
+              command -v fio >/dev/null 2>&1 || apk add --no-cache fio >/dev/null 2>&1
+              # Many parallel jobs, each its own file (filename_format=f.$jobnum so
+              # all phases share the same files => seqread re-reads what seqwrite
+              # wrote). time_based gives sustained-throughput numbers. Tune
+              # FIO_JOBS x FIO_IODEPTH up to saturate the node NIC (~25 GB/s on s2a).
+              fio --directory="$DIR" --filename_format='f.$jobnum' \
+                  --size="$FIO_SIZE" --numjobs="$FIO_JOBS" \
+                  --ioengine=libaio --direct="$FIO_DIRECT" --iodepth="$FIO_IODEPTH" \
+                  --ramp_time=5 --time_based --runtime="$FIO_RUNTIME" \
+                  --group_reporting --output-format=json \
+                  --name=seqwrite  --rw=write     --bs=1M \
+                  --name=seqread   --rw=read      --bs=1M --stonewall \
+                  --name=randwrite --rw=randwrite --bs=4k --iodepth=128 --stonewall \
+                  --name=randread  --rw=randread  --bs=4k --iodepth=128 --stonewall
+              rm -rf "$DIR" 2>/dev/null || true
+          volumeMounts:
+            - name: shared
+              mountPath: /data
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: ${PVC_NAME}

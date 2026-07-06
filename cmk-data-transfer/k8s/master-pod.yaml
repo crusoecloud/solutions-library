@@ -1,0 +1,41 @@
+# Master / distribution pod: mounts the shared disk and the rclone Secret.
+# The orchestrator execs `rclone lsf` here to list the source, then pushes the
+# computed shard files into ${MOUNT_ROOT}/shards. Pinned to the same instance
+# class as the workers so its egress path to OCI matches theirs.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cmk-data-transfer-master
+  labels:
+    app: cmk-data-transfer-master
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    crusoe.ai/instance.class: ${INSTANCE_CLASS}   # s2a
+  containers:
+    - name: master
+      image: ${RCLONE_IMAGE}                       # rclone/rclone:latest
+      command:
+        - /bin/sh
+        - -c
+        - "mkdir -p /data/shards /data/logs /data/dataset; while true; do sleep 3600; done"
+      env:
+        - name: RCLONE_CONFIG
+          value: /config/rclone.conf
+      volumeMounts:
+        - name: shared
+          mountPath: /data                          # ${MOUNT_ROOT}
+        - name: rclone-conf
+          mountPath: /config
+          readOnly: true
+  volumes:
+    - name: shared
+      persistentVolumeClaim:
+        claimName: ${PVC_NAME}
+    - name: rclone-conf
+      secret:
+        secretName: ${SECRET_NAME}                  # cmk-data-transfer-oci
+        defaultMode: 0400
+        items:
+          - key: rclone.conf
+            path: rclone.conf
