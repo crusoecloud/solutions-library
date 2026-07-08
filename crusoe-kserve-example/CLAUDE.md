@@ -50,7 +50,7 @@ This runs `terraform apply` which:
 1. Creates the CMK cluster with `nvidia_gpu_operator`, `nvidia_network_operator`, and `crusoe_csi` add-ons
 2. Creates node pools (A100, H100, CPU — counts configurable in tfvars)
 3. Fetches kubeconfig
-4. Installs KServe v0.17.0 (standard mode + LLMInferenceService CRDs)
+4. Installs KServe v0.19.0 (standard mode + LLMInferenceService CRDs)
 5. Creates the `kserve-test` namespace with the HuggingFace secret
 
 #### 3. Deploy a Model
@@ -114,7 +114,7 @@ make setup-amd
 This runs three steps:
 1. `terraform apply` in `terraform-amd/` — creates CMK cluster with **`crusoe_csi` add-on only** (no NVIDIA add-ons), AMD GPU node pool, CPU node pool, fetches kubeconfig
 2. `install-amd-gpu-operator` — installs cert-manager v1.15.1, AMD GPU operator v1.4.2, creates Docker registry secret in `kube-amd-gpu`, applies AMD DeviceConfig
-3. `install-kserve` — installs KServe v0.17.0, patches storage-initializer, creates `kserve-test` namespace with HuggingFace secret
+3. `install-kserve` — installs KServe v0.19.0, patches storage-initializer, creates `kserve-test` namespace with HuggingFace secret
 
 **Key difference from NVIDIA**: AMD clusters use `amd.com/gpu` resource limits instead of `nvidia.com/gpu`, and use the `vllm/vllm-openai-rocm:latest` image (ROCm-based).
 
@@ -343,8 +343,17 @@ This uninstalls the Helm release and runs `terraform destroy` to tear down all i
   kubectl rollout restart deployment kserve-controller-manager -n kserve
   ```
 - If vLLM crashes with "unrecognized arguments: /mnt/models", you have `--model` in your args — remove it, KServe injects this automatically
+- If a model pod is stuck in `CreateContainerConfigError` with "container has runAsNonRoot and image will run as root", KServe v0.19.0's hardened pod securityContext conflicts with the root `vllm/vllm-openai` image. The chart relaxes this via `containerSecurityContext` in values.yaml (applied to basic/large/multi-node); don't remove it unless you switch to a non-root image
 - Check KServe controller logs: `kubectl logs -n kserve -l control-plane=kserve-controller-manager`
 - Check vLLM logs: `kubectl logs -n kserve-test deploy/<model>-kserve -c main`
+
+### Disaggregated Serving
+
+- Requires **KServe v0.19.0+**. On v0.17.0 the router's scheduler (EPP) CrashLoopBackOffs with `invalid decider plugin type: always-disagg-pd-decider` — the bundled scheduler image predates the config the controller generates. `make setup` / `make install-kserve` install v0.19.0 by default (override with `KSERVE_VERSION`).
+- Disaggregated pods use the NIXL-capable `ghcr.io/llm-d/llm-d-cuda` image (set via `disaggregated.image` in values.yaml), not `vllm/vllm-openai`. The plain vLLM image lacks the KV connector and the scheduler warns `no KVConnector found`.
+- If the vLLM engine crashes at startup with `ld: cannot find -l:libcuda.so.1`, the linker can't find the driver lib. The `LIBRARY_PATH=/usr/lib/x86_64-linux-gnu` env in the `disaggregated:` values fixes this — ensure it's set on both prefill and decode (the UBI-based llm-d image searches `/usr/lib64`, but the driver ships `libcuda.so.1` under `/usr/lib/x86_64-linux-gnu`).
+- On single-GPU-per-node pools, a rolling update deadlocks (the new pod can't schedule onto the GPU held by the old one). Set the deployments' strategy to `Recreate`, or delete the old ReplicaSet's pods to force convergence.
+- **Known limitation:** the current config provides prefill/decode *routing* via the scheduler but does not fully wire vLLM's `--kv-transfer-config`, so decode does not yet reuse prefill's KV cache over NIXL. Enabling true KV transfer requires passing a per-role `--kv-transfer-config` to the engines plus NIXL transport config (RDMA on IB fabrics, TCP on non-IB).
 
 ### AMD-Specific
 

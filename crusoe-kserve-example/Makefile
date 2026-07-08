@@ -3,7 +3,7 @@
 SHELL := /bin/bash
 NAMESPACE ?= kserve-test
 HF_TOKEN       ?= $(shell grep '^hf_token'       terraform/terraform.tfvars     2>/dev/null | sed 's/.*= *"//;s/"//')
-KSERVE_VERSION ?= v0.17.0
+KSERVE_VERSION ?= v0.19.0
 
 # AMD config — all values read from terraform-amd/terraform.tfvars
 _AMD_TFVARS    := terraform-amd/terraform.tfvars
@@ -211,24 +211,12 @@ deploy-amd-multi-node: ## Deploy multi-node LLM on AMD MI300X (MiniMax-M2 on 2x8
 	  --set amd.multiNode.enabled=true \
 	  --set disaggregated.enabled=false
 
-deploy-disaggregated: ## Deploy disaggregated prefill-decode (H100 + A100)
+deploy-disaggregated: ## Deploy disaggregated prefill-decode (needs KServe v0.19.0+; set model/TP/GPUs/labels in values.yaml disaggregated:)
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=false \
 	  --set multiNode.enabled=false \
-	  --set disaggregated.enabled=true \
-	  --set disaggregated.decode.args[0]="--tensor-parallel-size" \
-	  --set-string disaggregated.decode.args[1]="8" \
-	  --set disaggregated.decode.args[2]="--enforce-eager" \
-	  --set disaggregated.decode.args[3]="--gpu-memory-utilization" \
-	  --set disaggregated.decode.args[4]="0.90" \
-	  --set disaggregated.prefill.args[0]="--tensor-parallel-size" \
-	  --set-string disaggregated.prefill.args[1]="8" \
-	  --set disaggregated.prefill.args[2]="--enable-chunked-prefill" \
-	  --set disaggregated.prefill.args[3]="--max-num-batched-tokens" \
-	  --set-string disaggregated.prefill.args[4]="8192" \
-	  --set disaggregated.prefill.args[5]="--gpu-memory-utilization" \
-	  --set disaggregated.prefill.args[6]="0.90"
+	  --set disaggregated.enabled=true
 
 # ---------------------------------------------------------------------------
 # Test & Benchmark
