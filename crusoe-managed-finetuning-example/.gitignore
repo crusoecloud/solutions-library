@@ -1,0 +1,25 @@
+# --- Secrets / credentials (NEVER commit) ---
+.env
+*.env
+!.env.example
+
+# --- Generated artifacts ---
+outputs/
+run.ipynb
+.ipynb_checkpoints/
+.crusoe-finetune-state.json
+*.finetune-state.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
