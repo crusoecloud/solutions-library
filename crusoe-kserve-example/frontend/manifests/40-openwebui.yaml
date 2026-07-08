@@ -34,6 +34,10 @@ spec:
               value: "True"           # first visitor signs up and becomes admin
             - name: WEBUI_NAME
               value: "Crusoe KServe Chat"
+            # Let every signed-up user see/use the served model. Without this,
+            # non-admin users are gated by model access control and see no models.
+            - name: BYPASS_MODEL_ACCESS_CONTROL
+              value: "True"
           volumeMounts:
             - name: data
               mountPath: /app/backend/data
