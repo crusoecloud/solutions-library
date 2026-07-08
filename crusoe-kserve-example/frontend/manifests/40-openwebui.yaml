@@ -38,6 +38,10 @@ spec:
             # non-admin users are gated by model access control and see no models.
             - name: BYPASS_MODEL_ACCESS_CONTROL
               value: "True"
+            # Drop Open WebUI's built-in "arena-model" blind-comparison entry so the
+            # model dropdown shows only the served model(s).
+            - name: ENABLE_EVALUATION_ARENA_MODELS
+              value: "False"
           volumeMounts:
             - name: data
               mountPath: /app/backend/data
