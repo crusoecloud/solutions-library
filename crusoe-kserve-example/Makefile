@@ -124,7 +124,10 @@ deploy-basic: ## Deploy single-GPU LLM (Qwen2.5-0.5B on 1x A100 or H100)
 	  --set basic.args[1]="0.95" \
 	  --set basic.args[2]="--enable-chunked-prefill" \
 	  --set basic.args[3]="--max-num-batched-tokens" \
-	  --set-string basic.args[4]="4096"
+	  --set-string basic.args[4]="4096" \
+	  --set basic.args[5]="--enable-auto-tool-choice" \
+	  --set basic.args[6]="--tool-call-parser" \
+	  --set basic.args[7]="hermes"
 
 deploy-large: ## Deploy large single-node LLM (Qwen2.5-72B on 8x H100, TP=8) — edit values.yaml large: to change model/resources
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
