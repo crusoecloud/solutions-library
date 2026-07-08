@@ -1,0 +1,23 @@
+# Public HTTPS entrypoint. The crusoe-lb-controller provisions a Crusoe external
+# load balancer and assigns a VIP; `manage-firewall-rule` makes it open the firewall
+# to the backing nodePort automatically (on CMK the LB DNATs to a nodePort before
+# the project firewall is evaluated, so the rule must target the nodePort, not 443).
+#
+# WARNING: this exposes the app to the public internet (0.0.0.0/0). To restrict,
+# add `loadBalancerSourceRanges: ["<your-cidr>"]` below.
+apiVersion: v1
+kind: Service
+metadata:
+  name: openwebui-lb
+  namespace: openwebui
+  annotations:
+    crusoe.ai/manage-firewall-rule: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: open-webui
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443     # Caddy TLS sidecar
+      protocol: TCP

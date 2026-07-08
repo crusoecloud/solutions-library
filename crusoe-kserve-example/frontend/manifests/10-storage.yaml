@@ -1,0 +1,22 @@
+# SSD-backed persistence for Open WebUI (users, chats, settings live in SQLite at
+# /app/backend/data). Same Crusoe SSD CSI driver the LLM chart uses for model weights.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: crusoe-ssd
+provisioner: ssd.csi.crusoe.ai
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openwebui-data
+  namespace: openwebui
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: crusoe-ssd
+  resources:
+    requests:
+      storage: 5Gi

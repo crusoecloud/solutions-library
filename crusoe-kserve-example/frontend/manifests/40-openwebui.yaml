@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open-webui
+  namespace: openwebui
+  labels:
+    app: open-webui
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # RWO PVC — never run two pods mounting it at once
+  selector:
+    matchLabels:
+      app: open-webui
+  template:
+    metadata:
+      labels:
+        app: open-webui
+    spec:
+      containers:
+        # Open WebUI — the chat frontend. Talks to the vLLM OpenAI-compatible API.
+        - name: open-webui
+          image: ghcr.io/open-webui/open-webui:main
+          ports:
+            - containerPort: 8080
+          env:
+            # Points at the KServe workload Service for the deployed model. Change
+            # if you serve a different model (see `make deploy-openwebui` notes).
+            - name: OPENAI_API_BASE_URL
+              value: "http://qwen-llm-kserve-workload-svc.kserve-test.svc.cluster.local:8000/v1"
+            - name: OPENAI_API_KEY
+              value: "sk-noauth"      # vLLM ignores this unless started with --api-key
+            - name: WEBUI_AUTH
+              value: "True"           # first visitor signs up and becomes admin
+            - name: WEBUI_NAME
+              value: "Crusoe KServe Chat"
+          volumeMounts:
+            - name: data
+              mountPath: /app/backend/data
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+        # Caddy TLS sidecar — terminates HTTPS on :8443 from the self-signed cert.
+        - name: caddy-tls
+          image: caddy:2-alpine
+          command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+            - name: tls
+              mountPath: /etc/caddy/certs
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openwebui-data
+        - name: caddy-config
+          configMap:
+            name: openwebui-caddy
+        - name: tls
+          secret:
+            secretName: openwebui-tls
+---
+# ClusterIP — the port-forward target (plaintext :8080).
+apiVersion: v1
+kind: Service
+metadata:
+  name: openwebui
+  namespace: openwebui
+  labels:
+    app: open-webui
+spec:
+  type: ClusterIP
+  selector:
+    app: open-webui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

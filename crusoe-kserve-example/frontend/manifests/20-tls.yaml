@@ -1,0 +1,27 @@
+# Self-signed TLS for :443, minted by cert-manager (installed with KServe).
+# The Certificate produces the `openwebui-tls` Secret (kubernetes.io/tls) that the
+# Caddy sidecar serves. Browsers show a "not secure" warning (no public CA) — the
+# transport is still encrypted. Swap this Issuer for a real ClusterIssuer + DNS
+# name once you have one; no other manifest changes needed.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openwebui-selfsigned
+  namespace: openwebui
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openwebui-tls
+  namespace: openwebui
+spec:
+  secretName: openwebui-tls
+  duration: 8760h   # 1 year
+  commonName: openwebui.local
+  dnsNames:
+    - openwebui.local
+  issuerRef:
+    name: openwebui-selfsigned
+    kind: Issuer
