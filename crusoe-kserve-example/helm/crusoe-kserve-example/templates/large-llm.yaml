@@ -17,6 +17,10 @@ spec:
     containers:
       - name: main
         image: {{ .Values.image }}
+        {{- with .Values.containerSecurityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         env:
           - name: HF_TOKEN
             valueFrom:

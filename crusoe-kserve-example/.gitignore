@@ -4,6 +4,7 @@ terraform/.terraform.lock.hcl
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
 terraform/terraform.tfvars
+terraform/imports.tf
 
 # Secrets
 .env
@@ -12,6 +13,7 @@ terraform/terraform.tfvars
 
 # OS
 .DS_Store
+.claude/
 
 env
 prometheus/prometheus.yml

@@ -17,7 +17,7 @@ provider "crusoe" {
 variable "kserve_version" {
   description = "KServe release version"
   type        = string
-  default     = "v0.17.0"
+  default     = "v0.19.0"
 }
 
 variable "namespace" {
@@ -64,6 +64,14 @@ resource "crusoe_kubernetes_node_pool" "a100" {
   ssh_key         = var.ssh_public_key
   ib_partition_id = var.a100_ib_partition_id
   project_id      = var.project_id
+
+  # ssh_key and ib_partition_id are write-only in the Crusoe API (not returned
+  # on read), so they always read as a change after `terraform import` and would
+  # force pool replacement. Ignoring them lets an existing pool be adopted
+  # without recreating its nodes. Harmless for create-from-scratch.
+  lifecycle {
+    ignore_changes = [ssh_key, ib_partition_id]
+  }
 }
 
 resource "crusoe_kubernetes_node_pool" "h100" {
@@ -75,6 +83,10 @@ resource "crusoe_kubernetes_node_pool" "h100" {
   ssh_key         = var.ssh_public_key
   ib_partition_id = var.h100_ib_partition_id
   project_id      = var.project_id
+
+  lifecycle {
+    ignore_changes = [ssh_key, ib_partition_id]
+  }
 }
 
 resource "crusoe_kubernetes_node_pool" "cpu" {
@@ -85,6 +97,10 @@ resource "crusoe_kubernetes_node_pool" "cpu" {
   type           = var.cpu_node_type
   ssh_key        = var.ssh_public_key
   project_id     = var.project_id
+
+  lifecycle {
+    ignore_changes = [ssh_key]
+  }
 }
 
 # -----------------------------------------------------------------------------

@@ -20,13 +20,20 @@ spec:
   template:
     containers:
       - name: main
-        image: {{ .Values.image }}
+        image: {{ .Values.disaggregated.image | default .Values.image }}
+        {{- if .Values.disaggregated.decode.securityContext }}
+        securityContext:
+          {{- toYaml .Values.disaggregated.decode.securityContext | nindent 10 }}
+        {{- end }}
         env:
           - name: HF_TOKEN
             valueFrom:
               secretKeyRef:
                 name: hf-secret
                 key: HF_TOKEN
+          {{- with .Values.disaggregated.decode.extraEnv }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
         {{- if .Values.disaggregated.decode.args }}
         args:
           {{- toYaml .Values.disaggregated.decode.args | nindent 10 }}
@@ -55,13 +62,20 @@ spec:
     template:
       containers:
         - name: main
-          image: {{ .Values.image }}
+          image: {{ .Values.disaggregated.image | default .Values.image }}
+          {{- if .Values.disaggregated.prefill.securityContext }}
+          securityContext:
+            {{- toYaml .Values.disaggregated.prefill.securityContext | nindent 12 }}
+          {{- end }}
           env:
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: hf-secret
                   key: HF_TOKEN
+            {{- with .Values.disaggregated.prefill.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- if .Values.disaggregated.prefill.args }}
           args:
             {{- toYaml .Values.disaggregated.prefill.args | nindent 12 }}
