@@ -7,6 +7,16 @@ namespace: kserve-test
 # vLLM image
 image: vllm/vllm-openai:latest
 
+# KServe v0.19.0 hardens LLM pods (runAsNonRoot + readOnlyRootFilesystem) for
+# non-root images. The default vllm/vllm-openai image runs as root and writes to
+# the container filesystem, so relax the context for the basic/large/multi-node
+# profiles. (Disaggregated uses the non-root llm-d image and inherits KServe's
+# hardened context instead.)
+containerSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  readOnlyRootFilesystem: false
+
 # Persistent storage for model weights (required for models >100GB)
 modelStorage:
   enabled: false
@@ -28,7 +38,7 @@ basic:
       cpu: "1"
       memory: 4Gi
   nodeSelector:
-    crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib
+    crusoe.ai/accelerator: nvidia-a100-80gb
 
 # Large: multi-GPU single-node LLM serving (e.g., Qwen2.5-72B-Instruct on 8x H100, TP=8)
 large:
@@ -71,14 +81,25 @@ multiNode:
   nodeSelector:
     crusoe.ai/accelerator: nvidia-h100-80gb-sxm-ib
 
-# Disaggregated prefill-decode serving
+# Disaggregated prefill-decode serving.
+# Requires KServe v0.19.0+ (its scheduler preset wires the NIXL KV connector; the
+# v0.17.0 scheduler crashes on disaggregated configs).
 disaggregated:
   enabled: false
+  # NIXL-capable vLLM image matching KServe v0.19.0's scheduler preset. The default
+  # vllm/vllm-openai image lacks the NIXL KV connector needed for prefill/decode.
+  image: ghcr.io/llm-d/llm-d-cuda:v0.6.0
   model:
     uri: hf://Qwen/Qwen2.5-72B-Instruct
     name: qwen
   decode:
     replicas: 2
+    # Crusoe's GPU driver ships libcuda.so.1 under /usr/lib/x86_64-linux-gnu, but the
+    # UBI-based llm-d image links against /usr/lib64 during vLLM's Triton compile.
+    # Point the linker at the driver path so the engine initializes.
+    extraEnv:
+      - name: LIBRARY_PATH
+        value: /usr/lib/x86_64-linux-gnu
     parallelism:
       tensor: 8
       data: 16
@@ -96,6 +117,9 @@ disaggregated:
       crusoe.ai/accelerator: nvidia-a100-80gb-sxm-ib
   prefill:
     replicas: 1
+    extraEnv:
+      - name: LIBRARY_PATH
+        value: /usr/lib/x86_64-linux-gnu
     resources:
       limits:
         gpu: "8"

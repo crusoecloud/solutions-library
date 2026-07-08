@@ -44,13 +44,13 @@ make setup
 This single command:
 - Creates the CMK cluster and node pools (A100, H100, CPU)
 - Fetches kubeconfig
-- Installs KServe v0.17.0 (standard mode + LLMInferenceService CRDs)
+- Installs KServe v0.19.0 (standard mode + LLMInferenceService CRDs)
 - Creates the workload namespace and HuggingFace secret
 
 ### 3. Deploy a model
 
 ```bash
-# Single-GPU (Qwen2.5-0.5B, 1x H100)
+# Single-GPU (Qwen2.5-0.5B, 1x A100)
 make deploy-basic
 
 # Large single-node (Qwen2.5-72B, 8x H100 TP=8, with PVC storage)
@@ -59,13 +59,15 @@ make deploy-large
 # Multi-node (Qwen2.5-72B, 2x8 H100)
 make deploy-multi-node
 
-# Disaggregated prefill-decode (H100 prefill + A100 decode)
+# Disaggregated prefill-decode across separate GPU pools (needs KServe v0.19.0+)
 make deploy-disaggregated
 ```
 
 Large models (70B+) require persistent storage. `deploy-large` automatically provisions a 250Gi SSD PVC via the Crusoe CSI driver to store model weights.
 
-> **Using a different GPU type?** The defaults in `helm/crusoe-kserve-example/values.yaml` target H100 nodes. If your cluster uses another GPU SKU, update the `nodeSelector` for the relevant profile, for example:
+> **Disaggregated serving** splits prefill and decode onto separate GPU pools via KServe's inference scheduler. It requires **KServe v0.19.0+** (the earlier scheduler crashes on disaggregated configs) and a NIXL-capable vLLM image (`llm-d-cuda`, preset in `values.yaml`). Set the model, tensor-parallel size, GPU counts, and per-pool `nodeSelector` labels in the `disaggregated:` block of `values.yaml` to match your cluster. On pools with a single GPU per node, set the deployments' update strategy to `Recreate` (a rolling update can't surge onto a busy GPU).
+
+> **Using a different GPU type?** Each profile in `helm/crusoe-kserve-example/values.yaml` sets its own `nodeSelector` (basic defaults to A100; large / multi-node / disaggregated to H100). If your cluster uses another GPU SKU, update the `nodeSelector` for the relevant profile, for example:
 > ```yaml
 > basic:
 >   nodeSelector:
@@ -127,7 +129,7 @@ make setup-amd
 This single command:
 - Creates the CMK cluster and node pools (MI300X, CPU)
 - Installs cert-manager + AMD GPU operator v1.4.2
-- Installs KServe v0.17.0
+- Installs KServe v0.19.0
 
 ### 3. Deploy a model
 
@@ -185,6 +187,8 @@ make install-kserve HF_TOKEN=hf_...
 ```
 
 Once KServe is installed, proceed directly to the deploy commands (`make deploy-basic`, `make deploy-large`, etc.).
+
+> **Managing an existing cluster with Terraform (optional):** to bring a cluster created outside Terraform under `make destroy` lifecycle management, add `import` blocks for the cluster and its node pools, set the matching values in `terraform.tfvars`, and run `terraform plan` — confirm it reports **0 to destroy** before applying. The node-pool resources ignore changes to `ssh_key` / `ib_partition_id` (write-only in the Crusoe API) so import doesn't force node replacement.
 
 ---
 
