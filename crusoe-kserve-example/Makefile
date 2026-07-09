@@ -1,9 +1,12 @@
-.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
+.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
 
 SHELL := /bin/bash
 NAMESPACE ?= kserve-test
 HF_TOKEN       ?= $(shell grep '^hf_token'       terraform/terraform.tfvars     2>/dev/null | sed 's/.*= *"//;s/"//')
 KSERVE_VERSION ?= v0.19.0
+
+# Open WebUI frontend — the vLLM OpenAI endpoint it talks to (default: the deploy-basic model).
+OPENWEBUI_BACKEND_URL ?= http://qwen-llm-kserve-workload-svc.$(NAMESPACE).svc.cluster.local:8000/v1
 
 # AMD config — all values read from terraform-amd/terraform.tfvars
 _AMD_TFVARS    := terraform-amd/terraform.tfvars
@@ -121,7 +124,10 @@ deploy-basic: ## Deploy single-GPU LLM (Qwen2.5-0.5B on 1x A100 or H100)
 	  --set basic.args[1]="0.95" \
 	  --set basic.args[2]="--enable-chunked-prefill" \
 	  --set basic.args[3]="--max-num-batched-tokens" \
-	  --set-string basic.args[4]="4096"
+	  --set-string basic.args[4]="4096" \
+	  --set basic.args[5]="--enable-auto-tool-choice" \
+	  --set basic.args[6]="--tool-call-parser" \
+	  --set basic.args[7]="hermes"
 
 deploy-large: ## Deploy large single-node LLM (Qwen2.5-72B on 8x H100, TP=8) — edit values.yaml large: to change model/resources
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
@@ -217,6 +223,52 @@ deploy-disaggregated: ## Deploy disaggregated prefill-decode (needs KServe v0.19
 	  --set basic.enabled=false \
 	  --set multiNode.enabled=false \
 	  --set disaggregated.enabled=true
+
+# ---------------------------------------------------------------------------
+# Frontend (Open WebUI)
+# ---------------------------------------------------------------------------
+
+install-lb-controller: ## Install the Crusoe load-balancer controller (enables type=LoadBalancer external IPs)
+	@if helm status crusoe-lb-controller -n crusoe-system >/dev/null 2>&1; then \
+	  echo "crusoe-lb-controller already installed."; \
+	else \
+	  echo "Installing crusoe-lb-controller into crusoe-system..."; \
+	  TMP=$$(mktemp -d); \
+	  git clone --depth 1 https://github.com/crusoecloud/crusoe-load-balancer-controller-helm-charts.git $$TMP; \
+	  helm install crusoe-lb-controller $$TMP/charts/crusoe-lb-controller -n crusoe-system; \
+	  rm -rf $$TMP; \
+	fi
+	@kubectl wait --for=condition=Ready pod -n crusoe-system -l app=crusoe-lb-controller --timeout=120s
+
+deploy-openwebui: install-lb-controller ## Deploy Open WebUI chat frontend with self-signed TLS on :443 via a Crusoe LoadBalancer
+	kubectl apply -f frontend/manifests/00-namespace.yaml
+	kubectl apply -f frontend/manifests/20-tls.yaml
+	@echo "Waiting for the self-signed certificate to be issued..."
+	kubectl wait --for=condition=Ready certificate/openwebui-tls -n openwebui --timeout=120s
+	kubectl apply -f frontend/manifests/
+	kubectl set env deploy/open-webui -n openwebui OPENAI_API_BASE_URL="$(OPENWEBUI_BACKEND_URL)"
+	kubectl rollout status deploy/open-webui -n openwebui --timeout=600s
+	@echo "Waiting for the LoadBalancer VIP (crusoe-lb-controller)..."
+	@IP=""; for i in $$(seq 1 30); do \
+	  IP=$$(kubectl get svc openwebui-lb -n openwebui -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
+	  [ -n "$$IP" ] && break; sleep 6; done; \
+	echo ""; \
+	echo "=== Open WebUI is up ==="; \
+	echo "  Public HTTPS : https://$$IP  (self-signed cert — accept the browser warning)"; \
+	echo "  Backend      : $(OPENWEBUI_BACKEND_URL)"; \
+	echo "  Port-forward : make openwebui-forward   (then http://localhost:8080)"; \
+	echo "  First visitor signs up and becomes admin (WEBUI_AUTH=True)."
+
+openwebui-forward: ## Port-forward Open WebUI to http://localhost:8080 (no public IP needed)
+	@echo "Open WebUI at http://localhost:8080 (Ctrl-C to stop)"
+	kubectl port-forward -n openwebui svc/openwebui 8080:8080
+
+openwebui-url: ## Print the Open WebUI public HTTPS URL
+	@IP=$$(kubectl get svc openwebui-lb -n openwebui -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
+	if [ -n "$$IP" ]; then echo "https://$$IP"; else echo "LoadBalancer VIP not assigned yet — check 'kubectl get svc openwebui-lb -n openwebui'"; fi
+
+destroy-openwebui: ## Remove Open WebUI (leaves the LB controller and KServe in place)
+	kubectl delete -f frontend/manifests/ --ignore-not-found
 
 # ---------------------------------------------------------------------------
 # Test & Benchmark
