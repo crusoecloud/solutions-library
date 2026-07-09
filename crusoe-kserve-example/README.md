@@ -10,7 +10,7 @@ Deploy open-source LLMs from HuggingFace on Crusoe Managed Kubernetes (CMK) usin
   - Single-node multi-GPU inference (Qwen2.5-72B on 8x H100, TP=8)
   - Multi-node tensor-parallel inference (Qwen2.5-72B across 16 GPUs)
   - Disaggregated prefill-decode with H100 (prefill) and A100 (decode)
-- AMD MI300X support with ROCm vLLM (MiniMax-M2)
+- AMD MI300X and MI355X (gfx950) support with ROCm vLLM (MiniMax-M2, Qwen3-235B)
 - Helm chart for model deployments
 - OpenAI-compatible `/v1/chat/completions` endpoint
 
@@ -142,7 +142,17 @@ make deploy-amd-large
 
 # Multi-node (MiniMax-M2 on 2x8 MI300X)
 make deploy-amd-multi-node
+
+# Large single-node on MI355X gfx950 (Qwen3-235B on 8x MI355X — TP=8, expert parallel, tool calling)
+make deploy-amd-mi355x
+
+# Use every node: scale to N data-parallel replicas (one full model per node), after the first deploy
+make deploy-amd-mi355x REPLICAS=2
 ```
+
+> **MI355X (gfx950)** uses a gfx950-specific ROCm image (the default `vllm-openai-rocm` lacks MI355X kernels) and a **ReadWriteMany shared disk** instead of a single-attach PVC — so a rolling update can bring the new pod up on an idle node before the old one exits (zero downtime, no single-GPU-node deadlock). The first-run AITER MoE kernel compile for a 235B model gets a longer startup-probe budget so it isn't probe-killed mid-compile. Re-run `make deploy-amd-mi355x` to change args; weights persist on the shared disk (no re-download). Set model/resources/labels in the `amd.mi355x:` block of `values.yaml`.
+>
+> **Using all nodes (data parallelism):** Qwen3-235B fits on one 8-GPU node, so the way to use additional nodes is **horizontal replicas**, not multi-node tensor parallel. Each replica is a full TP=8 model copy on one node; the router's scheduler load-balances across them. Deploy at `REPLICAS=1` first so the weights download once to the shared disk, then `make deploy-amd-mi355x REPLICAS=<node count>` — added replicas mount the same shared disk and **skip the download** (verified: the second replica's storage-initializer finishes in ~1 min instead of re-pulling 235GB). Avoid a fresh `REPLICAS>1` deploy — every replica's storage-initializer would race to write the same shared volume.
 
 ### 4. Chat
 Enter an interactive chat interface.
@@ -153,8 +163,10 @@ make chat
 ### 5. Test and benchmark
 
 ```bash
-make bench-amd                                      # 50 req/s, 512 input, 150 output
+make bench-amd                                      # MI300X: 50 req/s, 512 input, 150 output (served-model-name minimax)
 make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
+make bench-amd-mi355x                               # MI355X (served-model-name qwen3)
+make bench-amd BENCH_MODEL=<name>                   # override the served-model-name for any bench target
 ```
 
 ---
@@ -205,6 +217,7 @@ Once KServe is installed, proceed directly to the deploy commands (`make deploy-
 | **Basic (AMD)** | 1x MI300X | Qwen2.5-0.5B | Dev/test on AMD |
 | **Large (AMD)** | 8x MI300X TP=8 | MiniMax-M2 | Large MoE models, high-memory serving |
 | **Multi-Node (AMD)** | 16x MI300X (2 nodes) | MiniMax-M2 | Multi-node MoE on AMD |
+| **Large (AMD MI355X)** | 8x MI355X TP=8 | Qwen3-235B | Large MoE on gfx950, RWX shared disk, tool calling |
 
 ### NVIDIA Cluster Layout
 
@@ -284,8 +297,10 @@ crusoe-kserve-example/
 │       ├── multi-node-llm.yaml        # NVIDIA multi-node tensor parallel
 │       ├── disaggregated-llm.yaml     # NVIDIA prefill-decode split
 │       ├── amd-basic-llm.yaml         # AMD single-GPU deployment
-│       ├── amd-large-llm.yaml         # AMD multi-GPU single-node deployment
-│       └── amd-multi-node-llm.yaml    # AMD multi-node tensor parallel
+│       ├── amd-large-llm.yaml         # AMD MI300X multi-GPU single-node deployment
+│       ├── amd-multi-node-llm.yaml    # AMD multi-node tensor parallel
+│       ├── amd-mi355x-llm.yaml        # AMD MI355X gfx950 single-node deployment
+│       └── amd-mi355x-storage.yaml    # RWX shared disk for MI355X model weights
 └── monitoring/
     ├── docker-compose.yml             # Grafana container (port 3000)
     ├── env                            # Crusoe credentials (not committed)

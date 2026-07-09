@@ -1,0 +1,26 @@
+{{- if and .Values.amd.mi355x.enabled .Values.amd.mi355x.sharedStorage.enabled }}
+# ReadWriteMany shared disk for the MI355X model weights, backed by the Crusoe
+# shared-fs CSI. RWX attaches to multiple nodes at once, so a rolling update can
+# stage the new pod on an idle node while the old one keeps serving (no RWO
+# Multi-Attach stall, no single-GPU-node deadlock). Minimum size is 1 TiB.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: crusoe-fs
+provisioner: fs.csi.crusoe.ai
+volumeBindingMode: Immediate
+reclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-storage-shared
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: crusoe-fs
+  resources:
+    requests:
+      storage: {{ .Values.amd.mi355x.sharedStorage.size }}
+{{- end }}

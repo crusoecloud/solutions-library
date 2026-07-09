@@ -194,3 +194,40 @@ amd:
         memory: 256Gi
     nodeSelector:
       crusoe.ai/accelerator: amd-mi300x-192gb-ib
+
+  # MI355X (gfx950): large single-node MoE serving (e.g., Qwen3-235B on 8x MI355X, TP=8+EP).
+  # Differs from amd.large (MI300X) in three ways that matter:
+  #   1. A gfx950-specific ROCm image — the default vllm-openai-rocm lacks MI355X kernels.
+  #   2. A ReadWriteMany shared disk (fs.csi.crusoe.ai) instead of RWO, so a rolling update
+  #      can bring the new pod up on an idle node before the old one exits — zero-downtime,
+  #      no RWO Multi-Attach stall, no single-GPU-node rollout deadlock.
+  #   3. A long startupProbe budget — the first-run AITER MoE compile for a 235B model far
+  #      exceeds KServe's default 10-min startup window and would otherwise probe-loop.
+  # vLLM args (TP/EP/tool-calling) are set via Makefile --set flags (see deploy-amd-mi355x).
+  mi355x:
+    enabled: false
+    image: rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
+    model:
+      uri: hf://Qwen/Qwen3-235B-A22B-Instruct-2507-FP8
+      name: qwen3
+    # One full TP=8 model copy per replica; set to the node count to use every
+    # node (data-parallel, router load-balanced). Deploy at 1, then scale up so
+    # weights download once to the shared disk (see note in amd-mi355x-llm.yaml).
+    replicas: 1
+    sharedStorage:
+      enabled: true
+      size: 1Ti          # fs.csi.crusoe.ai minimum is 1 TiB (model weights are ~235GB)
+    startupProbe:
+      periodSeconds: 15
+      failureThreshold: 200   # ~50 min for the AITER MoE kernel compile to complete + cache
+    resources:
+      limits:
+        gpu: "8"
+        cpu: "64"
+        memory: 1024Gi
+      requests:
+        gpu: "8"
+        cpu: "16"
+        memory: 128Gi
+    nodeSelector:
+      crusoe.ai/accelerator: amd-mi355x-288gb-roce
