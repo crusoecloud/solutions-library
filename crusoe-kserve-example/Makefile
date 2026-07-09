@@ -217,7 +217,11 @@ deploy-amd-multi-node: ## Deploy multi-node LLM on AMD MI300X (MiniMax-M2 on 2x8
 	  --set amd.multiNode.enabled=true \
 	  --set disaggregated.enabled=false
 
-deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-235B on 8x MI355X, TP=8+EP) w/ RWX shared disk + tool calling
+# Replicas for the MI355X mode. Deploy at 1 first (weights download once to the
+# shared disk), THEN re-run with REPLICAS=<node count> to put every node to work.
+REPLICAS ?= 1
+
+deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-235B on 8x MI355X, TP=8+EP) w/ RWX shared disk + tool calling. REPLICAS=N to use N nodes.
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=false \
@@ -228,6 +232,7 @@ deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-2
 	  --set amd.large.enabled=false \
 	  --set amd.multiNode.enabled=false \
 	  --set amd.mi355x.enabled=true \
+	  --set amd.mi355x.replicas=$(REPLICAS) \
 	  --set amd.mi355x.args[0]="--gpu-memory-utilization" \
 	  --set amd.mi355x.args[1]="0.9" \
 	  --set amd.mi355x.args[2]="--tensor-parallel-size" \
@@ -241,6 +246,7 @@ deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-2
 	@echo ""
 	@echo "Weights persist on the RWX shared disk (model-storage-shared). Re-run this target"
 	@echo "to update args: the pod recompiles AITER kernels (~10-15 min) but does not re-download."
+	@echo "Scale to all nodes once weights are downloaded: make deploy-amd-mi355x REPLICAS=<node count>"
 
 deploy-disaggregated: ## Deploy disaggregated prefill-decode (needs KServe v0.19.0+; set model/TP/GPUs/labels in values.yaml disaggregated:)
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \

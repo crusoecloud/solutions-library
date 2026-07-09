@@ -8,7 +8,12 @@ spec:
   model:
     uri: {{ .Values.amd.mi355x.model.uri }}
     name: {{ .Values.amd.mi355x.model.name }}
-  replicas: 1
+  # Each replica is a full TP=8 copy of the model on one node; the router's
+  # scheduler load-balances across them. Set this to the node count to put every
+  # node to work (data-parallel). Deploy at 1 first so the weights download once
+  # to the shared disk, THEN scale up — a fresh replicas>1 deploy would have
+  # every replica's storage-initializer racing to write the same shared volume.
+  replicas: {{ .Values.amd.mi355x.replicas | default 1 }}
   template:
     {{- if .Values.amd.mi355x.sharedStorage.enabled }}
     securityContext:
