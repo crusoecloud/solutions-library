@@ -210,6 +210,10 @@ amd:
     model:
       uri: hf://Qwen/Qwen3-235B-A22B-Instruct-2507-FP8
       name: qwen3
+    # One full TP=8 model copy per replica; set to the node count to use every
+    # node (data-parallel, router load-balanced). Deploy at 1, then scale up so
+    # weights download once to the shared disk (see note in amd-mi355x-llm.yaml).
+    replicas: 1
     sharedStorage:
       enabled: true
       size: 1Ti          # fs.csi.crusoe.ai minimum is 1 TiB (model weights are ~235GB)

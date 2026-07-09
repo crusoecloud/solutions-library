@@ -127,11 +127,14 @@ make deploy-amd-large      # MiniMax-M2 on 8x MI300X (TP=8, EP, 1500Gi PVC) — 
 make redeploy-amd-large    # Update AMD large model args WITHOUT deleting PVC (preserves downloaded model)
 make deploy-amd-multi-node # MiniMax-M2 on 2x8 MI300X (TP=8, 2 replicas)
 make deploy-amd-mi355x     # Qwen3-235B on 8x MI355X gfx950 (TP=8, EP, tool calling) — RWX shared disk; re-run to update args (weights persist)
+make deploy-amd-mi355x REPLICAS=2  # Scale to 2 data-parallel replicas (use both nodes) — run AFTER the first deploy
 ```
 
 **Note**: `deploy-amd-large` deletes the PVC before deploying. Use `redeploy-amd-large` to update args while preserving already-downloaded model weights.
 
 **MI355X (`deploy-amd-mi355x`) differs from `deploy-amd-large`**: it uses a gfx950-specific ROCm image (`rocm/vllm:...gfx950-dcgpu...`), a **ReadWriteMany** shared disk (`fs.csi.crusoe.ai`, 1 TiB min) instead of a RWO PVC, and a long startupProbe budget for the 235B AITER MoE compile. The RWX disk lets a rolling update stage the new pod on an idle node before the old one exits (zero-downtime, no single-GPU-node deadlock), so `deploy-amd-mi355x` is safe to re-run to update args — it does **not** delete the PVC and weights persist. Model/resources/labels live in the `amd.mi355x:` block of `values.yaml`; vLLM args are set via `--set` in the Makefile target.
+
+**Using all nodes (data parallelism)**: Qwen3-235B fits on one 8-GPU node, so `replicas: 1` leaves other nodes idle and only one node is stressed under load. To use every node, scale to `REPLICAS=<node count>` — each replica is a full TP=8 model copy on one node, and the router's scheduler (EPP) load-balances across them. This is the right lever here; **multi-node tensor parallel is wrong** for a model that fits on one node (it only adds inter-node comms overhead). Because all replicas share the one RWX disk, added replicas **skip the download** — verified: replica 2's storage-initializer completed in ~1 min (`snapshot_download` sees the weights present) vs ~14 min for the first. **Deploy at `REPLICAS=1` first, then scale**: a fresh `REPLICAS>1` deploy would have every replica's storage-initializer racing to write the same shared volume.
 
 #### 4. Test AMD
 
