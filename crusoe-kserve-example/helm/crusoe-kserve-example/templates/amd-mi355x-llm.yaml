@@ -1,0 +1,73 @@
+{{- if .Values.amd.mi355x.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: {{ .Values.amd.mi355x.model.name }}-llm
+  namespace: {{ .Values.namespace }}
+spec:
+  model:
+    uri: {{ .Values.amd.mi355x.model.uri }}
+    name: {{ .Values.amd.mi355x.model.name }}
+  replicas: 1
+  template:
+    {{- if .Values.amd.mi355x.sharedStorage.enabled }}
+    securityContext:
+      fsGroup: 1000            # PVC file ownership for the model download
+    {{- end }}
+    containers:
+      - name: main
+        image: {{ .Values.amd.mi355x.image }}
+        # Relax KServe v0.19.0's hardened pod preset — the ROCm image runs as root
+        # and writes to the container filesystem (torch/AITER compile caches).
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          readOnlyRootFilesystem: false
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: HF_TOKEN
+          - name: HF_HUB_DISABLE_XET
+            value: "1"
+          - name: VLLM_ROCM_USE_AITER   # AMD AITER kernels — significant MI355X throughput gain
+            value: "1"
+        {{- if .Values.amd.mi355x.args }}
+        args:
+          {{- toYaml .Values.amd.mi355x.args | nindent 10 }}
+        {{- end }}
+        resources:
+          limits:
+            amd.com/gpu: {{ .Values.amd.mi355x.resources.limits.gpu | quote }}
+            cpu: {{ .Values.amd.mi355x.resources.limits.cpu | quote }}
+            memory: {{ .Values.amd.mi355x.resources.limits.memory }}
+          requests:
+            amd.com/gpu: {{ .Values.amd.mi355x.resources.requests.gpu | quote }}
+            cpu: {{ .Values.amd.mi355x.resources.requests.cpu | quote }}
+            memory: {{ .Values.amd.mi355x.resources.requests.memory }}
+        # First-run AITER MoE kernel compile for a 235B model on gfx950 takes far
+        # longer than KServe's default 10-min startup budget. A generous window lets
+        # the compile complete and cache instead of being probe-killed in a loop.
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: {{ .Values.amd.mi355x.startupProbe.periodSeconds }}
+          failureThreshold: {{ .Values.amd.mi355x.startupProbe.failureThreshold }}
+          timeoutSeconds: 5
+    {{- if .Values.amd.mi355x.sharedStorage.enabled }}
+    volumes:
+      # Override KServe's default emptyDir provision-location with the RWX PVC so
+      # weights land on the shared disk (do NOT add a second mount at /mnt/models).
+      - name: kserve-provision-location
+        persistentVolumeClaim:
+          claimName: model-storage-shared
+    {{- end }}
+    nodeSelector:
+      {{- toYaml .Values.amd.mi355x.nodeSelector | nindent 6 }}
+  router:
+    gateway: {}
+    route: {}
+    scheduler: {}
+{{- end }}

@@ -17,7 +17,7 @@ DOCKER_PASSWORD  ?= $(shell grep '^docker_password' $(_AMD_TFVARS) 2>/dev/null |
 AMD_DRIVER_IMAGE ?= docker.io/$(DOCKER_USERNAME)/amd-gpu-driver
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
 
 # ---------------------------------------------------------------------------
 # Setup (cluster + KServe + namespace — all via Terraform)
@@ -217,6 +217,31 @@ deploy-amd-multi-node: ## Deploy multi-node LLM on AMD MI300X (MiniMax-M2 on 2x8
 	  --set amd.multiNode.enabled=true \
 	  --set disaggregated.enabled=false
 
+deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-235B on 8x MI355X, TP=8+EP) w/ RWX shared disk + tool calling
+	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
+	  --set hfToken=$(HF_TOKEN) \
+	  --set basic.enabled=false \
+	  --set large.enabled=false \
+	  --set multiNode.enabled=false \
+	  --set disaggregated.enabled=false \
+	  --set amd.basic.enabled=false \
+	  --set amd.large.enabled=false \
+	  --set amd.multiNode.enabled=false \
+	  --set amd.mi355x.enabled=true \
+	  --set amd.mi355x.args[0]="--gpu-memory-utilization" \
+	  --set amd.mi355x.args[1]="0.9" \
+	  --set amd.mi355x.args[2]="--tensor-parallel-size" \
+	  --set-string amd.mi355x.args[3]="8" \
+	  --set amd.mi355x.args[4]="--enable-expert-parallel" \
+	  --set amd.mi355x.args[5]="--max-model-len" \
+	  --set-string amd.mi355x.args[6]="32768" \
+	  --set amd.mi355x.args[7]="--enable-auto-tool-choice" \
+	  --set amd.mi355x.args[8]="--tool-call-parser" \
+	  --set amd.mi355x.args[9]="hermes"
+	@echo ""
+	@echo "Weights persist on the RWX shared disk (model-storage-shared). Re-run this target"
+	@echo "to update args: the pod recompiles AITER kernels (~10-15 min) but does not re-download."
+
 deploy-disaggregated: ## Deploy disaggregated prefill-decode (needs KServe v0.19.0+; set model/TP/GPUs/labels in values.yaml disaggregated:)
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
 	  --set hfToken=$(HF_TOKEN) \
@@ -304,39 +329,39 @@ BENCH_NUM_PROMPTS ?= 200
 BENCH_RATE        ?= 50
 BENCH_INPUT_LEN   ?= 512
 BENCH_OUTPUT_LEN  ?= 150
+BENCH_MODEL       ?=          # served-model-name; blank => each target's default (qwen / minimax / qwen3)
 
+# $(1) is the per-target default served-model-name; BENCH_MODEL on the command line overrides it.
 _bench_run = kubectl exec -n $(NAMESPACE) deploy/$$DEPLOY -c main -- \
 	  vllm bench serve \
 	    --model /mnt/models \
-	    --served-model-name qwen \
+	    --served-model-name $(or $(BENCH_MODEL),$(1)) \
 	    --base-url http://localhost:8000 \
 	    --backend openai-chat \
 	    --endpoint /v1/chat/completions \
 	    --dataset-name random \
 	    --random-output-len $(BENCH_OUTPUT_LEN)
 
-_bench_run_amd = kubectl exec -n $(NAMESPACE) deploy/$$DEPLOY -c main -- \
-	  vllm bench serve \
-	    --model /mnt/models \
-	    --served-model-name minimax \
-	    --base-url http://localhost:8000 \
-	    --backend openai-chat \
-	    --endpoint /v1/chat/completions \
-	    --dataset-name random \
-	    --random-output-len $(BENCH_OUTPUT_LEN)
-
-bench: ## Run a single benchmark profile (configure with BENCH_RATE, BENCH_INPUT_LEN, BENCH_NUM_PROMPTS)
+bench: ## Run a benchmark (NVIDIA; served-model-name qwen — override with BENCH_MODEL=, plus BENCH_RATE/BENCH_INPUT_LEN/BENCH_NUM_PROMPTS)
 	@DEPLOY=$$(kubectl get deploy -n $(NAMESPACE) -o name | grep -v router | head -1 | sed 's|deployment.apps/||') && \
 	echo "Running vLLM benchmark on $$DEPLOY..." && \
-	$(call _bench_run) \
+	$(call _bench_run,qwen) \
 	    --random-input-len $(BENCH_INPUT_LEN) \
 	    --num-prompts $(BENCH_NUM_PROMPTS) \
 	    --request-rate $(BENCH_RATE)
 
-bench-amd: ## Run AMD benchmark profile (same params as bench — configure with BENCH_RATE, BENCH_INPUT_LEN, BENCH_NUM_PROMPTS)
+bench-amd: ## Run a benchmark (AMD MI300X; served-model-name minimax — override with BENCH_MODEL=)
 	@DEPLOY=$$(kubectl get deploy -n $(NAMESPACE) -o name | grep -v router | head -1 | sed 's|deployment.apps/||') && \
 	echo "Running vLLM benchmark on $$DEPLOY (AMD)..." && \
-	$(call _bench_run_amd) \
+	$(call _bench_run,minimax) \
+	    --random-input-len $(BENCH_INPUT_LEN) \
+	    --num-prompts $(BENCH_NUM_PROMPTS) \
+	    --request-rate $(BENCH_RATE)
+
+bench-amd-mi355x: ## Run a benchmark (AMD MI355X; served-model-name qwen3 — override with BENCH_MODEL=)
+	@DEPLOY=$$(kubectl get deploy -n $(NAMESPACE) -o name | grep -v router | head -1 | sed 's|deployment.apps/||') && \
+	echo "Running vLLM benchmark on $$DEPLOY (AMD MI355X)..." && \
+	$(call _bench_run,qwen3) \
 	    --random-input-len $(BENCH_INPUT_LEN) \
 	    --num-prompts $(BENCH_NUM_PROMPTS) \
 	    --request-rate $(BENCH_RATE)

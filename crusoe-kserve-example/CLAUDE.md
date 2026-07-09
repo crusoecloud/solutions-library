@@ -4,7 +4,7 @@ This project deploys open-source LLMs on Crusoe Managed Kubernetes (CMK) using K
 
 ## What This Does
 
-Provisions a CMK cluster with GPU node pools and installs KServe for LLM inference. Supports six deployment modes:
+Provisions a CMK cluster with GPU node pools and installs KServe for LLM inference. Supports these deployment modes:
 - **Basic (NVIDIA)**: Single-GPU serving (e.g., Qwen2.5-0.5B on 1x A100)
 - **Large (NVIDIA)**: Multi-GPU single-node serving (e.g., Qwen2.5-72B on 8x H100, TP=8)
 - **Multi-Node (NVIDIA)**: Tensor-parallel across multiple nodes (e.g., Qwen2.5-72B on 16 GPUs)
@@ -12,6 +12,7 @@ Provisions a CMK cluster with GPU node pools and installs KServe for LLM inferen
 - **Basic (AMD)**: Single-GPU serving on MI300X (e.g., Qwen2.5-0.5B on 1x MI300X)
 - **Large (AMD)**: Multi-GPU single-node serving on MI300X (e.g., MiniMax-M2 on 8x MI300X, TP=8)
 - **Multi-Node (AMD)**: Multi-node tensor-parallel on MI300X (e.g., MiniMax-M2 on 2x8 MI300X)
+- **Large (AMD MI355X)**: Multi-GPU single-node serving on MI355X gfx950 (e.g., Qwen3-235B on 8x MI355X, TP=8+EP) — gfx950 ROCm image, RWX shared disk, tool calling
 
 ## Setup Flow
 
@@ -125,9 +126,12 @@ make deploy-amd-basic      # Qwen2.5-0.5B on 1x MI300X
 make deploy-amd-large      # MiniMax-M2 on 8x MI300X (TP=8, EP, 1500Gi PVC) — deletes existing PVC first
 make redeploy-amd-large    # Update AMD large model args WITHOUT deleting PVC (preserves downloaded model)
 make deploy-amd-multi-node # MiniMax-M2 on 2x8 MI300X (TP=8, 2 replicas)
+make deploy-amd-mi355x     # Qwen3-235B on 8x MI355X gfx950 (TP=8, EP, tool calling) — RWX shared disk; re-run to update args (weights persist)
 ```
 
 **Note**: `deploy-amd-large` deletes the PVC before deploying. Use `redeploy-amd-large` to update args while preserving already-downloaded model weights.
+
+**MI355X (`deploy-amd-mi355x`) differs from `deploy-amd-large`**: it uses a gfx950-specific ROCm image (`rocm/vllm:...gfx950-dcgpu...`), a **ReadWriteMany** shared disk (`fs.csi.crusoe.ai`, 1 TiB min) instead of a RWO PVC, and a long startupProbe budget for the 235B AITER MoE compile. The RWX disk lets a rolling update stage the new pod on an idle node before the old one exits (zero-downtime, no single-GPU-node deadlock), so `deploy-amd-mi355x` is safe to re-run to update args — it does **not** delete the PVC and weights persist. Model/resources/labels live in the `amd.mi355x:` block of `values.yaml`; vLLM args are set via `--set` in the Makefile target.
 
 #### 4. Test AMD
 
@@ -138,9 +142,13 @@ make test  # Port-forward + curl (works for any deployed model)
 #### 5. Benchmark AMD
 
 ```bash
-make bench-amd                    # Default: 50 req/s, 512 input, 150 output (served-model-name=minimax)
+make bench-amd                    # MI300X: 50 req/s, 512 input, 150 output (served-model-name=minimax)
 make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
+make bench-amd-mi355x             # MI355X (served-model-name=qwen3)
+make bench-amd BENCH_MODEL=<name> # override served-model-name on any bench target
 ```
+
+**Note on `served-model-name`**: `bench` defaults to `qwen`, `bench-amd` to `minimax`, `bench-amd-mi355x` to `qwen3`. If your deployment serves a different name, pass `BENCH_MODEL=<name>` — `vllm bench serve` 404s if the name doesn't match what `/v1/models` reports.
 
 #### AMD-Specific vLLM Environment Variables
 
@@ -185,6 +193,8 @@ The Terraform setup also patches the KServe `inferenceservice-config` configmap 
 - `helm/crusoe-kserve-example/templates/amd-basic-llm.yaml` — AMD single-GPU manifest
 - `helm/crusoe-kserve-example/templates/amd-large-llm.yaml` — AMD multi-GPU single-node manifest
 - `helm/crusoe-kserve-example/templates/amd-multi-node-llm.yaml` — AMD multi-node manifest
+- `helm/crusoe-kserve-example/templates/amd-mi355x-llm.yaml` — AMD MI355X gfx950 single-node manifest (RWX disk, startupProbe, tool calling)
+- `helm/crusoe-kserve-example/templates/amd-mi355x-storage.yaml` — RWX shared disk (crusoe-fs StorageClass + `model-storage-shared` PVC) for MI355X weights
 - `monitoring/docker-compose.yml` — Grafana container (port 3000)
 - `monitoring/setup.py` — Configures Grafana datasource + prints dashboard URL
 - `monitoring/env.example` — Template for monitoring credentials (copy to `env` and fill in values)
@@ -221,8 +231,11 @@ nodeSelector labels: `nvidia-a100-80gb-sxm-ib`, `nvidia-h100-80gb-sxm-ib`, `nvid
 | Node Type              | GPU          | GPUs | VRAM     | Best For                              |
 |------------------------|--------------|------|----------|---------------------------------------|
 | mi300x-192gb-ib.8x     | MI300X       | 8    | 1536 GB  | Large MoE models, high-memory serving |
+| mi355x-288gb-roce.8x   | MI355X (gfx950) | 8 | 2304 GB  | Large MoE (235B+), gfx950/CDNA4       |
 
-nodeSelector label: `amd-mi300x-192gb-ib`
+nodeSelector labels: `amd-mi300x-192gb-ib`, `amd-mi355x-288gb-roce`
+
+MI355X requires a gfx950-specific ROCm image (`rocm/vllm:...gfx950-dcgpu...`); the default `vllm/vllm-openai-rocm:latest` lacks MI355X kernels.
 
 Resource key: `amd.com/gpu` (not `nvidia.com/gpu`)
 vLLM image: `vllm/vllm-openai-rocm:latest`
@@ -362,3 +375,12 @@ This uninstalls the Helm release and runs `terraform destroy` to tear down all i
 - `VLLM_ROCM_USE_AITER=1` is injected automatically by the AMD Helm templates. Do not set it to `0` unless debugging — it significantly reduces throughput on MI300X
 - AMD clusters use `crusoe_csi` add-on only — no `nvidia_gpu_operator` or `nvidia_network_operator`. If you accidentally create an AMD cluster with NVIDIA add-ons, recreate it
 - For MiniMax-M2 (MoE model), `--enable-expert-parallel` is required alongside `--tensor-parallel-size 8`. Without it, the model may OOM or perform poorly
+
+#### MI355X (gfx950) — `deploy-amd-mi355x`
+
+- Must use a **gfx950-specific ROCm image** (`rocm/vllm:...gfx950-dcgpu...`, set in `amd.mi355x.image`). The default `vllm/vllm-openai-rocm:latest` lacks MI355X kernels and will fail to load
+- If the pod restarts in a loop with **exit 137** during first startup, it's the **startup probe timing out**, not OOM: the 235B AITER MoE kernel compile exceeds KServe's default 10-min budget. The `amd.mi355x.startupProbe` (periodSeconds 15 × failureThreshold 200 ≈ 50 min) covers it. A restart recompiles (~10-15 min) but does not re-download (weights are on the shared disk)
+- Uses a **ReadWriteMany** shared disk (`fs.csi.crusoe.ai`, StorageClass `crusoe-fs`, min **1 TiB**), not the RWO `model-storage` PVC. If the PVC is stuck `Pending`, check the size is ≥ 1 TiB (`disk size too small: minimum size: 1099511627776`)
+- On a **2-node** MI355X pool, a re-run of `deploy-amd-mi355x` cuts over with zero downtime (new pod stages on the idle node, then the old one exits). On a **single-node** pool there's no idle node to stage onto — delete the old pod to free the 8 GPUs, or expect the new pod to stay `Pending` until it does
+- Open WebUI (and other clients) send `tool_choice: auto`; the target passes `--enable-auto-tool-choice --tool-call-parser hermes` so vLLM accepts it. Qwen3 emits Hermes-style `<tool_call>` blocks, so `hermes` is the correct parser
+- Benchmark with `make bench-amd-mi355x` (served-model-name `qwen3`), not `make bench`/`bench-amd` (those default to `qwen`/`minimax` and will 404)
