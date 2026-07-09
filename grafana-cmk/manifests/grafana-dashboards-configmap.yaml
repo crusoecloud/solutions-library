@@ -5092,6 +5092,130 @@ metadata:
 ---
 apiVersion: v1
 data:
+  gpu-overview-vendor-neutral.json: |
+    {
+      "annotations": { "list": [ { "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" } ] },
+      "description": "Vendor-neutral cluster GPU overview (NVIDIA + AMD) built on Crusoe's crusoe_node:* GPU recording rules, which cover both DCGM (NVIDIA) and AMD Instinct nodes. Filter by GPU type with the Instance Type variable. Complements the DCGM-only dashboards (which show NVIDIA only).",
+      "editable": true,
+      "graphTooltip": 1,
+      "links": [],
+      "refresh": "1m",
+      "schemaVersion": 39,
+      "tags": [ "crusoe", "gpu", "amd", "nvidia", "vendor-neutral" ],
+      "templating": {
+        "list": [
+          {
+            "allValue": ".*",
+            "current": { "text": "All", "value": "$__all", "selected": true },
+            "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+            "definition": "label_values(crusoe_node:node_gpu_utilization:ratio_avg_1m, vm_instance_type)",
+            "hide": 0,
+            "includeAll": true,
+            "label": "Instance Type",
+            "multi": true,
+            "name": "instance_type",
+            "options": [],
+            "query": { "query": "label_values(crusoe_node:node_gpu_utilization:ratio_avg_1m, vm_instance_type)", "refId": "StandardVariableQuery" },
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": { "from": "now-6h", "to": "now" },
+      "timezone": "browser",
+      "title": "Cluster GPU Overview (Vendor-Neutral)",
+      "uid": "crusoe-gpu-overview-vendor-neutral",
+      "version": 1,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+          "description": "Distinct GPU nodes reporting, for the selected instance type(s). Uses vendor-neutral crusoe_node recording rules, so both NVIDIA and AMD nodes count.",
+          "fieldConfig": { "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "count(count by (vm_name) (crusoe_node:node_gpu_utilization:ratio_avg_1m{vm_instance_type=~\"$instance_type\"}))", "instant": true, "refId": "A" } ],
+          "title": "GPU Nodes",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+          "description": "Average GPU utilization across all selected nodes right now.",
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "max": 100, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 } ] }, "unit": "percent" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 8, "x": 4, "y": 0 },
+          "id": 2,
+          "options": { "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showThresholdMarkers": true },
+          "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "avg(crusoe_node:node_gpu_utilization:ratio_avg_1m{vm_instance_type=~\"$instance_type\"})", "instant": true, "legendFormat": "Avg", "refId": "A" } ],
+          "title": "Avg GPU Utilization",
+          "type": "gauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+          "description": "Average GPU temperature (per-node p95) across all selected nodes.",
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "max": 100, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 85 } ] }, "unit": "celsius" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 8, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showThresholdMarkers": true },
+          "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "avg(crusoe_node:node_gpu_temperature:p95_1m{vm_instance_type=~\"$instance_type\"})", "instant": true, "legendFormat": "Avg", "refId": "A" } ],
+          "title": "Avg GPU Temperature",
+          "type": "gauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+          "description": "Per-node average GPU utilization over time. Legend shows node and instance type.",
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never", "spanNulls": true }, "max": 100, "min": 0, "unit": "percent" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+          "id": 4,
+          "options": { "legend": { "calcs": [ "mean", "max", "lastNotNull" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "crusoe_node:node_gpu_utilization:ratio_avg_1m{vm_instance_type=~\"$instance_type\"}", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
+          "title": "GPU Utilization by Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+          "description": "Per-node GPU memory utilization over time.",
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never", "spanNulls": true }, "max": 100, "min": 0, "unit": "percent" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "id": 5,
+          "options": { "legend": { "calcs": [ "mean", "max", "lastNotNull" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "crusoe_node:node_gpu_memory_utilization:ratio_avg_1m{vm_instance_type=~\"$instance_type\"}", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
+          "title": "GPU Memory Utilization by Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+          "description": "Per-node GPU power draw (p95) over time. NOTE: Crusoe Metrics currently reports GPU power for NVIDIA only — AMD Instinct (e.g. MI355X) has no power series here yet, so this panel is empty when only AMD instance types are selected.",
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never", "spanNulls": true }, "min": 0, "unit": "watt" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "id": 6,
+          "options": { "legend": { "calcs": [ "mean", "max", "lastNotNull" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "crusoe_node:node_gpu_power:p95_1m{vm_instance_type=~\"$instance_type\"}", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
+          "title": "GPU Power Draw by Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
+          "description": "Per-node GPU temperature (p95) over time. Threshold shading at 70/85 C.",
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never", "spanNulls": true, "thresholdsStyle": { "mode": "area" } }, "unit": "celsius", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 85 } ] } }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "id": 7,
+          "options": { "legend": { "calcs": [ "mean", "max", "lastNotNull" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "crusoe_node:node_gpu_temperature:p95_1m{vm_instance_type=~\"$instance_type\"}", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
+          "title": "GPU Temperature by Node",
+          "type": "timeseries"
+        }
+      ]
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    grafana_dashboard: "1"
+  name: crusoe-dashboard-gpu-overview-vendor-neutral
+  namespace: monitoring
+---
+apiVersion: v1
+data:
   network-cluster-overview.json: |-
     {
       "uid": "crusoe-network-cluster",
@@ -6550,7 +6674,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "GPU utilization per GPU on the selected node. Each line represents one GPU device. The 'gpu' label is the DCGM GPU index.",
+          "description": "Per-node GPU utilization averaged over 1m \u2014 vendor-neutral. One line per node in the current selection. Aggregates all GPUs on a node into a single value; for per-GPU detail on NVIDIA clusters, use a vendor-specific dashboard.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -6633,12 +6757,12 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "DCGM_FI_DEV_GPU_UTIL{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-              "legendFormat": "GPU {{gpu}}",
+              "expr": "crusoe_node:node_gpu_utilization:ratio_avg_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+              "legendFormat": "{{vm_name}}",
               "refId": "A"
             }
           ],
-          "title": "Per-GPU Utilization",
+          "title": "GPU Utilization (per node)",
           "type": "timeseries"
         },
         {
@@ -6646,7 +6770,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "GPU framebuffer memory used per GPU on the selected node, in MiB.",
+          "description": "Per-node GPU memory (VRAM) utilization averaged over 1m \u2014 vendor-neutral. Uses ratio rather than absolute bytes so it compares across SKUs with different VRAM sizes.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -6695,7 +6819,8 @@ data:
                   }
                 ]
               },
-              "unit": "mebibytes"
+              "unit": "percent",
+              "max": 100
             },
             "overrides": []
           },
@@ -6728,12 +6853,12 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "DCGM_FI_DEV_FB_USED{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-              "legendFormat": "GPU {{gpu}}",
+              "expr": "crusoe_node:node_gpu_memory_utilization:ratio_avg_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+              "legendFormat": "{{vm_name}}",
               "refId": "A"
             }
           ],
-          "title": "Per-GPU Memory Used",
+          "title": "GPU Memory Utilization (per node)",
           "type": "timeseries"
         },
         {
@@ -6741,7 +6866,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "GPU temperature per GPU on the selected node, in Celsius.",
+          "description": "Per-node GPU temperature (P95 over 1m) \u2014 vendor-neutral. Reports the hottest sample across each node's GPUs, so you spot thermal outliers.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -6831,12 +6956,12 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "DCGM_FI_DEV_GPU_TEMP{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-              "legendFormat": "GPU {{gpu}}",
+              "expr": "crusoe_node:node_gpu_temperature:p95_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+              "legendFormat": "{{vm_name}}",
               "refId": "A"
             }
           ],
-          "title": "Per-GPU Temperature",
+          "title": "GPU Temperature (P95 per node)",
           "type": "timeseries"
         },
         {
@@ -6844,7 +6969,7 @@ data:
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "description": "GPU power draw per GPU on the selected node, in watts.",
+          "description": "Per-node GPU power draw (P95 over 1m) \u2014 vendor-neutral. Aggregates power across all GPUs on a node.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -6898,10 +7023,10 @@ data:
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
-            "w": 12,
             "x": 0,
-            "y": 16
+            "y": 16,
+            "w": 24,
+            "h": 8
           },
           "id": 4,
           "options": {
@@ -6926,115 +7051,12 @@ data:
                 "type": "prometheus",
                 "uid": "crusoe-metrics"
               },
-              "expr": "DCGM_FI_DEV_POWER_USAGE{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-              "legendFormat": "GPU {{gpu}}",
+              "expr": "crusoe_node:node_gpu_power:p95_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+              "legendFormat": "{{vm_name}}",
               "refId": "A"
             }
           ],
-          "title": "Per-GPU Power Draw",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "crusoe-metrics"
-          },
-          "description": "SM clock and memory clock per GPU on the selected node, in MHz. High values indicate the GPU is not being thermally throttled.",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 5,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "never",
-                "spanNulls": true,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
-              "unit": "megahertz"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 16
-          },
-          "id": 5,
-          "options": {
-            "legend": {
-              "calcs": [
-                "mean",
-                "lastNotNull"
-              ],
-              "displayMode": "table",
-              "placement": "right",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "crusoe-metrics"
-              },
-              "expr": "DCGM_FI_DEV_SM_CLOCK{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-              "legendFormat": "SM GPU {{gpu}}",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "crusoe-metrics"
-              },
-              "expr": "DCGM_FI_DEV_MEM_CLOCK{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-              "legendFormat": "Mem GPU {{gpu}}",
-              "refId": "B"
-            }
-          ],
-          "title": "Per-GPU SM & Memory Clock",
+          "title": "GPU Power (P95 per node)",
           "type": "timeseries"
         },
         {
