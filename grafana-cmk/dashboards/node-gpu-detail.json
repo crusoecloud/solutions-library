@@ -74,7 +74,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU utilization per GPU on the selected node. Each line represents one GPU device. The 'gpu' label is the DCGM GPU index.",
+      "description": "Per-node GPU utilization averaged over 1m \u2014 vendor-neutral. One line per node in the current selection. Aggregates all GPUs on a node into a single value; for per-GPU detail on NVIDIA clusters, use a vendor-specific dashboard.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -157,12 +157,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "DCGM_FI_DEV_GPU_UTIL{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "crusoe_node:node_gpu_utilization:ratio_avg_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
-      "title": "Per-GPU Utilization",
+      "title": "GPU Utilization (per node)",
       "type": "timeseries"
     },
     {
@@ -170,7 +170,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU framebuffer memory used per GPU on the selected node, in MiB.",
+      "description": "Per-node GPU memory (VRAM) utilization averaged over 1m \u2014 vendor-neutral. Uses ratio rather than absolute bytes so it compares across SKUs with different VRAM sizes.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -219,7 +219,8 @@
               }
             ]
           },
-          "unit": "mebibytes"
+          "unit": "percent",
+          "max": 100
         },
         "overrides": []
       },
@@ -252,12 +253,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "crusoe_node:node_gpu_memory_utilization:ratio_avg_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
-      "title": "Per-GPU Memory Used",
+      "title": "GPU Memory Utilization (per node)",
       "type": "timeseries"
     },
     {
@@ -265,7 +266,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU temperature per GPU on the selected node, in Celsius.",
+      "description": "Per-node GPU temperature (P95 over 1m) \u2014 vendor-neutral. Reports the hottest sample across each node's GPUs, so you spot thermal outliers.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -355,12 +356,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "DCGM_FI_DEV_GPU_TEMP{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "crusoe_node:node_gpu_temperature:p95_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
-      "title": "Per-GPU Temperature",
+      "title": "GPU Temperature (P95 per node)",
       "type": "timeseries"
     },
     {
@@ -368,7 +369,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "GPU power draw per GPU on the selected node, in watts.",
+      "description": "Per-node GPU power draw (P95 over 1m) \u2014 vendor-neutral. Aggregates power across all GPUs on a node.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -422,10 +423,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 16
+        "y": 16,
+        "w": 24,
+        "h": 8
       },
       "id": 4,
       "options": {
@@ -450,115 +451,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "DCGM_FI_DEV_POWER_USAGE{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "crusoe_node:node_gpu_power:p95_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+          "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
-      "title": "Per-GPU Power Draw",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "crusoe-metrics"
-      },
-      "description": "SM clock and memory clock per GPU on the selected node, in MHz. High values indicate the GPU is not being thermally throttled.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 5,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "megahertz"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "crusoe-metrics"
-          },
-          "expr": "DCGM_FI_DEV_SM_CLOCK{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-          "legendFormat": "SM GPU {{gpu}}",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "crusoe-metrics"
-          },
-          "expr": "DCGM_FI_DEV_MEM_CLOCK{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
-          "legendFormat": "Mem GPU {{gpu}}",
-          "refId": "B"
-        }
-      ],
-      "title": "Per-GPU SM & Memory Clock",
+      "title": "GPU Power (P95 per node)",
       "type": "timeseries"
     },
     {
