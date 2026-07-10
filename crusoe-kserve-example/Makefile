@@ -311,7 +311,7 @@ MODEL ?=
 chat: ## Interactive streaming chat with the deployed model (MODEL=<name> to override auto-detect)
 	@SVC=$$(kubectl get svc -n $(NAMESPACE) -o name | grep workload | head -1) && \
 	echo "Port-forwarding $$SVC to localhost:$(PORT)..." && \
-	kubectl port-forward -n $(NAMESPACE) $$SVC $(PORT):8000 >/dev/null 2>/dev/null & \
+	{ kubectl port-forward -n $(NAMESPACE) $$SVC $(PORT):8000 >/dev/null 2>/dev/null & } && \
 	PF_PID=$$! && \
 	sleep 2 && \
 	python3 scripts/chat.py \
@@ -319,17 +319,19 @@ chat: ## Interactive streaming chat with the deployed model (MODEL=<name> to ove
 	  $$([ -n "$(MODEL)" ] && echo "--model $(MODEL)" || true) || true; \
 	kill $$PF_PID 2>/dev/null || true
 
-test: ## Port-forward and send a test chat request
-	@echo "Finding workload service..."
+test: ## Port-forward and send a test chat request (auto-detects the served model; MODEL=<name> to override)
 	@SVC=$$(kubectl get svc -n $(NAMESPACE) -o name | grep workload | head -1) && \
-	  echo "Port-forwarding $$SVC to localhost:$(PORT)..." && \
-	  kubectl port-forward -n $(NAMESPACE) $$SVC $(PORT):8000 &
-	@sleep 3
-	@echo "Sending test request..."
-	@curl -s -H "Content-Type: application/json" \
-	  http://localhost:$(PORT)/v1/chat/completions \
-	  -d @chat-test.json | jq .
-	@kill %1 2>/dev/null || true
+	echo "Port-forwarding $$SVC to localhost:$(PORT)..." && \
+	{ kubectl port-forward -n $(NAMESPACE) $$SVC $(PORT):8000 >/dev/null 2>/dev/null & } && \
+	PF_PID=$$! && \
+	sleep 3 && \
+	MODEL_NAME="$(MODEL)"; \
+	[ -n "$$MODEL_NAME" ] || MODEL_NAME=$$(curl -s http://localhost:$(PORT)/v1/models | jq -r '.data[0].id'); \
+	echo "Testing model '$$MODEL_NAME'..." && \
+	jq --arg m "$$MODEL_NAME" '.model = $$m' chat-test.json | \
+	  curl -s -H "Content-Type: application/json" \
+	    http://localhost:$(PORT)/v1/chat/completions -d @- | jq . || true; \
+	kill $$PF_PID 2>/dev/null || true
 
 BENCH_NUM_PROMPTS ?= 200
 BENCH_RATE        ?= 50
