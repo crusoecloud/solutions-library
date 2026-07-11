@@ -149,12 +149,18 @@ make bench-amd                    # MI300X: 50 req/s, 512 input, 150 output (ser
 make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
 make bench-amd-mi355x             # MI355X: benchmark ONE node (localhost, single replica)
 make bench-amd-mi355x-all         # MI355X: benchmark EVERY node at once (per-pod + aggregate)
+make bench-amd-mi355x-lb          # MI355X: benchmark THROUGH the Envoy gateway (production path, EPP-balanced)
 make bench-amd BENCH_MODEL=<name> # override served-model-name on any bench target
 ```
 
-**Note on `served-model-name`**: `bench` defaults to `qwen`, `bench-amd` to `minimax`, `bench-amd-mi355x`/`-all` to `qwen3`. If your deployment serves a different name, pass `BENCH_MODEL=<name>` — `vllm bench serve` 404s if the name doesn't match what `/v1/models` reports.
+**Note on `served-model-name`**: `bench` defaults to `qwen`, `bench-amd` to `minimax`, `bench-amd-mi355x`/`-all`/`-lb` to `qwen3`. If your deployment serves a different name, pass `BENCH_MODEL=<name>` — `vllm bench serve` 404s if the name doesn't match what `/v1/models` reports.
 
-**Single node vs all nodes**: `bench-amd-mi355x` `exec`s into one pod and drives `localhost:8000`, so it loads exactly one replica/node — the right way to measure per-node throughput. To load **every** node, `bench-amd-mi355x-all` fans the same benchmark out to all replica pods concurrently (each drives its own node) and reports per-pod plus summed aggregate. Don't drive aggregate load through the ClusterIP workload Service — it's L4 and HTTP keep-alive pins connections to one endpoint, so it won't fan out; real client balancing is done by the KServe gateway/EPP scheduler at L7.
+**Three ways to benchmark, by what they exercise**:
+- `bench-amd-mi355x` — `exec`s into one pod and drives `localhost:8000`, so it loads exactly one replica/node. Cleanest per-node throughput number; bypasses the gateway.
+- `bench-amd-mi355x-all` — fans the same benchmark out to all replica pods concurrently (each drives its own node's `localhost`); reports per-pod + summed aggregate. Deterministic raw multi-node capacity; still bypasses the gateway.
+- `bench-amd-mi355x-lb` — drives load **through the Envoy gateway** (`kserve-ingress-gateway` VIP + `/<namespace>/<isvc>` path prefix → InferencePool → EPP), so requests are load-balanced per-request across replicas. This is the real client/production path. Don't use the ClusterIP workload Service for aggregate load — it's L4 and HTTP keep-alive pins connections to one endpoint; only the L7 gateway/EPP balances.
+
+**Load model (`vllm bench serve`)**: requests are concurrent (async), never serial. `--request-rate`/`BENCH_RATE` is **open-loop** (fires at that arrival rate regardless of server state; in-flight count floats and piles up unboundedly if arrival > capacity — this produces gateway 500s at high rates). `--max-concurrency`/`BENCH_CONCURRENCY` caps simultaneous in-flight requests (a semaphore); with `BENCH_RATE=inf` it's **closed-loop** — exactly N requests always outstanding, i.e. **N concurrent users**. To simulate hundreds of users: `make bench-amd-mi355x-lb BENCH_CONCURRENCY=<users> BENCH_RATE=inf`. The output's "Peak concurrent requests" shows actual in-flight count; TPOT rises with concurrency (more sequences batched per node) — that's the real per-user latency and the signal to add replicas.
 
 #### AMD-Specific vLLM Environment Variables
 

@@ -338,6 +338,9 @@ BENCH_RATE        ?= 50
 BENCH_INPUT_LEN   ?= 512
 BENCH_OUTPUT_LEN  ?= 150
 BENCH_MODEL       ?=          # served-model-name; blank => each target's default (qwen / minimax / qwen3)
+BENCH_CONCURRENCY ?=          # max in-flight requests (--max-concurrency). Blank = unbounded (open-loop,
+                              # arrival-rate driven). Set to your target concurrent-user count for a
+                              # closed-loop test (e.g. BENCH_CONCURRENCY=200 BENCH_RATE=inf ~ 200 active users).
 
 # $(1) is the per-target default served-model-name; BENCH_MODEL on the command line overrides it.
 _bench_run = kubectl exec -n $(NAMESPACE) deploy/$$DEPLOY -c main -- \
@@ -400,6 +403,22 @@ bench-amd-mi355x-all: ## Benchmark EVERY replica pod at once (loads all nodes; r
 	grep -hiE '^output token throughput' "$$TMP"/*.log | awk '{s+=$$NF} END{printf "  Output token throughput (tok/s): %.1f\n", s}'; \
 	grep -hiE '^total token throughput'  "$$TMP"/*.log | awk '{s+=$$NF} END{printf "  Total token throughput (tok/s):  %.1f\n", s}'; \
 	rm -rf "$$TMP"
+
+bench-amd-mi355x-lb: ## Benchmark THROUGH the Envoy gateway/EPP — production path, requests load-balanced per-request across replicas. BENCH_CONCURRENCY=N caps in-flight.
+	@GW=$$(kubectl get gateway kserve-ingress-gateway -n kserve -o jsonpath='{.status.addresses[0].value}' 2>/dev/null); \
+	ISVC=$$(kubectl get llminferenceservice -n $(NAMESPACE) -o name 2>/dev/null | head -1 | sed 's|.*/||'); \
+	DEPLOY=$$(kubectl get deploy -n $(NAMESPACE) -o name | grep -v router | head -1 | sed 's|deployment.apps/||'); \
+	if [ -z "$$GW" ] || [ -z "$$ISVC" ]; then echo "Could not resolve the Envoy gateway (kserve/kserve-ingress-gateway) address or an LLMInferenceService in $(NAMESPACE)."; exit 1; fi; \
+	BASE="http://$$GW/$(NAMESPACE)/$$ISVC"; \
+	echo "Driving load THROUGH the Envoy gateway (EPP load-balances each request across replicas):"; \
+	echo "  endpoint:        $$BASE/v1/chat/completions"; \
+	echo "  arrival rate:    $(BENCH_RATE) req/s   |   in-flight cap: $(if $(BENCH_CONCURRENCY),$(BENCH_CONCURRENCY),unbounded)   |   prompts: $(BENCH_NUM_PROMPTS)"; \
+	kubectl exec -n $(NAMESPACE) deploy/$$DEPLOY -c main -- vllm bench serve \
+	  --model /mnt/models --served-model-name $(or $(BENCH_MODEL),qwen3) \
+	  --base-url $$BASE --backend openai-chat --endpoint /v1/chat/completions \
+	  --dataset-name random --random-input-len $(BENCH_INPUT_LEN) --random-output-len $(BENCH_OUTPUT_LEN) \
+	  --num-prompts $(BENCH_NUM_PROMPTS) --request-rate $(BENCH_RATE) \
+	  $(if $(BENCH_CONCURRENCY),--max-concurrency $(BENCH_CONCURRENCY),)
 
 # ---------------------------------------------------------------------------
 # Local monitoring (Grafana + Prometheus via Docker)
