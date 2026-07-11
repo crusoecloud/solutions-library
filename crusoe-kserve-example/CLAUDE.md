@@ -147,11 +147,14 @@ make test  # Port-forward + curl (works for any deployed model)
 ```bash
 make bench-amd                    # MI300X: 50 req/s, 512 input, 150 output (served-model-name=minimax)
 make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
-make bench-amd-mi355x             # MI355X (served-model-name=qwen3)
+make bench-amd-mi355x             # MI355X: benchmark ONE node (localhost, single replica)
+make bench-amd-mi355x-all         # MI355X: benchmark EVERY node at once (per-pod + aggregate)
 make bench-amd BENCH_MODEL=<name> # override served-model-name on any bench target
 ```
 
-**Note on `served-model-name`**: `bench` defaults to `qwen`, `bench-amd` to `minimax`, `bench-amd-mi355x` to `qwen3`. If your deployment serves a different name, pass `BENCH_MODEL=<name>` — `vllm bench serve` 404s if the name doesn't match what `/v1/models` reports.
+**Note on `served-model-name`**: `bench` defaults to `qwen`, `bench-amd` to `minimax`, `bench-amd-mi355x`/`-all` to `qwen3`. If your deployment serves a different name, pass `BENCH_MODEL=<name>` — `vllm bench serve` 404s if the name doesn't match what `/v1/models` reports.
+
+**Single node vs all nodes**: `bench-amd-mi355x` `exec`s into one pod and drives `localhost:8000`, so it loads exactly one replica/node — the right way to measure per-node throughput. To load **every** node, `bench-amd-mi355x-all` fans the same benchmark out to all replica pods concurrently (each drives its own node) and reports per-pod plus summed aggregate. Don't drive aggregate load through the ClusterIP workload Service — it's L4 and HTTP keep-alive pins connections to one endpoint, so it won't fan out; real client balancing is done by the KServe gateway/EPP scheduler at L7.
 
 #### AMD-Specific vLLM Environment Variables
 

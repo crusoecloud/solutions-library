@@ -165,9 +165,12 @@ make chat
 ```bash
 make bench-amd                                      # MI300X: 50 req/s, 512 input, 150 output (served-model-name minimax)
 make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
-make bench-amd-mi355x                               # MI355X (served-model-name qwen3)
+make bench-amd-mi355x                               # MI355X: benchmark one node (single replica)
+make bench-amd-mi355x-all                           # MI355X: benchmark every node at once (per-pod + aggregate)
 make bench-amd BENCH_MODEL=<name>                   # override the served-model-name for any bench target
 ```
+
+> `bench-amd-mi355x` drives one pod's `localhost`, so it loads a single node. `bench-amd-mi355x-all` fans the benchmark out to every replica pod concurrently to load all nodes and reports the aggregate — useful once you've scaled with `REPLICAS=<node count>`.
 
 ---
 
