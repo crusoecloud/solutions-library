@@ -374,6 +374,33 @@ bench-amd-mi355x: ## Run a benchmark (AMD MI355X; served-model-name qwen3 — ov
 	    --num-prompts $(BENCH_NUM_PROMPTS) \
 	    --request-rate $(BENCH_RATE)
 
+bench-amd-mi355x-all: ## Benchmark EVERY replica pod at once (loads all nodes; reports per-pod + aggregate). BENCH_* apply per node.
+	@DEPLOY=$$(kubectl get deploy -n $(NAMESPACE) -o name | grep -v router | head -1 | sed 's|deployment.apps/||'); \
+	PODS=$$(kubectl get pods -n $(NAMESPACE) -o name | sed 's|pod/||' | grep "^$$DEPLOY-" | grep -vE 'router|epp|scheduler'); \
+	N=$$(printf '%s\n' "$$PODS" | grep -c .); \
+	if [ "$$N" -lt 1 ]; then echo "No workload pods found for $$DEPLOY"; exit 1; fi; \
+	echo "Benchmarking $$N replica pod(s) concurrently — each drives its own node at $(BENCH_RATE) req/s:"; \
+	printf '  - %s\n' $$PODS; \
+	TMP=$$(mktemp -d); \
+	for POD in $$PODS; do \
+	  kubectl exec -n $(NAMESPACE) $$POD -c main -- vllm bench serve \
+	    --model /mnt/models --served-model-name $(or $(BENCH_MODEL),qwen3) \
+	    --base-url http://localhost:8000 --backend openai-chat --endpoint /v1/chat/completions \
+	    --dataset-name random --random-input-len $(BENCH_INPUT_LEN) --random-output-len $(BENCH_OUTPUT_LEN) \
+	    --num-prompts $(BENCH_NUM_PROMPTS) --request-rate $(BENCH_RATE) > "$$TMP/$$POD.log" 2>&1 & \
+	done; \
+	wait; \
+	echo ""; echo "===== per-pod results ====="; \
+	for POD in $$PODS; do \
+	  echo "--- $$POD ---"; \
+	  grep -iE '^(request throughput|output token throughput|median ttft|median tpot)' "$$TMP/$$POD.log" || echo "  (no results — see $$TMP/$$POD.log)"; \
+	done; \
+	echo ""; echo "===== aggregate across $$N node(s) ====="; \
+	grep -hiE '^request throughput'      "$$TMP"/*.log | awk '{s+=$$NF} END{printf "  Request throughput (req/s):      %.2f\n", s}'; \
+	grep -hiE '^output token throughput' "$$TMP"/*.log | awk '{s+=$$NF} END{printf "  Output token throughput (tok/s): %.1f\n", s}'; \
+	grep -hiE '^total token throughput'  "$$TMP"/*.log | awk '{s+=$$NF} END{printf "  Total token throughput (tok/s):  %.1f\n", s}'; \
+	rm -rf "$$TMP"
+
 # ---------------------------------------------------------------------------
 # Local monitoring (Grafana + Prometheus via Docker)
 # ---------------------------------------------------------------------------
