@@ -165,9 +165,18 @@ make chat
 ```bash
 make bench-amd                                      # MI300X: 50 req/s, 512 input, 150 output (served-model-name minimax)
 make bench-amd BENCH_RATE=10 BENCH_INPUT_LEN=128
-make bench-amd-mi355x                               # MI355X (served-model-name qwen3)
+make bench-amd-mi355x                               # MI355X: benchmark one node (single replica)
+make bench-amd-mi355x-all                           # MI355X: benchmark every node at once (per-pod + aggregate)
+make bench-amd-mi355x-lb                            # MI355X: benchmark through the Envoy gateway (production path)
 make bench-amd BENCH_MODEL=<name>                   # override the served-model-name for any bench target
+
+# Simulate hundreds of concurrent users hitting the load-balanced endpoint:
+make bench-amd-mi355x-lb BENCH_CONCURRENCY=300 BENCH_RATE=inf BENCH_NUM_PROMPTS=3000
 ```
+
+> **Which one?** `bench-amd-mi355x` loads a single node (localhost). `bench-amd-mi355x-all` fans out to every replica pod concurrently for raw multi-node capacity. `bench-amd-mi355x-lb` drives traffic **through the Envoy gateway** so requests are load-balanced per-request across replicas (the real production path) — use it once you've scaled with `REPLICAS=<node count>`.
+>
+> **Load model:** requests are concurrent, not serial. `BENCH_RATE` is the arrival rate (open-loop; in-flight count floats and can pile up). `BENCH_CONCURRENCY` caps in-flight requests — with `BENCH_RATE=inf` that's a closed-loop **N-concurrent-users** test. The result's "Peak concurrent requests" shows actual in-flight load, and TPOT (per-token latency) rising with concurrency is your signal to add replicas.
 
 ---
 
