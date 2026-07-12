@@ -13,7 +13,15 @@ spec:
   # node to work (data-parallel). Deploy at 1 first so the weights download once
   # to the shared disk, THEN scale up — a fresh replicas>1 deploy would have
   # every replica's storage-initializer racing to write the same shared volume.
+  {{- if .Values.amd.mi355x.autoscaling.enabled }}
+  # HPA mode: hand replica count to the autoscaler (KEDA/HPA). spec.scaling is mutually exclusive
+  # with spec.replicas — setting it stops the KServe controller pinning the count.
+  scaling:
+    minReplicas: {{ .Values.amd.mi355x.autoscaling.minReplicas | default 2 }}
+    maxReplicas: {{ .Values.amd.mi355x.autoscaling.maxReplicas | default 4 }}
+  {{- else }}
   replicas: {{ .Values.amd.mi355x.replicas | default 1 }}
+  {{- end }}
   template:
     {{- if .Values.amd.mi355x.sharedStorage.enabled }}
     securityContext:

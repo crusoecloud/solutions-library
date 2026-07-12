@@ -1,0 +1,37 @@
+# KEDA ScaledObject: autoscales the vLLM workload Deployment on queue depth.
+# Prereqs: KEDA installed, prometheus-vllm scraping the pods, AND the LLMInferenceService's
+# spec.replicas released to spec.scaling (deploy with AUTOSCALE=1) so the KServe controller
+# stops pinning the replica count and hands it to KEDA's HPA.
+# Scales out when total queued requests exceed ~SCALE_THRESHOLD per replica.
+# Applied by `make install-vllm-hpa`.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: qwen3-vllm-queue
+  namespace: kserve-test
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: qwen3-llm-kserve
+  minReplicaCount: ${SCALE_MIN}
+  maxReplicaCount: ${SCALE_MAX}
+  pollingInterval: 15      # how often KEDA queries Prometheus (s)
+  cooldownPeriod: 300      # wait before scaling a replica down (s) — GPU nodes are expensive to cycle
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies: [{ type: Pods, value: 1, periodSeconds: 60 }]   # add 1 replica/min (1 node/min)
+        scaleDown:
+          stabilizationWindowSeconds: 600
+          policies: [{ type: Pods, value: 1, periodSeconds: 300 }]
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-vllm.vllm-metrics.svc:9090
+        # desired replicas = ceil(sum(queued) / threshold): keep ~THRESHOLD queued per replica
+        query: sum(vllm:num_requests_waiting)
+        threshold: "${SCALE_THRESHOLD}"
+        activationThreshold: "1"

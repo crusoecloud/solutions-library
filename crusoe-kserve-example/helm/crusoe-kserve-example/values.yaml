@@ -214,6 +214,13 @@ amd:
     # node (data-parallel, router load-balanced). Deploy at 1, then scale up so
     # weights download once to the shared disk (see note in amd-mi355x-llm.yaml).
     replicas: 1
+    # HPA (KEDA on vLLM queue depth). When enabled the template emits spec.scaling (min/max) instead
+    # of a fixed spec.replicas, so the KServe controller releases replica ownership to the autoscaler.
+    # Enable via `make deploy-amd-mi355x AUTOSCALE=1`; then `make install-vllm-hpa`.
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 4
     sharedStorage:
       enabled: true
       size: 1Ti          # fs.csi.crusoe.ai minimum is 1 TiB (model weights are ~235GB)

@@ -154,6 +154,18 @@ make deploy-amd-mi355x REPLICAS=2
 >
 > **Using all nodes (data parallelism):** Qwen3-235B fits on one 8-GPU node, so the way to use additional nodes is **horizontal replicas**, not multi-node tensor parallel. Each replica is a full TP=8 model copy on one node; the router's scheduler load-balances across them. Deploy at `REPLICAS=1` first so the weights download once to the shared disk, then `make deploy-amd-mi355x REPLICAS=<node count>` — added replicas mount the same shared disk and **skip the download** (verified: the second replica's storage-initializer finishes in ~1 min instead of re-pulling 235GB). Avoid a fresh `REPLICAS>1` deploy — every replica's storage-initializer would race to write the same shared volume.
 
+### Autoscaling (experimental)
+
+Make scaling hands-off: a Kubernetes HPA scales vLLM replicas on demand, and the Crusoe cluster-autoscaler provisions on-demand MI355X nodes to back the new pods.
+
+```bash
+make install-crusoe-autoscaler        # node tier: cluster-autoscaler (bounds via AUTOSCALER_MIN/MAX/POOL)
+make install-vllm-hpa                  # pod tier: KEDA + Prometheus scraping vllm:num_requests_waiting
+make deploy-amd-mi355x AUTOSCALE=1     # emit spec.scaling (min/max) instead of a fixed replicas
+```
+
+> **⚠️ Known issue — shared-disk topology-label lag.** New autoscaled nodes receive the `fs.csi.crusoe.ai/*` labels that the RWX weights PV's `nodeAffinity` requires ~4.5 min *after* the node is `Ready` (the driver works immediately, only the labels lag). During that gap the new replica can't schedule **and the autoscaler over-provisions** (adds a 2nd node for 1 replica) before reclaiming the extra. Full write-up + latency breakdown: the *MI355X Autoscaling Experiment* page. Scale-up to a serving replica is ~26 min (dominated by the 30 GB image pull + AITER compile, not node provisioning).
+
 ### 4. Chat
 Enter an interactive chat interface.
 ```bash
