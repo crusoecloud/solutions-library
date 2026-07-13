@@ -1,0 +1,248 @@
+# rocm-gpu-workload.yaml
+#
+# Deploys 2 ROCm workload pods, one per GPU worker node, with SSH access.
+#
+# BEFORE APPLYING:
+#   1. Replace the authorized_keys value in the Secret below with your actual SSH public key.
+#   2. Adjust resource requests/limits to match your GPU node specs (see ADJUST comments).
+#   3. Verify the nodeAffinity label matches how your cluster labels GPU nodes.
+#
+# USAGE:
+#   kubectl apply -f rocm-gpu-workload.yaml
+#   kubectl get svc rocm-workload-0-ssh rocm-workload-1-ssh        # get external IPs
+#   ssh -i ~/.ssh/your_key clouduser@<EXTERNAL-IP-0>               # connect to pod 0 as clouduser
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rocm-ssh-keys
+  namespace: default
+type: Opaque
+stringData:
+  authorized_keys: |
+    ssh-ed25519 <your public key here> 
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocm-sshd-config
+  namespace: default
+data:
+  sshd_config: |
+    Port 22
+    AddressFamily any
+    ListenAddress 0.0.0.0
+
+    HostKey /etc/ssh/ssh_host_rsa_key
+    HostKey /etc/ssh/ssh_host_ecdsa_key
+    HostKey /etc/ssh/ssh_host_ed25519_key
+
+    PermitRootLogin yes
+    # Relative path resolves to ~/.ssh/authorized_keys for any user (root and clouduser)
+    AuthorizedKeysFile .ssh/authorized_keys
+
+    # Disable password auth — keys only
+    PasswordAuthentication no
+    ChallengeResponseAuthentication no
+    PermitEmptyPasswords no
+
+    UsePAM yes
+    X11Forwarding yes
+    PrintMotd no
+    AcceptEnv LANG LC_*
+    Subsystem sftp /usr/lib/openssh/sftp-server
+
+---
+# Shared ReadWriteMany filesystem volume for /home across all pods.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rocm-home
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteMany
+  storageClassName: crusoe-csi-driver-fs-sc
+  resources:
+    requests:
+      storage: 10Ti
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rocm-workload
+  namespace: default
+  labels:
+    app: rocm-workload
+spec:
+  serviceName: rocm-workload-headless
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rocm-workload
+  template:
+    metadata:
+      labels:
+        app: rocm-workload
+      annotations:
+        k8s.v1.cni.cncf.io/networks: >-
+          kube-amd-network/amd-host-device-nad@ionic_0,
+          kube-amd-network/amd-host-device-nad@ionic_1,
+          kube-amd-network/amd-host-device-nad@ionic_2,
+          kube-amd-network/amd-host-device-nad@ionic_3,
+          kube-amd-network/amd-host-device-nad@ionic_4,
+          kube-amd-network/amd-host-device-nad@ionic_5,
+          kube-amd-network/amd-host-device-nad@ionic_6,
+          kube-amd-network/amd-host-device-nad@ionic_7
+    spec:
+      terminationGracePeriodSeconds: 60
+      hostIPC: true
+      containers:
+      - name: rocm
+        image: mirror.gcr.io/rocm/roce-workload:ubuntu24_rocm-7.2_rccl-7.2.0_anp-v1.3.0_ainic-1.117.5-a-56
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "/mnt/pod-setup/pod-setup.sh"]
+
+        ports:
+        - name: ssh
+          containerPort: 22
+          protocol: TCP
+
+        volumeMounts:
+        - name: pod-setup
+          mountPath: /mnt/pod-setup
+          readOnly: true
+        - name: sshd-config
+          mountPath: /mnt/sshd-config
+          readOnly: true
+        - name: ssh-keys
+          mountPath: /mnt/ssh-keys
+          readOnly: true
+        - name: home
+          mountPath: /home
+        - name: rccl-topo
+          mountPath: /etc/crusoe/rccl_topo
+          readOnly: true
+
+        env:
+        - name: NCCL_IB_HCA
+          value: ionic_0,ionic_1,ionic_2,ionic_3,ionic_4,ionic_5,ionic_6,ionic_7
+        - name: NCCL_IB_GID_INDEX
+          value: "1"
+        - name: NCCL_IB_QPS_PER_CONNECTION
+          value: "4"
+        - name: NCCL_IB_USE_INLINE
+          value: "1"
+        - name: IONIC_LOCKFREE
+          value: all
+        - name: NCCL_GDR_FLUSH_DISABLE
+          value: "1"
+        - name: RCCL_GDR_FLUSH_GPU_MEM_NO_RELAXED_ORDERING
+          value: "0"
+        - name: NCCL_BUFFSIZE
+          value: "33554432"
+        - name: HSA_FORCE_FINE_GRAIN_PCIE
+          value: "1"
+        - name: NCCL_NET_OPTIONAL_RECV_COMPLETION
+          value: "0"
+        - name: NCCL_DMABUF_ENABLE
+          value: "1"
+        - name: NCCL_GDRCOPY_ENABLE
+          value: "1"
+        - name: NCCL_ALGO
+          value: Ring
+        - name: NCCL_PXN_DISABLE
+          value: "1"
+        resources:
+          requests:
+            amd.com/gpu: "8"
+            amd.com/vnic: "8"
+            cpu: "86"
+            memory: "652Gi"
+          limits:
+            amd.com/gpu: "8"
+            amd.com/vnic: "8"
+            cpu: "96"
+            memory: "768Gi"
+        securityContext:
+          privileged: true
+      volumes:
+      - name: pod-setup
+        configMap:
+          name: rocm-pod-setup
+          defaultMode: 0755
+      - name: sshd-config
+        configMap:
+          name: rocm-sshd-config
+      - name: ssh-keys
+        secret:
+          secretName: rocm-ssh-keys
+      - name: home
+        persistentVolumeClaim:
+          claimName: rocm-home
+      - name: rccl-topo
+        hostPath:
+          path: /etc/crusoe/rccl_topo/mi355x-288gb-ib.xml
+          type: File
+
+---
+# Headless service required by StatefulSet for pod DNS (rocm-workload-0.rocm-workload-headless, etc.)
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocm-workload-headless
+  namespace: default
+spec:
+  clusterIP: None
+  selector:
+    app: rocm-workload
+  ports:
+  - name: ssh
+    port: 22
+    targetPort: 22
+
+---
+# LoadBalancer for pod 0 — targets rocm-workload-0 specifically via the
+# stable pod-name label that Kubernetes automatically adds to StatefulSet pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocm-workload-0-ssh
+  namespace: default
+  labels:
+    app: rocm-workload
+    pod-index: "0"
+spec:
+  type: LoadBalancer
+  selector:
+    app: rocm-workload
+    statefulset.kubernetes.io/pod-name: rocm-workload-0
+  ports:
+  - name: ssh
+    port: 22
+    targetPort: 22
+    protocol: TCP
+
+---
+# LoadBalancer for pod 1 — targets rocm-workload-1 specifically.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocm-workload-1-ssh
+  namespace: default
+  labels:
+    app: rocm-workload
+    pod-index: "1"
+spec:
+  type: LoadBalancer
+  selector:
+    app: rocm-workload
+    statefulset.kubernetes.io/pod-name: rocm-workload-1
+  ports:
+  - name: ssh
+    port: 22
+    targetPort: 22
+    protocol: TCP
