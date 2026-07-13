@@ -28,6 +28,10 @@ Each solution README will also list its own specific prerequisites.
 
 TorchTitan is a widely-used reference Pytorch program for benchmarking the pretraining of Llama 3.1 and other models. This implementation is designed to be run as a PyTorchJob on CMK.
 
+[Crusoe Managed Fine-Tuning — end-to-end](./crusoe-managed-finetuning-example/)
+
+A runnable end-to-end example that uploads a JSONL dataset, picks a base model, launches a fine-tuning job via the OpenAI-compatible Crusoe Intelligence Foundry API, polls to completion, lists checkpoints, and downloads the best adapter. Requires a Crusoe API key.
+
 ### Inference
 
 [LangChain × Crusoe AI](./langchain-crusoe/)

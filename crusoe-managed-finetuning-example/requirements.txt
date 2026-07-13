@@ -1,0 +1,4 @@
+openai>=1.10.0,<3.0
+httpx
+questionary>=2.1.1
+python-dotenv>=1.0.0
