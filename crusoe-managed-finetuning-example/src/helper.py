@@ -17,8 +17,9 @@ from typing import Any, TYPE_CHECKING
 
 from openai.types import FileObject, Model
 
-from . import constants  # constants.HYPERPARAMS
+from . import constants
 from . import runtime    # pick, confirm, text, multi_pick, abort
+from . import schema
 
 if TYPE_CHECKING:
     from .config import Config
@@ -332,13 +333,14 @@ def gather_hyperparameter_overrides(config: "Config") -> dict:
         config.save()
         return {}
 
-    options = [f"{spec['name']}  (default: {display_default(spec['default'])})  — {spec['help']}" for spec in constants.HYPERPARAMS]
+    hyperparams = schema.load_supervised_hyperparams(config)
+    options = [f"{spec['name']}  (default: {display_default(spec['default'])})  — {spec['help']}" for spec in hyperparams]
     selected = runtime.multi_pick(options, "Select hyperparameters to override")
 
     overrides = {}
     for item in selected:
         name = item.split("  ", 1)[0]
-        spec = next(s for s in constants.HYPERPARAMS if s["name"] == name)
+        spec = next(s for s in hyperparams if s["name"] == name)
         value = _prompt_for_hyperparam(spec)
         if value is not None:
             overrides[name] = value
@@ -355,7 +357,7 @@ def print_job_params(config: "Config", hyperparameters: dict) -> None:
     print(f"    validation:   {config.val_id or '(none)'}")
     print(f"    suffix:       {config.suffix}")
     print("    hyperparameters:")
-    for spec in constants.HYPERPARAMS:
+    for spec in schema.load_supervised_hyperparams(config):
         name = spec["name"]
         sent = hyperparameters.get(name)
         display = display_default(sent) if sent is not None else display_default(spec["default"])

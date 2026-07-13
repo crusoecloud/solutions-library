@@ -9,6 +9,8 @@ run.ipynb
 .ipynb_checkpoints/
 .crusoe-finetune-state.json
 *.finetune-state.json
+.crusoe-swagger.json
+.crusoe-swagger.json.tmp
 
 # --- Python ---
 __pycache__/
