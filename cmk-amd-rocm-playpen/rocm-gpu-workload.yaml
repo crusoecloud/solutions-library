@@ -10,10 +10,7 @@
 # USAGE:
 #   kubectl apply -f rocm-gpu-workload.yaml
 #   kubectl get svc rocm-workload-0-ssh rocm-workload-1-ssh        # get external IPs
-#   ssh -i ~/.ssh/your_key root@<EXTERNAL-IP-0>                    # connect to pod 0 as root
 #   ssh -i ~/.ssh/your_key clouduser@<EXTERNAL-IP-0>               # connect to pod 0 as clouduser
-#   ssh -i ~/.ssh/your_key root@<EXTERNAL-IP-1>                    # connect to pod 1 as root
-#   ssh -i ~/.ssh/your_key clouduser@<EXTERNAL-IP-1>               # connect to pod 1 as clouduser
 
 ---
 apiVersion: v1
@@ -24,9 +21,7 @@ metadata:
 type: Opaque
 stringData:
   authorized_keys: |
-    # for /root/.ssh/authorized_keys and /home/clouduser/authorized_keys
-    ssh-ed25519 <one public ssh key>
-    # and others listed as needed
+    ssh-ed25519 <your public key here> 
 
 ---
 apiVersion: v1
@@ -92,8 +87,19 @@ spec:
     metadata:
       labels:
         app: rocm-workload
+      annotations:
+        k8s.v1.cni.cncf.io/networks: >-
+          kube-amd-network/amd-host-device-nad@ionic_0,
+          kube-amd-network/amd-host-device-nad@ionic_1,
+          kube-amd-network/amd-host-device-nad@ionic_2,
+          kube-amd-network/amd-host-device-nad@ionic_3,
+          kube-amd-network/amd-host-device-nad@ionic_4,
+          kube-amd-network/amd-host-device-nad@ionic_5,
+          kube-amd-network/amd-host-device-nad@ionic_6,
+          kube-amd-network/amd-host-device-nad@ionic_7
     spec:
       terminationGracePeriodSeconds: 60
+      hostIPC: true
       containers:
       - name: rocm
         image: mirror.gcr.io/rocm/roce-workload:ubuntu24_rocm-7.2_rccl-7.2.0_anp-v1.3.0_ainic-1.117.5-a-56
@@ -121,13 +127,44 @@ spec:
           mountPath: /etc/crusoe/rccl_topo
           readOnly: true
 
+        env:
+        - name: NCCL_IB_HCA
+          value: ionic_0,ionic_1,ionic_2,ionic_3,ionic_4,ionic_5,ionic_6,ionic_7
+        - name: NCCL_IB_GID_INDEX
+          value: "1"
+        - name: NCCL_IB_QPS_PER_CONNECTION
+          value: "4"
+        - name: NCCL_IB_USE_INLINE
+          value: "1"
+        - name: IONIC_LOCKFREE
+          value: all
+        - name: NCCL_GDR_FLUSH_DISABLE
+          value: "1"
+        - name: RCCL_GDR_FLUSH_GPU_MEM_NO_RELAXED_ORDERING
+          value: "0"
+        - name: NCCL_BUFFSIZE
+          value: "33554432"
+        - name: HSA_FORCE_FINE_GRAIN_PCIE
+          value: "1"
+        - name: NCCL_NET_OPTIONAL_RECV_COMPLETION
+          value: "0"
+        - name: NCCL_DMABUF_ENABLE
+          value: "1"
+        - name: NCCL_GDRCOPY_ENABLE
+          value: "1"
+        - name: NCCL_ALGO
+          value: Ring
+        - name: NCCL_PXN_DISABLE
+          value: "1"
         resources:
           requests:
             amd.com/gpu: "8"
+            amd.com/vnic: "8"
             cpu: "86"
             memory: "652Gi"
           limits:
             amd.com/gpu: "8"
+            amd.com/vnic: "8"
             cpu: "96"
             memory: "768Gi"
         securityContext:
