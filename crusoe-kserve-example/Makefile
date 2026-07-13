@@ -1,4 +1,4 @@
-.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
+.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller install-crusoe-autoscaler destroy-crusoe-autoscaler install-vllm-hpa destroy-vllm-hpa install-gateway-scaling destroy-gateway-scaling deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
 
 SHELL := /bin/bash
 NAMESPACE ?= kserve-test
@@ -15,6 +15,22 @@ DOCKER_USERNAME ?= $(shell grep '^docker_username' $(_AMD_TFVARS) 2>/dev/null | 
 DOCKER_EMAIL    ?= $(shell grep '^docker_email'    $(_AMD_TFVARS) 2>/dev/null | sed 's/.*= *"//;s/"//')
 DOCKER_PASSWORD  ?= $(shell grep '^docker_password' $(_AMD_TFVARS) 2>/dev/null | sed 's/.*= *"//;s/"//')
 AMD_DRIVER_IMAGE ?= docker.io/$(DOCKER_USERNAME)/amd-gpu-driver
+
+# Crusoe cluster-autoscaler — auto-provisions on-demand MI355X nodes to back Pending vLLM pods.
+# Image tag must match the cluster's k8s minor (this cluster is v1.33.x).
+AUTOSCALER_IMAGE ?= ghcr.io/crusoecloud/cluster-autoscaler-crusoecloud:1.33.2-crusoe.8
+AUTOSCALER_MIN   ?= 2
+AUTOSCALER_MAX   ?= 4
+AUTOSCALER_POOL  ?= mi355-workers
+
+# vLLM pod HPA (KEDA + Prometheus on vllm:num_requests_running) between SCALE_MIN/MAX.
+# NOTE: on KServe LLMInferenceService the standalone ScaledObject does not actuate — KServe owns
+# spec.replicas and reverts external scaling. This installs the metric pipeline + signal; real
+# actuation needs spec.scaling.wva (see manifests/keda-scaledobject.yaml header).
+KEDA_VERSION    ?= 2.16.1
+SCALE_MIN       ?= 2
+SCALE_MAX       ?= 4
+SCALE_THRESHOLD ?= 100   # target running seqs per replica (num_requests_running); scale out above this
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -220,6 +236,8 @@ deploy-amd-multi-node: ## Deploy multi-node LLM on AMD MI300X (MiniMax-M2 on 2x8
 # Replicas for the MI355X mode. Deploy at 1 first (weights download once to the
 # shared disk), THEN re-run with REPLICAS=<node count> to put every node to work.
 REPLICAS ?= 1
+# AUTOSCALE=1 hands replica count to the autoscaler (emits spec.scaling instead of a fixed replicas).
+AUTOSCALE ?=
 
 deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-235B on 8x MI355X, TP=8+EP) w/ RWX shared disk + tool calling. REPLICAS=N to use N nodes.
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
@@ -233,6 +251,7 @@ deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-2
 	  --set amd.multiNode.enabled=false \
 	  --set amd.mi355x.enabled=true \
 	  --set amd.mi355x.replicas=$(REPLICAS) \
+	  $(if $(AUTOSCALE),--set amd.mi355x.autoscaling.enabled=true,) \
 	  --set amd.mi355x.args[0]="--gpu-memory-utilization" \
 	  --set amd.mi355x.args[1]="0.9" \
 	  --set amd.mi355x.args[2]="--tensor-parallel-size" \
@@ -270,6 +289,57 @@ install-lb-controller: ## Install the Crusoe load-balancer controller (enables t
 	  rm -rf $$TMP; \
 	fi
 	@kubectl wait --for=condition=Ready pod -n crusoe-system -l app=crusoe-lb-controller --timeout=120s
+
+install-crusoe-autoscaler: ## Install the Crusoe cluster-autoscaler (auto-provisions on-demand MI355X nodes for Pending pods). AUTOSCALER_MIN/MAX/POOL/IMAGE to tune.
+	@set -euo pipefail; \
+	if ! kubectl get secret crusoe-secrets -n crusoe-system >/dev/null 2>&1; then \
+	  echo "ERROR: Secret 'crusoe-secrets' not found in crusoe-system (autoscaler credentials — normally pre-provisioned by CMK)."; exit 1; \
+	fi; \
+	echo "Installing Crusoe cluster-autoscaler: image=$(AUTOSCALER_IMAGE), nodes=$(AUTOSCALER_MIN):$(AUTOSCALER_MAX):$(AUTOSCALER_POOL)"; \
+	AUTOSCALER_IMAGE="$(AUTOSCALER_IMAGE)" AUTOSCALER_NODES="$(AUTOSCALER_MIN):$(AUTOSCALER_MAX):$(AUTOSCALER_POOL)" \
+	  envsubst < manifests/cluster-autoscaler.yaml | kubectl apply --server-side -f -; \
+	kubectl -n crusoe-system rollout status deploy/cluster-autoscaler --timeout=180s
+	@echo "cluster-autoscaler installed. Bounds: $(AUTOSCALER_MIN):$(AUTOSCALER_MAX) on pool $(AUTOSCALER_POOL)."
+	@echo "Watch it: kubectl -n crusoe-system logs deploy/cluster-autoscaler -f"
+
+destroy-crusoe-autoscaler: ## Remove the Crusoe cluster-autoscaler (node count returns to manual control)
+	AUTOSCALER_IMAGE=x AUTOSCALER_NODES=x envsubst < manifests/cluster-autoscaler.yaml | kubectl delete --ignore-not-found -f -
+
+install-vllm-hpa: ## Install vLLM pod-autoscaling metric pipeline (KEDA + Prometheus on vllm:num_requests_running). See manifest header — does not actuate against KServe's owned replicas. SCALE_MIN/MAX/THRESHOLD to tune.
+	@set -euo pipefail; \
+	echo "[1/3] Installing KEDA $(KEDA_VERSION) (ns keda)..."; \
+	helm repo add kedacore https://kedacore.github.io/charts >/dev/null 2>&1 || true; helm repo update kedacore >/dev/null; \
+	helm upgrade --install keda kedacore/keda --namespace keda --create-namespace --version $(KEDA_VERSION) --wait; \
+	echo "[2/3] Deploying lightweight Prometheus that scrapes the vLLM pods..."; \
+	kubectl apply -f manifests/prometheus-vllm.yaml; \
+	kubectl -n vllm-metrics rollout status deploy/prometheus-vllm --timeout=120s; \
+	echo "[3/3] Applying KEDA ScaledObject (min=$(SCALE_MIN) max=$(SCALE_MAX) threshold=$(SCALE_THRESHOLD) running-seqs/replica)..."; \
+	SCALE_MIN="$(SCALE_MIN)" SCALE_MAX="$(SCALE_MAX)" SCALE_THRESHOLD="$(SCALE_THRESHOLD)" \
+	  envsubst < manifests/keda-scaledobject.yaml | kubectl apply -f -
+	@echo "Metric pipeline installed. Inspect: kubectl get scaledobject,hpa -n kserve-test"
+	@echo "The HPA reads the signal but does NOT actuate KServe-owned replicas (see manifest header)."
+
+destroy-vllm-hpa: ## Remove vLLM pod autoscaling (KEDA ScaledObject + Prometheus; leaves KEDA installed)
+	-SCALE_MIN=2 SCALE_MAX=4 SCALE_THRESHOLD=10 envsubst < manifests/keda-scaledobject.yaml | kubectl delete --ignore-not-found -f -
+	-kubectl delete -f manifests/prometheus-vllm.yaml --ignore-not-found
+
+install-gateway-scaling: ## Scale the Envoy gateway data plane + raise circuit breakers (removes the ~128-concurrent HTTP-500 cliff). EPP CPU is set by the chart (deploy-amd-mi355x).
+	@set -euo pipefail; \
+	echo "[1/3] Applying EnvoyProxy (3x proxy replicas) + BackendTrafficPolicy circuit breakers..."; \
+	kubectl apply -f manifests/gateway-scaling.yaml; \
+	echo "[2/3] Pointing the GatewayClass at the EnvoyProxy (parametersRef)..."; \
+	kubectl patch gatewayclass envoy --type merge \
+	  -p '{"spec":{"parametersRef":{"group":"gateway.envoyproxy.io","kind":"EnvoyProxy","name":"kserve-gw-scale","namespace":"envoy-gateway-system"}}}'; \
+	echo "[3/3] Waiting for the scaled Envoy proxy deployment to roll out..."; \
+	sleep 8; \
+	DEP=$$(kubectl get deploy -n envoy-gateway-system -o name | grep -i 'envoy-kserve' | head -1); \
+	[ -n "$$DEP" ] && kubectl -n envoy-gateway-system rollout status "$$DEP" --timeout=180s || echo "(proxy deployment not found yet; check: kubectl get deploy -n envoy-gateway-system)"
+	@echo "Gateway data plane scaled. Verify: kubectl get deploy -n envoy-gateway-system | grep envoy-kserve"
+	@echo "Re-test through the LB: make bench-amd-mi355x-lb BENCH_CONCURRENCY=256 BENCH_RATE=inf"
+
+destroy-gateway-scaling: ## Revert gateway data-plane scaling (back to the default single Envoy proxy + circuit breakers)
+	-kubectl patch gatewayclass envoy --type json -p '[{"op":"remove","path":"/spec/parametersRef"}]' 2>/dev/null
+	-kubectl delete -f manifests/gateway-scaling.yaml --ignore-not-found
 
 deploy-openwebui: install-lb-controller ## Deploy Open WebUI chat frontend with self-signed TLS on :443 via a Crusoe LoadBalancer
 	kubectl apply -f frontend/manifests/00-namespace.yaml

@@ -214,12 +214,29 @@ amd:
     # node (data-parallel, router load-balanced). Deploy at 1, then scale up so
     # weights download once to the shared disk (see note in amd-mi355x-llm.yaml).
     replicas: 1
+    # HPA (KEDA on vLLM queue depth). When enabled the template emits spec.scaling (min/max) instead
+    # of a fixed spec.replicas, so the KServe controller releases replica ownership to the autoscaler.
+    # Enable via `make deploy-amd-mi355x AUTOSCALE=1`; then `make install-vllm-hpa`.
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 4
     sharedStorage:
       enabled: true
       size: 1Ti          # fs.csi.crusoe.ai minimum is 1 TiB (model weights are ~235GB)
     startupProbe:
       periodSeconds: 15
       failureThreshold: 200   # ~50 min for the AITER MoE kernel compile to complete + cache
+    # EPP router/scheduler (endpoint-picker) sizing. KServe's default is 256m CPU on both the
+    # scheduler and its tokenizer sidecar; that serializes per-request routing (tokenize + score)
+    # and starves the GPUs under high concurrency (backends sit near-idle while TTFT climbs).
+    # Give it real CPU so the routing tier keeps the backends fed. The EPP is leader-elected
+    # single-active, so scale it UP (CPU) — adding replicas only creates idle hot-standbys.
+    scheduler:
+      cpu: "3"
+      memory: 2Gi
+      cpuLimit: "6"
+      memoryLimit: 4Gi
     resources:
       limits:
         gpu: "8"

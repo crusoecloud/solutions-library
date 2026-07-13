@@ -1,0 +1,50 @@
+# KEDA ScaledObject: scales the vLLM workload on backend load. Applied by `make install-vllm-hpa`.
+#
+# IMPORTANT — actuation caveat on KServe LLMInferenceService (measured on v0.19):
+#   A standalone ScaledObject targeting the workload Deployment does NOT actuate. The KServe
+#   controller continuously OWNS spec.replicas and reverts any external scale within ~10s
+#   (a manual `kubectl scale ...=3` snapped back to 2). The only actuation path is the ISVC's
+#   native spec.scaling.wva (wva.hpa or wva.keda) — but wva.keda on v0.19 has NO custom-trigger
+#   field, so it can't scale on this vLLM metric; it uses KServe's built-in concurrency signal.
+#   So treat this object as the METRIC-PIPELINE + SIGNAL demonstrator. For real actuation either
+#   (a) use spec.scaling.wva.hpa with prometheus-adapter exposing the vLLM metric to the
+#   custom-metrics API, or (b) accept wva.keda's built-in concurrency signal.
+#
+# SIGNAL caveat: num_requests_waiting is a weak trigger for this deployment for two reasons —
+#   (1) through the Envoy/EPP gateway the backend queue stays ~0 (the EPP gates admission, so
+#       congestion sits in the gateway, not the vLLM queue — measured: 300 concurrent -> waiting=0);
+#   (2) even under direct saturation vLLM admits requests straight to "running" (aggressive
+#       batching / high max-num-seqs), so "waiting" rarely builds. num_requests_running (below)
+#       tracks real load far more reliably; kv_cache_usage_perc is another good saturation signal.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: qwen3-vllm-queue
+  namespace: kserve-test
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: qwen3-llm-kserve
+  minReplicaCount: ${SCALE_MIN}
+  maxReplicaCount: ${SCALE_MAX}
+  pollingInterval: 15      # how often KEDA queries Prometheus (s)
+  cooldownPeriod: 300      # wait before scaling a replica down (s) — GPU nodes are expensive to cycle
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies: [{ type: Pods, value: 1, periodSeconds: 60 }]   # add 1 replica/min (1 node/min)
+        scaleDown:
+          stabilizationWindowSeconds: 600
+          policies: [{ type: Pods, value: 1, periodSeconds: 300 }]
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-vllm.vllm-metrics.svc:9090
+        # desired replicas = ceil(sum(running) / threshold): keep ~THRESHOLD running seqs per replica.
+        # num_requests_running tracks real backend load; num_requests_waiting stays ~0 here (see header).
+        query: sum(vllm:num_requests_running)
+        threshold: "${SCALE_THRESHOLD}"
+        activationThreshold: "1"
