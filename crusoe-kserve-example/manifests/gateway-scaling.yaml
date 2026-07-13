@@ -1,0 +1,48 @@
+# Scales the KServe Envoy gateway DATA PLANE + raises circuit-breaker limits so the
+# routing tier stops being the throughput bottleneck. A prior stress test found the
+# default single Envoy proxy (1x 100m CPU) + default EPP scheduler (256m CPU) cliff to
+# HTTP 500 at ~128 concurrent. Two independent limits, two fixes:
+#   1. Envoy proxy — the HTTP-500 cliff. This file scales it to 3 replicas x 2 CPU and
+#      raises the BackendTrafficPolicy circuit-breaker limits. Result: 0 failures through
+#      256 concurrent (was ~95% 500s at 128).
+#   2. EPP scheduler — the throughput ceiling. The EPP is LEADER-ELECTED single-active
+#      (extra replicas are idle hot-standbys reporting readiness NOT_SERVING), so scale it
+#      UP, not out. Its CPU is set in the chart (amd.mi355x.scheduler in values.yaml:
+#      256m -> 3 CPU) — NOT here. At 256m the EPP serialized routing and starved the GPUs
+#      (200 concurrent -> only ~15-35 requests reached the backends); at 3 CPU backend
+#      fill roughly tripled.
+# Reference the EnvoyProxy from the GatewayClass (one-time):
+#   kubectl patch gatewayclass envoy --type merge \
+#     -p '{"spec":{"parametersRef":{"group":"gateway.envoyproxy.io","kind":"EnvoyProxy","name":"kserve-gw-scale","namespace":"envoy-gateway-system"}}}'
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: kserve-gw-scale
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 3
+        container:
+          resources:
+            requests: { cpu: "2", memory: "1Gi" }
+            limits:   { cpu: "4", memory: "2Gi" }
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: kserve-gw-circuit-breaker
+  namespace: kserve
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: kserve-ingress-gateway
+  circuitBreaker:
+    maxConnections: 50000
+    maxPendingRequests: 50000
+    maxParallelRequests: 50000
+    maxParallelRetries: 5000

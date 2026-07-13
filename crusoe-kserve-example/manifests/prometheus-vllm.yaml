@@ -1,0 +1,89 @@
+# Lightweight in-cluster Prometheus that scrapes the vLLM workload pods' :8000/metrics.
+# Needed because CMK's vmagent only remote-writes to an external endpoint (no queryable local API),
+# and KEDA needs a Prometheus it can query for vllm:num_requests_waiting (the autoscaling signal).
+# Applied by `make install-vllm-hpa`.
+---
+apiVersion: v1
+kind: Namespace
+metadata: { name: vllm-metrics }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prometheus-vllm, namespace: vllm-metrics }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: prometheus-vllm }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: prometheus-vllm }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: prometheus-vllm }
+subjects:
+  - { kind: ServiceAccount, name: prometheus-vllm, namespace: vllm-metrics }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: prometheus-vllm, namespace: vllm-metrics }
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 5s
+    scrape_configs:
+      - job_name: vllm
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces: { names: [kserve-test] }
+        relabel_configs:
+          # keep only the KServe vLLM workload pods (exclude router/EPP)
+          - source_labels: [__meta_kubernetes_pod_label_kserve_io_component]
+            regex: workload
+            action: keep
+          # scrape each pod's vLLM OpenAI/metrics port
+          - source_labels: [__meta_kubernetes_pod_ip]
+            regex: (.+)
+            replacement: $1:8000
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus-vllm, namespace: vllm-metrics, labels: { app: prometheus-vllm } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus-vllm } }
+  template:
+    metadata: { labels: { app: prometheus-vllm } }
+    spec:
+      serviceAccountName: prometheus-vllm
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.1.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.retention.time=2h
+            - --web.enable-lifecycle
+          ports: [{ containerPort: 9090 }]
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus }
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+      volumes:
+        - name: config
+          configMap: { name: prometheus-vllm }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus-vllm, namespace: vllm-metrics }
+spec:
+  selector: { app: prometheus-vllm }
+  ports: [{ port: 9090, targetPort: 9090 }]
