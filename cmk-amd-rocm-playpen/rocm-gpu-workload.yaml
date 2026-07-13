@@ -24,8 +24,9 @@ metadata:
 type: Opaque
 stringData:
   authorized_keys: |
-    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAMwLIohelx/irWLSYuP3VmTgk5sCzBDY1IsgFc2u1Y cloud-user@neurospark
-    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ5E2GodY42ON56oEokVh9KB608uSOj55qpkjIdY9tX8 asharp@MBP-Abraham-Sharp 
+    # for /root/.ssh/authorized_keys and /home/clouduser/authorized_keys
+    ssh-ed25519 <one public ssh key>
+    # and others listed as needed
 
 ---
 apiVersion: v1
