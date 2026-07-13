@@ -227,6 +227,16 @@ amd:
     startupProbe:
       periodSeconds: 15
       failureThreshold: 200   # ~50 min for the AITER MoE kernel compile to complete + cache
+    # EPP router/scheduler (endpoint-picker) sizing. KServe's default is 256m CPU on both the
+    # scheduler and its tokenizer sidecar; that serializes per-request routing (tokenize + score)
+    # and starves the GPUs under high concurrency (backends sit near-idle while TTFT climbs).
+    # Give it real CPU so the routing tier keeps the backends fed. The EPP is leader-elected
+    # single-active, so scale it UP (CPU) — adding replicas only creates idle hot-standbys.
+    scheduler:
+      cpu: "3"
+      memory: 2Gi
+      cpuLimit: "6"
+      memoryLimit: 4Gi
     resources:
       limits:
         gpu: "8"

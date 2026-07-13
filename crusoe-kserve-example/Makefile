@@ -1,4 +1,4 @@
-.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller install-crusoe-autoscaler destroy-crusoe-autoscaler install-vllm-hpa destroy-vllm-hpa deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
+.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller install-crusoe-autoscaler destroy-crusoe-autoscaler install-vllm-hpa destroy-vllm-hpa install-gateway-scaling destroy-gateway-scaling deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
 
 SHELL := /bin/bash
 NAMESPACE ?= kserve-test
@@ -23,12 +23,14 @@ AUTOSCALER_MIN   ?= 2
 AUTOSCALER_MAX   ?= 4
 AUTOSCALER_POOL  ?= mi355-workers
 
-# vLLM pod HPA (KEDA on queue depth). Scales the LLMInferenceService replicas between SCALE_MIN/MAX
-# when total queued requests exceed SCALE_THRESHOLD per replica. Needs deploy with AUTOSCALE=1.
+# vLLM pod HPA (KEDA + Prometheus on vllm:num_requests_running) between SCALE_MIN/MAX.
+# NOTE: on KServe LLMInferenceService the standalone ScaledObject does not actuate — KServe owns
+# spec.replicas and reverts external scaling. This installs the metric pipeline + signal; real
+# actuation needs spec.scaling.wva (see manifests/keda-scaledobject.yaml header).
 KEDA_VERSION    ?= 2.16.1
 SCALE_MIN       ?= 2
 SCALE_MAX       ?= 4
-SCALE_THRESHOLD ?= 10
+SCALE_THRESHOLD ?= 100   # target running seqs per replica (num_requests_running); scale out above this
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -303,7 +305,7 @@ install-crusoe-autoscaler: ## Install the Crusoe cluster-autoscaler (auto-provis
 destroy-crusoe-autoscaler: ## Remove the Crusoe cluster-autoscaler (node count returns to manual control)
 	AUTOSCALER_IMAGE=x AUTOSCALER_NODES=x envsubst < manifests/cluster-autoscaler.yaml | kubectl delete --ignore-not-found -f -
 
-install-vllm-hpa: ## Install vLLM pod autoscaling (KEDA + Prometheus scraping vllm:num_requests_waiting). Deploy with AUTOSCALE=1 first. SCALE_MIN/MAX/THRESHOLD to tune.
+install-vllm-hpa: ## Install vLLM pod-autoscaling metric pipeline (KEDA + Prometheus on vllm:num_requests_running). See manifest header — does not actuate against KServe's owned replicas. SCALE_MIN/MAX/THRESHOLD to tune.
 	@set -euo pipefail; \
 	echo "[1/3] Installing KEDA $(KEDA_VERSION) (ns keda)..."; \
 	helm repo add kedacore https://kedacore.github.io/charts >/dev/null 2>&1 || true; helm repo update kedacore >/dev/null; \
@@ -311,15 +313,33 @@ install-vllm-hpa: ## Install vLLM pod autoscaling (KEDA + Prometheus scraping vl
 	echo "[2/3] Deploying lightweight Prometheus that scrapes the vLLM pods..."; \
 	kubectl apply -f manifests/prometheus-vllm.yaml; \
 	kubectl -n vllm-metrics rollout status deploy/prometheus-vllm --timeout=120s; \
-	echo "[3/3] Applying KEDA ScaledObject (min=$(SCALE_MIN) max=$(SCALE_MAX) threshold=$(SCALE_THRESHOLD)/replica queued)..."; \
+	echo "[3/3] Applying KEDA ScaledObject (min=$(SCALE_MIN) max=$(SCALE_MAX) threshold=$(SCALE_THRESHOLD) running-seqs/replica)..."; \
 	SCALE_MIN="$(SCALE_MIN)" SCALE_MAX="$(SCALE_MAX)" SCALE_THRESHOLD="$(SCALE_THRESHOLD)" \
 	  envsubst < manifests/keda-scaledobject.yaml | kubectl apply -f -
-	@echo "vLLM HPA installed. Inspect: kubectl get scaledobject,hpa -n kserve-test"
-	@echo "NOTE: deploy the model with AUTOSCALE=1 so KServe releases spec.replicas to the autoscaler."
+	@echo "Metric pipeline installed. Inspect: kubectl get scaledobject,hpa -n kserve-test"
+	@echo "The HPA reads the signal but does NOT actuate KServe-owned replicas (see manifest header)."
 
 destroy-vllm-hpa: ## Remove vLLM pod autoscaling (KEDA ScaledObject + Prometheus; leaves KEDA installed)
 	-SCALE_MIN=2 SCALE_MAX=4 SCALE_THRESHOLD=10 envsubst < manifests/keda-scaledobject.yaml | kubectl delete --ignore-not-found -f -
 	-kubectl delete -f manifests/prometheus-vllm.yaml --ignore-not-found
+
+install-gateway-scaling: ## Scale the Envoy gateway data plane + raise circuit breakers (removes the ~128-concurrent HTTP-500 cliff). EPP CPU is set by the chart (deploy-amd-mi355x).
+	@set -euo pipefail; \
+	echo "[1/3] Applying EnvoyProxy (3x proxy replicas) + BackendTrafficPolicy circuit breakers..."; \
+	kubectl apply -f manifests/gateway-scaling.yaml; \
+	echo "[2/3] Pointing the GatewayClass at the EnvoyProxy (parametersRef)..."; \
+	kubectl patch gatewayclass envoy --type merge \
+	  -p '{"spec":{"parametersRef":{"group":"gateway.envoyproxy.io","kind":"EnvoyProxy","name":"kserve-gw-scale","namespace":"envoy-gateway-system"}}}'; \
+	echo "[3/3] Waiting for the scaled Envoy proxy deployment to roll out..."; \
+	sleep 8; \
+	DEP=$$(kubectl get deploy -n envoy-gateway-system -o name | grep -i 'envoy-kserve' | head -1); \
+	[ -n "$$DEP" ] && kubectl -n envoy-gateway-system rollout status "$$DEP" --timeout=180s || echo "(proxy deployment not found yet; check: kubectl get deploy -n envoy-gateway-system)"
+	@echo "Gateway data plane scaled. Verify: kubectl get deploy -n envoy-gateway-system | grep envoy-kserve"
+	@echo "Re-test through the LB: make bench-amd-mi355x-lb BENCH_CONCURRENCY=256 BENCH_RATE=inf"
+
+destroy-gateway-scaling: ## Revert gateway data-plane scaling (back to the default single Envoy proxy + circuit breakers)
+	-kubectl patch gatewayclass envoy --type json -p '[{"op":"remove","path":"/spec/parametersRef"}]' 2>/dev/null
+	-kubectl delete -f manifests/gateway-scaling.yaml --ignore-not-found
 
 deploy-openwebui: install-lb-controller ## Deploy Open WebUI chat frontend with self-signed TLS on :443 via a Crusoe LoadBalancer
 	kubectl apply -f frontend/manifests/00-namespace.yaml

@@ -154,15 +154,22 @@ make deploy-amd-mi355x REPLICAS=2
 >
 > **Using all nodes (data parallelism):** Qwen3-235B fits on one 8-GPU node, so the way to use additional nodes is **horizontal replicas**, not multi-node tensor parallel. Each replica is a full TP=8 model copy on one node; the router's scheduler load-balances across them. Deploy at `REPLICAS=1` first so the weights download once to the shared disk, then `make deploy-amd-mi355x REPLICAS=<node count>` — added replicas mount the same shared disk and **skip the download** (verified: the second replica's storage-initializer finishes in ~1 min instead of re-pulling 235GB). Avoid a fresh `REPLICAS>1` deploy — every replica's storage-initializer would race to write the same shared volume.
 
-### Autoscaling (experimental)
+### Autoscaling & the gateway bottleneck (experimental)
 
-Make scaling hands-off: a Kubernetes HPA scales vLLM replicas on demand, and the Crusoe cluster-autoscaler provisions on-demand MI355X nodes to back the new pods.
+Two tiers make scaling hands-off — the cluster-autoscaler provisions on-demand MI355X nodes, and a pod autoscaler adjusts vLLM replicas. **But load-testing showed the KServe gateway/EPP — not the GPUs — is the binding constraint**, so read the caveats before relying on this for throughput.
 
 ```bash
 make install-crusoe-autoscaler        # node tier: cluster-autoscaler (bounds via AUTOSCALER_MIN/MAX/POOL)
-make install-vllm-hpa                  # pod tier: KEDA + Prometheus scraping vllm:num_requests_waiting
-make deploy-amd-mi355x AUTOSCALE=1     # emit spec.scaling (min/max) instead of a fixed replicas
+make install-gateway-scaling          # scale the Envoy gateway data plane (removes the ~128-concurrent 500-cliff)
+make install-vllm-hpa                  # pod tier: KEDA + Prometheus metric pipeline (see caveat 3)
+make deploy-amd-mi355x AUTOSCALE=1     # emit spec.scaling.wva.hpa (KServe-native) instead of a fixed replicas
 ```
+
+**What load-testing found (Qwen3-235B on 2× MI355X, 512-in/150-out):**
+
+1. **Gateway 500-cliff — fixed.** The default single Envoy proxy (100m CPU) collapsed to ~95% HTTP-500 at ~128 concurrent. Scaling it to 3×2CPU + raising circuit breakers (`make install-gateway-scaling`) gives **0 failures through 256 concurrent**.
+2. **EPP throughput ceiling — architectural.** The single leader-elected endpoint-picker (`llm-d-inference-scheduler`) serializes per-request routing and caps end-to-end throughput at **~1.6k tok/s (~12–17% of the ~9.7k tok/s the two replicas deliver when driven directly)**, independent of its CPU (3 vs 8: no change) or scoring config. Bumping it 256m→3 CPU (chart default; it scales *up*, not out) still roughly halved TPOT and lifted req/s ~25–46%. For max throughput, **load-balance clients across replica endpoints directly** (`bench-amd-mi355x-all` path); use the gateway for smart prefix/queue-aware routing at moderate load.
+3. **Queue-depth HPA doesn't work here.** `vllm:num_requests_waiting` stays ~0 under gateway load (the EPP gates admission, so congestion sits in the gateway, not the vLLM queue) *and* a standalone KEDA ScaledObject can't actuate (KServe owns `spec.replicas` and reverts external scaling). `install-vllm-hpa` installs the metric pipeline (now on the more reliable `num_requests_running`); real actuation uses the native `spec.scaling.wva.hpa` path (`AUTOSCALE=1`), which scales on KServe's built-in concurrency signal.
 
 > **⚠️ Known issue — shared-disk topology-label lag.** New autoscaled nodes receive the `fs.csi.crusoe.ai/*` labels that the RWX weights PV's `nodeAffinity` requires ~4.5 min *after* the node is `Ready` (the driver works immediately, only the labels lag). During that gap the new replica can't schedule **and the autoscaler over-provisions** (adds a 2nd node for 1 replica) before reclaiming the extra. Full write-up + latency breakdown: the *MI355X Autoscaling Experiment* page. Scale-up to a serving replica is ~26 min (dominated by the 30 GB image pull + AITER compile, not node provisioning).
 
