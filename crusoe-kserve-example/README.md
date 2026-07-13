@@ -78,9 +78,9 @@ Large models (70B+) require persistent storage. `deploy-large` automatically pro
 > kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.crusoe\.ai/accelerator}{"\n"}{end}'
 > ```
 > ```
-> np-520db221-1.us-east1-a.compute.internal       nvidia-a100-80gb-sxm-ib
-> np-59eb87e7-1.us-east1-a.compute.internal
-> np-59eb87e7-2.us-east1-a.compute.internal
+> np-xxxxxxxx-1.<region>.compute.internal       nvidia-a100-80gb-sxm-ib
+> np-yyyyyyyy-1.<region>.compute.internal
+> np-yyyyyyyy-2.<region>.compute.internal
 > ```
 
 ### 4. Test
@@ -171,7 +171,7 @@ make deploy-amd-mi355x AUTOSCALE=1     # emit spec.scaling.wva.hpa (KServe-nativ
 2. **EPP throughput ceiling — architectural.** The single leader-elected endpoint-picker (`llm-d-inference-scheduler`) serializes per-request routing and caps end-to-end throughput at **~1.6k tok/s (~12–17% of the ~9.7k tok/s the two replicas deliver when driven directly)**, independent of its CPU (3 vs 8: no change) or scoring config. Bumping it 256m→3 CPU (chart default; it scales *up*, not out) still roughly halved TPOT and lifted req/s ~25–46%. For max throughput, **load-balance clients across replica endpoints directly** (`bench-amd-mi355x-all` path); use the gateway for smart prefix/queue-aware routing at moderate load.
 3. **Pod autoscaling is blocked three ways on a base CMK cluster.** `vllm:num_requests_waiting` stays ~0 under gateway load (the EPP gates admission, so congestion sits in the gateway, not the vLLM queue); a standalone KEDA ScaledObject can't actuate (KServe owns `spec.replicas` and reverts external scaling in <10s); and the native `spec.scaling.wva.hpa` path (`AUTOSCALE=1`) needs a **`VariantAutoscaling` CRD** (llm-d workload-variant-autoscaler operator) **and** a **metrics-server** — neither ships with base KServe or CMK, so the ISVC goes `Ready=False` (`ScalingCRDNotFound`) until they're installed. `install-vllm-hpa` installs the metric pipeline (on the more reliable `num_requests_running`) for observability; enabling `AUTOSCALE=1` requires installing those operators first.
 
-> **⚠️ Known issue — shared-disk topology-label lag.** New autoscaled nodes receive the `fs.csi.crusoe.ai/*` labels that the RWX weights PV's `nodeAffinity` requires ~4.5 min *after* the node is `Ready` (the driver works immediately, only the labels lag). During that gap the new replica can't schedule **and the autoscaler over-provisions** (adds a 2nd node for 1 replica) before reclaiming the extra. Full write-up + latency breakdown: the *MI355X Autoscaling Experiment* page. Scale-up to a serving replica is ~26 min (dominated by the 30 GB image pull + AITER compile, not node provisioning).
+> **⚠️ Known issue — shared-disk topology-label lag.** New autoscaled nodes receive the `fs.csi.crusoe.ai/*` labels that the RWX weights PV's `nodeAffinity` requires ~4.5 min *after* the node is `Ready` (the driver works immediately, only the labels lag). During that gap the new replica can't schedule **and the autoscaler over-provisions** (adds a 2nd node for 1 replica) before reclaiming the extra. Scale-up to a serving replica is ~26 min (dominated by the 30 GB image pull + AITER compile, not node provisioning).
 
 ### 4. Chat
 Enter an interactive chat interface.
