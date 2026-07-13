@@ -15,12 +15,14 @@ spec:
   # every replica's storage-initializer racing to write the same shared volume.
   {{- if .Values.amd.mi355x.autoscaling.enabled }}
   # HPA mode: hand replica count to KServe's native autoscaler. spec.scaling is mutually exclusive
-  # with spec.replicas. KServe v0.19 REQUIRES spec.scaling.wva (the workload autoscaler mechanism)
-  # whenever scaling is set — a bare min/max is rejected ("wva is required when scaling is configured").
-  # wva.hpa uses KServe's built-in HPA (concurrency-based). NOTE: wva.keda on v0.19 has no custom-trigger
-  # field, so it can't scale on vLLM queue metrics; a standalone KEDA ScaledObject can't actuate either
-  # because the controller owns spec.replicas (see manifests/keda-scaledobject.yaml). So this native
-  # path scales on KServe's own signal, not vllm:num_requests_*.
+  # with spec.replicas. KServe v0.19 REQUIRES spec.scaling.wva whenever scaling is set — a bare
+  # min/max is rejected ("wva is required when scaling is configured").
+  # ⚠️ REQUIRES EXTRA OPERATORS not shipped by base KServe or CMK: wva.hpa reconciles a
+  #    VariantAutoscaling CR (llmd.ai/v1alpha1) via the llm-d workload-variant-autoscaler operator,
+  #    AND needs a metrics-server (metrics.k8s.io). Without the CRD the ISVC goes Ready=False
+  #    (ScalingCRDNotFound) — measured on this cluster. Install those first, or keep fixed replicas.
+  #    (wva.keda has no custom-trigger field, and a standalone KEDA ScaledObject can't actuate because
+  #    the controller owns spec.replicas — see manifests/keda-scaledobject.yaml.)
   scaling:
     minReplicas: {{ .Values.amd.mi355x.autoscaling.minReplicas | default 2 }}
     maxReplicas: {{ .Values.amd.mi355x.autoscaling.maxReplicas | default 4 }}
