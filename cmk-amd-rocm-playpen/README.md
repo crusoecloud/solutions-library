@@ -1,6 +1,6 @@
 # ROCm GPU Workload
 
-This repo contains scripts and manifests for deploying ROCm-based GPU workload pods on a Kubernetes cluster (Crusoe Cloud).
+This repo contains scripts and manifests for deploying ROCm-based GPU workload pods on a Kubernetes cluster (Crusoe Cloud). It assumes you have a working CMK cluster with some AMD MI355X nodes in Ready state, CSI drivers installed, and Load Balancer Helm chart from https://github.com/crusoecloud/crusoe-load-balancer-controller-helm-charts.
 
 ## Files
 
