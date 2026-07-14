@@ -1,16 +1,9 @@
 # rocm-gpu-workload.yaml
-#
+# For Crusoe mi355x-288gb-roce.8x nodepool on CMK
 # Deploys 2 ROCm workload pods, one per GPU worker node, with SSH access.
 #
-# BEFORE APPLYING:
-#   1. Replace the authorized_keys value in the Secret below with your actual SSH public key.
-#   2. Adjust resource requests/limits to match your GPU node specs (see ADJUST comments).
-#   3. Verify the nodeAffinity label matches how your cluster labels GPU nodes.
-#
-# USAGE:
-#   kubectl apply -f rocm-gpu-workload.yaml
-#   kubectl get svc rocm-workload-0-ssh rocm-workload-1-ssh        # get external IPs
-#   ssh -i ~/.ssh/your_key clouduser@<EXTERNAL-IP-0>               # connect to pod 0 as clouduser
+# Replace the authorized_keys value in the Secret below with your actual SSH public key.
+# Run ./install.sh from this directory to apply
 
 ---
 apiVersion: v1
@@ -159,8 +152,8 @@ spec:
           claimName: rocm-home
       - name: rccl-topo
         hostPath:
-          path: /etc/crusoe/rccl_topo/mi355x-288gb-ib.xml
-          type: File
+          path: /etc/crusoe/rccl_topo
+          type: Directory
 
 ---
 # Headless service required by StatefulSet for pod DNS (rocm-workload-0.rocm-workload-headless, etc.)

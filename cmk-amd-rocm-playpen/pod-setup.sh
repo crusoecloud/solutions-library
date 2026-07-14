@@ -32,6 +32,8 @@ if [ ! -f /home/clouduser/.ssh/authorized_keys ]; then
 fi
 chown clouduser:clouduser /home/clouduser/.ssh
 chmod 700 /home/clouduser/.ssh
+# Set /root permissions so that other users can run rccl test binaries
+chmod 755 /root
 
 # generate a local keypair for clouduser
 if [ ! -f /home/clouduser/.ssh/id_ed25519 ]; then
