@@ -4,7 +4,7 @@ A runnable end-to-end example that picks a base model, chooses training and vali
 
 The script is **fully resumable**: it writes a small state file after every step, so you can close the terminal during a long-running job and resume later simply by re-running `python3 run.py`.
 
-The same `run.py` runs as a CLI (`python3 run.py` — arrow-key menus + Y/n) or as a Jupyter notebook (`python3 run-jupyter.py` generates `run.ipynb` and opens it in JupyterLab with `input()` boxes and numbered menus, cleaning up on exit). The runtime plumbing (prompts, environment detection, and environment-aware exits) lives in `src/runtime.py`; configuration and state live in `src/config.py`; selection/formatting/builder logic lives in `src/helper.py`; constants live in `src/constants.py`; `run.py` itself reads as a clean demo of the underlying API.
+The same `run.py` runs as a CLI (`python3 run.py` — arrow-key menus + Y/n) or as a Jupyter notebook (`python3 run-jupyter.py` generates `run.ipynb` and opens it in JupyterLab with `input()` boxes and numbered menus, cleaning up on exit). The runtime plumbing (prompts, environment detection, and environment-aware exits) lives in `src/runtime.py`; configuration and state live in `src/config.py`; selection/formatting/builder logic lives in `src/helper.py`; constants live in `src/constants.py`; the supervised hyperparameter catalog is derived from the live gateway swagger at runtime in `src/schema.py`, with generic disk caching (path + TTL + fetcher, atomic write, stale-fallback) in `src/path_cache.py`; `run.py` itself reads as a clean demo of the underlying API.
 
 ## Prerequisites
 
@@ -47,9 +47,11 @@ The script will:
 | File | Purpose |
 |---|---|
 | `run.py` | Main script — the full fine-tuning flow. Percent-format (`# %%` cells) so it converts to a notebook via jupytext. |
-| `src/constants.py` | Non-configurable constants: API base URL, terminal statuses, polling/download tuning, and hyperparameter metadata. |
+| `src/constants.py` | Non-configurable constants: API base URL, swagger URL and cache TTL, terminal statuses, and polling/download tuning. |
 | `src/config.py` | Configuration and state management: `Config` holds hard-coded defaults and the resumable state, receives the API key from `run.py`, and handles the resume prompt. |
 | `src/helper.py` | Formatting, selection, and builder helpers — no API calls; takes API outputs and `Config`, prompts the user, and returns API-ready values. Used by `run.py`. |
+| `src/schema.py` | Fetches `swagger.json` from the gateway and derives the supervised hyperparameter catalog at runtime, so new hyperparameters are picked up without a code change. Disk caching is delegated to `src/path_cache.py`. |
+| `src/path_cache.py` | Generic on-disk JSON cache with a TTL and stale-fallback on fetch failure. Reusable — takes a path, TTL, and fetcher, and abstracts freshness/atomic-write. |
 | `src/runtime.py` | Runtime helper (`pick`, `confirm`, `text`, `multi_pick`, `abort`) — uses questionary on a TTY and a zero-dependency `input()` fallback in notebooks / pipes; stops cleanly in both CLI (`sys.exit`) and Jupyter (`WorkflowError`). |
 | `run-jupyter.py` | Generates `run.ipynb` from `run.py` via jupytext, opens it in JupyterLab, and removes it on exit. Checks for missing deps and offers to install them. |
 | `requirements.txt` | `openai`, `httpx`, `questionary`, `python-dotenv`. |
@@ -76,6 +78,7 @@ Editable defaults in `src/config.py`:
 | `poll_interval` | `10` | Seconds between status polls |
 | `out_dir` | `outputs` | Where to save the downloaded adapter ZIP + extracted files |
 | `state_file_path` | `.crusoe-finetune-state.json` | Path to the resumable state file |
+| `swagger_cache_path` | `.crusoe-swagger.json` | Local cache for the gateway swagger; refreshed when older than 24h |
 
 ## Resuming a job
 
