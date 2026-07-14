@@ -25,6 +25,10 @@ Then connect as `clouduser`:
 
 ```bash
 ssh clouduser@<EXTERNAL-IP>
+
+#From inside a pod
+./launch-rccl.sh # to run the rccl test
+./launch-distributed.sh # to run the distributed PyTorch example
 ```
 ### To Verify GPU and NIC visibility
 
@@ -33,7 +37,7 @@ amd-smi
 rocm-smi
 ip a
 ```
-You should be able to ping the ipv6 addresses of the Pollara interfaces (such as enP3p0s9) between pods.
+You should be able to ping the ipv6 addresses of the Pollara interfaces (such as enP3p0s9) between pods.  
 To confirm that all 8 AMD GPUs in the pod are visible to PyTorch:
 
 ```bash
