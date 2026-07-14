@@ -23,12 +23,13 @@ echo "==> Copying example pytorch files to rocm-workload-0:/home/clouduser/..."
 kubectl cp train.py rocm-workload-0:/home/clouduser/train.py
 kubectl cp train-distributed.py rocm-workload-0:/home/clouduser/train-distributed.py
 kubectl cp launch-distributed.sh rocm-workload-0:/home/clouduser/launch-distributed.sh
+kubectl cp launch-rccl.sh rocm-workload-0:/home/clouduser/launch-rccl.sh
 kubectl cp hostfile rocm-workload-0:/home/clouduser/hostfile
 
 echo "Fixing permissions"
 # fix up the ownership of the copied-in files
-kubectl exec rocm-workload-0 -- chown clouduser:clouduser /home/clouduser/launch-distributed.sh /home/clouduser/hostfile /home/clouduser/train-distributed.py /home/clouduser/train.py
-kubectl exec rocm-workload-0 -- chmod a+x /home/clouduser/launch-distributed.sh
+kubectl exec rocm-workload-0 -- chown clouduser:clouduser /home/clouduser/launch-distributed.sh /home/clouduser/launch-rccl.sh /home/clouduser/hostfile /home/clouduser/train-distributed.py /home/clouduser/train.py
+kubectl exec rocm-workload-0 -- chmod a+x /home/clouduser/launch-distributed.sh /home/clouduser/launch-rccl.sh
 
 
 echo "Installing uv"
@@ -39,6 +40,7 @@ ssh clouduser@$EXT_IP "curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 ssh clouduser@$EXT_IP "~/.local/bin/uv venv && source .venv/bin/activate && ~/.local/bin/uv pip install \"torch==2.13.0+rocm7.2\" \"torchvision==0.28.0+rocm7.2\" \"torchaudio==2.11.0+rocm7.2\" \"triton-rocm==3.7.1\" --index-url https://download-r2.pytorch.org/whl/rocm7.2"
 
+ssh clouduser@$EXT_IP "./launch-rccl.sh"
 ssh clouduser@$EXT_IP "./launch-distributed.sh"
 
-echo "Installation is complete and example distributed workload was run across 2 pods. Run ssh clouduser@$EXT_IP to get into the pod and start using the AMD MI355X GPUs"
+echo "Installation is complete. RCCL test and example distributed workload were run across 2 pods. Run ssh clouduser@$EXT_IP to get into the pod and start using the AMD MI355X GPUs"
