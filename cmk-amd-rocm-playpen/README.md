@@ -1,19 +1,19 @@
 # Example CMK 'playpen' workload for Crusoe AMD MI355X nodes
 
-A stateful set of pods based on AMD's rocm/roce-workload:ubuntu24_rocm-7.0.2_rccl-7.0.2_anp-v1.2.0_ainic-1.117.1-a-63 image with a front-end SSH service on external load balancer. The pods have MPI installed and SSH configured for distributed training. launch-distributed.sh starts a simple distributed pytorch job using RCCL and GPU Direct RDMA.
+A stateful set of pods based on AMD's `rocm/roce-workload:ubuntu24_rocm-7.0.2_rccl-7.0.2_anp-v1.2.0_ainic-1.117.1-a-63` image with a front-end SSH service on an External LoadBalancer. The pods have MPI installed and passwordless SSH configured so that MPI jobs can be easily run by the built-in clouduser account. `launch-distributed.sh` starts a simple distributed pytorch job using RCCL and GPU Direct RDMA. `launch-rccl.sh` runs a multi-node RCCL test. The scripts are configured for a 2-node (2-pod) cluster - edit them to match the size of your cluster.
 
-**Prerequisites:** a working CMK cluster with at least 2 AMD MI355X nodes in Ready state, CSI drivers installed, and Load Balancer Helm chart from https://github.com/crusoecloud/crusoe-load-balancer-controller-helm-charts. (if you just have 1 node, that's fine for creating the playpen but train-distributed.py won't work).
+**Prerequisites:** a working CMK cluster with at least 2 AMD MI355X nodes in Ready state, CSI drivers installed, and Load Balancer Helm chart from https://github.com/crusoecloud/crusoe-load-balancer-controller-helm-charts.
 
 ## Quick start
 
-From your local copy of this directly, ensure that your current Kubernetes context points at your target cluster and that its AMD MD355X nodepool is Ready.
-Run `install.sh` to create the pods and run the test workload.
+From your local copy of this directory, ensure that your current Kubernetes context points at your target cluster and that its AMD MD355X nodepool is Ready.
+Run `install.sh` to create the pods, copy in the local versions of the training and rccl test scripts, and run the scripts.
 
 ---
 
 ## Using the workload pods
 
-### 1. SSH into a pod
+### To SSH into a pod
 
 Get the external IP for a pod:
 
@@ -26,44 +26,14 @@ Then connect as `clouduser`:
 ```bash
 ssh clouduser@<EXTERNAL-IP>
 ```
-
-### 2. Install uv
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### 3. Create a virtual environment
+### To Verify GPU and NIC visibility
 
 ```bash
-uv venv
+amd-smi
+rocm-smi
+ip a
 ```
-
-### 4. Activate the virtual environment
-
-```bash
-source .venv/bin/activate
-```
-
-### 5. Install PyTorch for ROCm 7.2
-
-```bash
-uv pip install \
-    "torch==2.13.0+rocm7.2" \
-    "torchvision==0.28.0+rocm7.2" \
-    "torchaudio==2.11.0+rocm7.2" \
-    "triton-rocm==3.7.1" \
-    --index-url https://download-r2.pytorch.org/whl/rocm7.2
-```
-
-### 6. Run the training script
-
-```bash
-torchrun --standalone --nproc_per_node=8 train.py
-```
-
-### Verify GPU visibility
-
+You should be able to ping the ipv6 addresses of the Pollara interfaces (such as enP3p0s9) between pods.
 To confirm that all 8 AMD GPUs in the pod are visible to PyTorch:
 
 ```bash
