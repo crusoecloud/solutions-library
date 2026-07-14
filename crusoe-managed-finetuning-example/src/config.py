@@ -51,6 +51,7 @@ class Config:
     poll_interval: int = 10
     out_dir: str = "outputs"
     state_file_path: str = ".crusoe-finetune-state.json"
+    swagger_cache_path: str = ".crusoe-swagger.json"
 
     # Runtime flag (not persisted).
     resuming: bool = False
