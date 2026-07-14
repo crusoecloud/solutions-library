@@ -1,36 +1,13 @@
-# ROCm GPU Workload
+# Example CMK 'playpen' workload for Crusoe AMD MI355X nodes
 
-This repo contains scripts and manifests for deploying ROCm-based GPU workload pods on a Kubernetes cluster (Crusoe Cloud). It assumes you have a working CMK cluster with some AMD MI355X nodes in Ready state, CSI drivers installed, and Load Balancer Helm chart from https://github.com/crusoecloud/crusoe-load-balancer-controller-helm-charts.
+A stateful set of pods based on AMD's rocm/roce-workload:ubuntu24_rocm-7.0.2_rccl-7.0.2_anp-v1.2.0_ainic-1.117.1-a-63 image with a front-end SSH service on external load balancer. The pods have MPI installed and SSH configured for distributed training. launch-distributed.sh starts a simple distributed pytorch job using RCCL and GPU Direct RDMA.
 
-## Files
+**Prerequisites:** a working CMK cluster with at least 2 AMD MI355X nodes in Ready state, CSI drivers installed, and Load Balancer Helm chart from https://github.com/crusoecloud/crusoe-load-balancer-controller-helm-charts. (if you just have 1 node, that's fine for creating the playpen but train-distributed.py won't work).
 
-### `install.sh`
-Run this once to bootstrap the workload on the cluster. It:
-1. Creates a ConfigMap from `pod-setup.sh` so each pod can run it at startup
-2. Applies the Crusoe shared filesystem StorageClass (used for the persistent `/home` volume)
-3. Applies `rocm-gpu-workload.yaml` to create the PVC, SSH ConfigMap, and workload pods
-4. Waits for `rocm-workload-0` to be ready, then copies `train.py` into `/home/clouduser/`
+## Quick start
 
-### `pod-setup.sh`
-Startup script that runs inside each pod on launch. It:
-- Expands `/dev/shm` to 16 GB for RCCL/NCCL multi-GPU shared memory
-- Installs and configures `openssh-server`
-- Creates the `clouduser` account (uid 1010) with a persistent home directory on the shared PVC
-- Adds `clouduser` to the `video`, `render`, and `kfd` groups for GPU device access
-- Grants `clouduser` passwordless sudo
-- Starts `sshd` and keeps the container alive
-
-### `rocm-gpu-workload.yaml`
-Kubernetes manifest that deploys the full workload. It creates:
-- A **Secret** containing the authorized SSH public keys
-- A **ConfigMap** with the `sshd_config`
-- A **PersistentVolumeClaim** (`rocm-home`) — a 10 TiB shared ReadWriteMany filesystem mounted at `/home` across all pods
-- A **StatefulSet** (`rocm-workload`) with 2 replicas, each requesting 8 AMD GPUs, 96 CPU cores, and 768 GiB RAM
-- A headless **Service** for pod DNS within the StatefulSet
-- Individual **LoadBalancer Services** for SSH access to each pod (`rocm-workload-0-ssh`, `rocm-workload-1-ssh`)
-
-### `train.py`
-A PyTorch training script. It is copied into `/home/clouduser/train.py` on the shared PVC by `install.sh`, making it available in every pod.
+From your local copy of this directly, ensure that your current Kubernetes context points at your target cluster and that its AMD MD355X nodepool is Ready.
+Run `install.sh` to create the pods and run the test workload.
 
 ---
 
