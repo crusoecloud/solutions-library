@@ -1,0 +1,2 @@
+rocm-workload-0.rocm-workload-headless slots=8
+rocm-workload-1.rocm-workload-headless slots=8

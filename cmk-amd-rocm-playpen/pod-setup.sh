@@ -4,11 +4,12 @@ set -euo pipefail
 echo "==> Expanding /dev/shm for NCCL multi-GPU shared memory..."
 mount -o remount,size=16G /dev/shm
 
-echo "==> Installing openssh-server if not present..."
-if ! command -v sshd &>/dev/null; then
-  apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server
-fi
+echo "==> Setting memlock to unlimited..."
+sudo bash -c "echo -e \"* soft memlock unlimited\n* hard memlock unlimited\" >> /etc/security/limits.conf"
+
+echo "==> Installing openmpi..."
+apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openmpi-bin openmpi-common libopenmpi-dev
 
 echo "==> Configuring SSH..."
 mkdir -p /root/.ssh /run/sshd
@@ -17,11 +18,7 @@ cp /mnt/ssh-keys/authorized_keys /root/.ssh/authorized_keys
 chmod 700 /root/.ssh
 chmod 600 /root/.ssh/authorized_keys
 
-#echo "==> Generating SSH host keys..."
-#ssh-keygen -A
-
 echo "==> Creating clouduser account..."
-# /etc/passwd is ephemeral, so recreate the account on every pod start.
 # /home/clouduser lives on the PVC and persists across restarts.
 useradd --uid 1010 --no-create-home --home-dir /home/clouduser --shell /bin/bash clouduser
 mkdir -p /home/clouduser/.ssh
@@ -35,6 +32,13 @@ if [ ! -f /home/clouduser/.ssh/authorized_keys ]; then
 fi
 chown clouduser:clouduser /home/clouduser/.ssh
 chmod 700 /home/clouduser/.ssh
+
+# generate a local keypair for clouduser
+if [ ! -f /home/clouduser/.ssh/id_ed25519 ]; then
+  ssh-keygen -t ed25519 -N "" -f /home/clouduser/.ssh/id_ed25519 -q
+  cat /home/clouduser/.ssh/id_ed25519.pub >> /home/clouduser/.ssh/authorized_keys
+  chown clouduser:clouduser /home/clouduser/.ssh/id_ed25519 && chmod 400 /home/clouduser/.ssh/id_ed25519
+fi
 
 echo "==> Adding clouduser to GPU device groups..."
 groupadd -g 44 video 2>/dev/null || true
