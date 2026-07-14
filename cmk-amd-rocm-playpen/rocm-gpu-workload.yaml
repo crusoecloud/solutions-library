@@ -21,7 +21,7 @@ metadata:
 type: Opaque
 stringData:
   authorized_keys: |
-    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ5E2GodY42ON56oEokVh9KB608uSOj55qpkjIdY9tX8 asharp@MBP-Abraham-Sharp 
+    ssh-ed25519 <your public key here>
 
 ---
 apiVersion: v1
