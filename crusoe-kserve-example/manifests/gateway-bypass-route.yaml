@@ -1,0 +1,48 @@
+# High-throughput serving route: sends the standard OpenAI paths straight to the vLLM
+# workload Service, where Envoy load-balances across pods with `least_request` (L7).
+# This BYPASSES KServe's InferencePool + EPP (endpoint-picker), whose single, leader-elected
+# ext_proc serializes routing and caps the gateway at ~1.2k tok/s regardless of GPU count.
+#
+# Measured on 2x MI355X (Qwen3-235B, 512/150): EPP path ~1.2k tok/s vs this route ~9k @256
+# and ~15.8k @512 concurrent (94% of raw 2-node capacity), 0 failures, TTFT 5s -> 0.12s.
+# And unlike the EPP path, throughput scales ~linearly as GPU replicas/nodes are added.
+#
+# Why it works as the DEFAULT path: these Exact path matches outrank KServe's PathPrefix
+# InferencePool rules in Gateway API precedence, so normal client URLs hit this route
+# without any /bypass/ prefix. Delete this HTTPRoute to fall back to EPP routing.
+#
+# Trade-off: you lose the EPP's prefix-cache-/queue-aware routing (great for shared-prefix
+# chat) in exchange for full throughput. Applied by `make install-gateway-bypass`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ${ISVC_NAME}-bypass-epp
+  namespace: ${NAMESPACE}
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: ${GATEWAY_NAME}
+    namespace: ${GATEWAY_NAMESPACE}
+  rules:
+  - matches:
+    - path: { type: Exact, value: ${ISVC_PATH}/v1/chat/completions }
+    filters:
+    - type: URLRewrite
+      urlRewrite: { path: { type: ReplaceFullPath, replaceFullPath: /v1/chat/completions } }
+    backendRefs: [{ group: "", kind: Service, name: ${WORKLOAD_SVC}, port: 8000 }]
+    timeouts: { backendRequest: "0s", request: "0s" }
+  - matches:
+    - path: { type: Exact, value: ${ISVC_PATH}/v1/completions }
+    filters:
+    - type: URLRewrite
+      urlRewrite: { path: { type: ReplaceFullPath, replaceFullPath: /v1/completions } }
+    backendRefs: [{ group: "", kind: Service, name: ${WORKLOAD_SVC}, port: 8000 }]
+    timeouts: { backendRequest: "0s", request: "0s" }
+  - matches:
+    - path: { type: Exact, value: ${ISVC_PATH}/v1/models }
+    filters:
+    - type: URLRewrite
+      urlRewrite: { path: { type: ReplaceFullPath, replaceFullPath: /v1/models } }
+    backendRefs: [{ group: "", kind: Service, name: ${WORKLOAD_SVC}, port: 8000 }]
+    timeouts: { backendRequest: "0s", request: "0s" }

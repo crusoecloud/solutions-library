@@ -24,8 +24,15 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            # Points at the KServe workload Service for the deployed model. Change
-            # if you serve a different model (see `make deploy-openwebui` notes).
+            # Open WebUI treats OPENAI_API_BASE_URL/KEY as "PersistentConfig": by default they
+            # seed the DB (on the PVC) only on first boot, then the DB value wins and later env
+            # changes are IGNORED. Setting this False makes Open WebUI read config from env on
+            # every start, so `make deploy-openwebui` reliably re-points the backend (no stale
+            # connection surviving on the PVC, no manual UI fix).
+            - name: ENABLE_PERSISTENT_CONFIG
+              value: "False"
+            # Backend vLLM endpoint. This is a placeholder — `make deploy-openwebui` overwrites it
+            # via `kubectl set env` with the auto-detected "*-workload-svc" for the deployed model.
             - name: OPENAI_API_BASE_URL
               value: "http://qwen-llm-kserve-workload-svc.kserve-test.svc.cluster.local:8000/v1"
             - name: OPENAI_API_KEY

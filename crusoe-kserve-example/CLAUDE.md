@@ -90,7 +90,7 @@ Reports TTFT, TPOT (time per output token), ITL (inter-token latency), and throu
 
 ### AMD Setup
 
-AMD clusters use a separate Terraform directory (`terraform-amd/`) and require the AMD GPU operator (not the NVIDIA operator). Docker Hub credentials are needed to push the AMD GPU driver image.
+AMD clusters use a separate Terraform directory (`terraform-amd/`). By default the cluster enables the **CMK-managed AMD add-ons** (`amd_network_operator`, `amd_gpu_operator`, `crusoe_csi`) via `cluster_add_ons`, so CMK installs/maintains the GPU driver + operator — **no manual GPU-operator install and no Docker Hub credentials**. (Legacy path: set `cluster_add_ons = ["crusoe_csi"]` and run `make install-amd-gpu-operator`, which needs Docker Hub creds.) Managed AMD add-ons require an AMD "Bundle 1" cluster version (e.g. `1.33.4-cmk.93`); MI355X node pools run a gfx950-compatible `node_pool_version` (e.g. `1.33.4-cmk.18`) that differs from the cluster version, with `ephemeral_storage_for_containerd = true` for the ~30 GB ROCm image.
 
 #### 1. Configure `terraform-amd/terraform.tfvars`
 
@@ -99,23 +99,29 @@ cd terraform-amd && cp terraform.tfvars.example terraform.tfvars
 ```
 
 Required values:
-- `project_id` — Crusoe project ID
+- `project_id` — Crusoe project **UUID** (not the name; `crusoe projects list`)
 - `hf_token` — HuggingFace API token
-- `amd_node_type` — AMD GPU instance type (e.g., `mi300x-192gb-ib.8x`)
-- `amd_ib_partition_id` — InfiniBand partition ID for AMD nodes
+- `amd_node_type` — AMD GPU instance type (e.g., `mi355x-288gb-roce.8x`)
+- `amd_ib_partition_id` — IB/RoCE partition ID for AMD nodes (`crusoe networking ib-partitions list --project-id <id>`)
 - `ssh_public_key` — User's SSH public key string; provisioned onto nodes at creation time so the user can SSH in for debugging (e.g. checking driver issues, running `rocm-smi`)
-- `docker_username`, `docker_email`, `docker_password` — Docker Hub credentials (for pushing AMD GPU driver image)
+- `docker_username`, `docker_email`, `docker_password` — **only** for the legacy `crusoe_csi`-only path; unused with the default managed AMD add-ons
 
-#### 2. Provision Infrastructure + Install AMD GPU Operator + KServe
+Optional (defaults in `variables.tf`): `cluster_add_ons` (default = managed AMD bundle), `node_pool_version` (default `1.33.4-cmk.18`, applied to both pools), `amd_ephemeral_storage_for_containerd` (default `true`).
+
+Terraform authenticates via the Crusoe Go SDK (`~/.crusoe/config` / env). Select the target org with `export CRUSOE_PROFILE=<profile>` before `terraform apply`.
+
+#### 2. Provision Infrastructure + Install KServe
 
 ```bash
+export CRUSOE_PROFILE=<your-profile>
 make setup-amd
 ```
 
-This runs three steps:
-1. `terraform apply` in `terraform-amd/` — creates CMK cluster with **`crusoe_csi` add-on only** (no NVIDIA add-ons), AMD GPU node pool, CPU node pool, fetches kubeconfig
-2. `install-amd-gpu-operator` — installs cert-manager v1.15.1, AMD GPU operator v1.4.2, creates Docker registry secret in `kube-amd-gpu`, applies AMD DeviceConfig
-3. `install-kserve` — installs KServe v0.19.0, patches storage-initializer, creates `kserve-test` namespace with HuggingFace secret
+This runs:
+1. `terraform apply` in `terraform-amd/` — creates the CMK cluster with the **managed AMD add-ons** (`amd_network_operator`, `amd_gpu_operator`, `crusoe_csi`), the AMD GPU node pool, and the CPU node pool, then fetches kubeconfig. The GPU driver/operator is reconciled by CMK (no manual step).
+2. `install-kserve` — installs KServe v0.19.0, patches storage-initializer, creates `kserve-test` namespace with HuggingFace secret
+
+Verify the managed operator advertised GPUs before deploying: `kubectl get nodes -o custom-columns=NAME:.metadata.name,GPU:'.status.allocatable.amd\.com/gpu'` (expect `8` per MI355X node).
 
 **Key difference from NVIDIA**: AMD clusters use `amd.com/gpu` resource limits instead of `nvidia.com/gpu`, and use the `vllm/vllm-openai-rocm:latest` image (ROCm-based).
 

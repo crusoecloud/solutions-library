@@ -1,20 +1,33 @@
 # -----------------------------------------------------------------------
 # Crusoe infrastructure
 # -----------------------------------------------------------------------
+# project_id is the project UUID, not its name. Find it: crusoe projects list
 project_id      = "your-project-id"
 cluster_name    = "kserve-amd-cluster"
-cluster_version = "1.33.4-cmk.43"
-location        = "us-east1-a"
+# For MI355X (gfx950), use an AMD "Bundle 1" version so the managed AMD add-ons
+# are available (e.g. 1.33.4-cmk.93). Confirm: crusoe kubernetes versions list
+cluster_version = "1.33.4-cmk.93"
+location        = "us-east2-a"
 
 # AMD GPU node pool
-# Set amd_node_type to your Crusoe AMD GPU SKU
-# Find available SKUs: crusoe compute vms list-types
+# Set amd_node_type to your Crusoe AMD GPU SKU. Find SKUs: crusoe compute vms types
+# Find the matching RoCE/IB partition: crusoe networking ib-partitions list --project-id <id>
 amd_node_type       = ""
 amd_node_count      = 1
 amd_ib_partition_id = "your-ib-partition-id"
 
 # CPU nodes for KServe control plane
 cpu_node_count = 2
+cpu_node_type  = "c1a.4x"
+
+# Node-pool version (applied to BOTH pools). For MI355X this is a gfx950-compatible
+# node image and differs from cluster_version. Leave unset to use the default.
+# node_pool_version = "1.33.4-cmk.18"
+
+# CMK add-ons. Default (in variables.tf) enables the managed AMD GPU + network
+# operators — no manual GPU-operator install and no Docker Hub creds needed.
+# For the legacy manual path, uncomment and run `make install-amd-gpu-operator`:
+# cluster_add_ons = ["crusoe_csi"]
 
 # SSH public key — provisioned onto nodes at creation time (cannot be added later).
 # Set this to SSH into GPU nodes for debugging (e.g. rocm-smi, driver issues).
@@ -25,6 +38,9 @@ ssh_public_key = "ssh-ed25519 AAAA... user@host"
 # -----------------------------------------------------------------------
 hf_token = "hf_your_token_here"
 
+# Docker Hub credentials are ONLY needed for the legacy `make install-amd-gpu-operator`
+# path (cluster_add_ons = ["crusoe_csi"]). With the default managed AMD add-ons they
+# are unused and can be left as-is.
 docker_username = "your-dockerhub-username"
 docker_email    = "you@example.com"
 # Use Docker PAT, not account password

@@ -21,7 +21,7 @@ Deploy open-source LLMs from HuggingFace on Crusoe Managed Kubernetes (CMK) usin
 - [Helm](https://helm.sh/docs/intro/install/) >= 3.0
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 - A [HuggingFace](https://huggingface.co/) account and API token
-- **AMD only**: Docker Hub account (for building AMD GPU driver image)
+- **AMD legacy path only**: Docker Hub account (not needed with the default managed AMD add-ons)
 
 ## Quick Start — NVIDIA
 
@@ -110,7 +110,7 @@ make bench BENCH_RATE=inf BENCH_NUM_PROMPTS=300 # Max throughput
 
 ## Quick Start — AMD
 
-AMD clusters use a separate Terraform directory and require the AMD GPU operator instead of the NVIDIA operator.
+AMD clusters use a separate Terraform directory (`terraform-amd/`). By default the cluster enables the **CMK-managed AMD add-ons** (`amd_gpu_operator`, `amd_network_operator`, `crusoe_csi`), so CMK installs and maintains the GPU driver/operator — no manual operator install and **no Docker Hub credentials**.
 
 ### 1. Configure
 
@@ -118,18 +118,20 @@ AMD clusters use a separate Terraform directory and require the AMD GPU operator
 cd terraform-amd
 cp terraform.tfvars.example terraform.tfvars
 ```
-Edit terraform.tfvars with your project ID, HuggingFace token, AMD node type/count, IB partition ID, and Docker Hub credentials.
+Edit terraform.tfvars with your project **UUID** (`crusoe projects list`), HuggingFace token, AMD node type/count, IB/RoCE partition ID, and SSH key. For MI355X use an AMD "Bundle 1" `cluster_version` (e.g. `1.33.4-cmk.93`). Docker Hub credentials are only needed for the legacy path (`cluster_add_ons = ["crusoe_csi"]` + `make install-amd-gpu-operator`).
 
-### 2. Provision cluster + install AMD GPU operator + KServe
+### 2. Provision cluster + KServe
 
 ```bash
+export CRUSOE_PROFILE=<your-profile>   # selects the target org for Terraform
 make setup-amd
 ```
 
 This single command:
-- Creates the CMK cluster and node pools (MI300X, CPU)
-- Installs cert-manager + AMD GPU operator v1.4.2
+- Creates the CMK cluster (managed AMD GPU + network operators) and node pools (MI355X, CPU)
 - Installs KServe v0.19.0
+
+Verify GPUs are advertised before deploying: `kubectl get nodes -o custom-columns=NAME:.metadata.name,GPU:'.status.allocatable.amd\.com/gpu'`
 
 ### 3. Deploy a model
 

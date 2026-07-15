@@ -5,6 +5,12 @@ terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
 terraform/terraform.tfvars
 terraform/imports.tf
+terraform-amd/.terraform/
+terraform-amd/.terraform.lock.hcl
+terraform-amd/terraform.tfstate
+terraform-amd/terraform.tfstate.backup
+terraform-amd/terraform.tfvars
+terraform-amd/imports.tf
 
 # Secrets
 .env

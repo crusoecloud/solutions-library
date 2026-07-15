@@ -1,12 +1,14 @@
-.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller install-crusoe-autoscaler destroy-crusoe-autoscaler install-vllm-hpa destroy-vllm-hpa install-gateway-scaling destroy-gateway-scaling deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
+.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller install-crusoe-autoscaler destroy-crusoe-autoscaler install-vllm-hpa destroy-vllm-hpa install-gateway-scaling destroy-gateway-scaling install-gateway-bypass destroy-gateway-bypass deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
 
 SHELL := /bin/bash
 NAMESPACE ?= kserve-test
 HF_TOKEN       ?= $(shell grep '^hf_token'       terraform/terraform.tfvars     2>/dev/null | sed 's/.*= *"//;s/"//')
 KSERVE_VERSION ?= v0.19.0
 
-# Open WebUI frontend — the vLLM OpenAI endpoint it talks to (default: the deploy-basic model).
-OPENWEBUI_BACKEND_URL ?= http://qwen-llm-kserve-workload-svc.$(NAMESPACE).svc.cluster.local:8000/v1
+# Open WebUI frontend — the vLLM OpenAI endpoint it talks to.
+# Leave empty to auto-detect the deployed "*-workload-svc" Service in $(NAMESPACE) (works for any deploy mode);
+# set it explicitly to pin a specific backend, e.g. http://qwen3-llm-kserve-workload-svc.$(NAMESPACE).svc.cluster.local:8000/v1
+OPENWEBUI_BACKEND_URL ?=
 
 # AMD config — all values read from terraform-amd/terraform.tfvars
 _AMD_TFVARS    := terraform-amd/terraform.tfvars
@@ -45,15 +47,17 @@ setup: ## Provision cluster, install KServe, create namespace (terraform apply)
 	  terraform init && \
 	  terraform apply
 
-setup-amd: ## Provision AMD cluster, install AMD GPU operator + KServe (configure terraform-amd/terraform.tfvars first)
+setup-amd: ## Provision AMD cluster (CMK-managed AMD GPU/network add-ons) + install KServe. Edit terraform-amd/terraform.tfvars first.
 	cd terraform-amd && \
 	  cp -n terraform.tfvars.example terraform.tfvars 2>/dev/null || true && \
 	  terraform init && \
 	  terraform apply
-	$(MAKE) install-amd-gpu-operator
+	@echo "AMD GPU + network operators are CMK-managed via cluster add-ons — no manual operator install."
+	@echo "The managed operator reconciles the GPU driver in the background; verify before deploying with:"
+	@echo "  kubectl get nodes -o custom-columns=NAME:.metadata.name,GPU:'.status.allocatable.amd\\.com/gpu'"
 	$(MAKE) install-kserve HF_TOKEN=$(AMD_HF_TOKEN)
 
-install-amd-gpu-operator: ## Install cert-manager and AMD GPU operator (requires DOCKER_USERNAME, DOCKER_EMAIL, DOCKER_PASSWORD)
+install-amd-gpu-operator: ## [LEGACY: crusoe_csi-only clusters] Manually install cert-manager + AMD GPU operator (needs DOCKER_USERNAME/EMAIL/PASSWORD). NOT needed with the default managed amd_gpu_operator add-on.
 	@if [ -z "$(DOCKER_USERNAME)" ] || [ -z "$(DOCKER_EMAIL)" ] || [ -z "$(DOCKER_PASSWORD)" ]; then \
 	  echo "ERROR: DOCKER_USERNAME, DOCKER_EMAIL, and DOCKER_PASSWORD are required."; \
 	  echo "  make install-amd-gpu-operator DOCKER_USERNAME=you DOCKER_EMAIL=you@example.com DOCKER_PASSWORD=... AMD_DRIVER_IMAGE=docker.io/you/amd-gpu-driver"; \
@@ -341,22 +345,52 @@ destroy-gateway-scaling: ## Revert gateway data-plane scaling (back to the defau
 	-kubectl patch gatewayclass envoy --type json -p '[{"op":"remove","path":"/spec/parametersRef"}]' 2>/dev/null
 	-kubectl delete -f manifests/gateway-scaling.yaml --ignore-not-found
 
+# Route standard client paths straight to the vLLM Service (Envoy least_request L7 LB),
+# bypassing the InferencePool+EPP whose single ext_proc caps the gateway at ~1.2k tok/s.
+# Measured ~13x throughput and near-linear GPU scaling vs the EPP path. Override the vars
+# below for a different ISVC/namespace.
+ISVC_NAME          ?= qwen3-llm
+ISVC_PATH          ?= /$(NAMESPACE)/$(ISVC_NAME)
+WORKLOAD_SVC       ?= $(ISVC_NAME)-kserve-workload-svc
+GATEWAY_NAME       ?= kserve-ingress-gateway
+GATEWAY_NAMESPACE  ?= kserve
+
+install-gateway-bypass: ## Make the standard gateway path use least_request LB across GPUs (bypass the EPP throughput cap ~1.2k->~15k tok/s). ISVC_NAME/ISVC_PATH/WORKLOAD_SVC to tune.
+	@echo "Routing $(ISVC_PATH)/v1/* -> Service $(WORKLOAD_SVC) (Envoy least_request, bypassing EPP)..."
+	@NAMESPACE="$(NAMESPACE)" ISVC_NAME="$(ISVC_NAME)" ISVC_PATH="$(ISVC_PATH)" WORKLOAD_SVC="$(WORKLOAD_SVC)" \
+	  GATEWAY_NAME="$(GATEWAY_NAME)" GATEWAY_NAMESPACE="$(GATEWAY_NAMESPACE)" \
+	  envsubst < manifests/gateway-bypass-route.yaml | kubectl apply -f -
+	@echo "Done. Standard OpenAI paths now bypass the EPP. Verify: make bench-amd-mi355x-lb"
+
+destroy-gateway-bypass: ## Remove the bypass route (standard paths fall back to EPP/InferencePool routing)
+	-kubectl delete httproute $(ISVC_NAME)-bypass-epp -n $(NAMESPACE) --ignore-not-found
+
 deploy-openwebui: install-lb-controller ## Deploy Open WebUI chat frontend with self-signed TLS on :443 via a Crusoe LoadBalancer
 	kubectl apply -f frontend/manifests/00-namespace.yaml
 	kubectl apply -f frontend/manifests/20-tls.yaml
 	@echo "Waiting for the self-signed certificate to be issued..."
 	kubectl wait --for=condition=Ready certificate/openwebui-tls -n openwebui --timeout=120s
 	kubectl apply -f frontend/manifests/
-	kubectl set env deploy/open-webui -n openwebui OPENAI_API_BASE_URL="$(OPENWEBUI_BACKEND_URL)"
-	kubectl rollout status deploy/open-webui -n openwebui --timeout=600s
-	@echo "Waiting for the LoadBalancer VIP (crusoe-lb-controller)..."
-	@IP=""; for i in $$(seq 1 30); do \
+	@set -e; \
+	BACKEND="$(OPENWEBUI_BACKEND_URL)"; \
+	if [ -z "$$BACKEND" ]; then \
+	  SVC=$$(kubectl get svc -n $(NAMESPACE) -o name | grep workload | head -1 | sed 's|service/||'); \
+	  if [ -z "$$SVC" ]; then echo "ERROR: no '*workload*' Service in $(NAMESPACE) — deploy a model first (e.g. make deploy-amd-mi355x), then re-run."; exit 1; fi; \
+	  BACKEND="http://$$SVC.$(NAMESPACE).svc.cluster.local:8000/v1"; \
+	  echo "Auto-detected backend Service: $$SVC"; \
+	fi; \
+	echo "Open WebUI backend -> $$BACKEND"; \
+	kubectl set env deploy/open-webui -n openwebui OPENAI_API_BASE_URL="$$BACKEND"; \
+	kubectl rollout status deploy/open-webui -n openwebui --timeout=600s; \
+	echo "Waiting for the LoadBalancer VIP (crusoe-lb-controller)..."; \
+	IP=""; for i in $$(seq 1 30); do \
 	  IP=$$(kubectl get svc openwebui-lb -n openwebui -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
 	  [ -n "$$IP" ] && break; sleep 6; done; \
 	echo ""; \
 	echo "=== Open WebUI is up ==="; \
 	echo "  Public HTTPS : https://$$IP  (self-signed cert — accept the browser warning)"; \
-	echo "  Backend      : $(OPENWEBUI_BACKEND_URL)"; \
+	echo "  Backend      : $$BACKEND"; \
+	echo "  The model appears automatically from the backend's /v1/models (served-model-name, e.g. qwen3)."; \
 	echo "  Port-forward : make openwebui-forward   (then http://localhost:8080)"; \
 	echo "  First visitor signs up and becomes admin (WEBUI_AUTH=True)."
 
