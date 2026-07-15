@@ -12,7 +12,28 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version for the cluster"
   type        = string
-  default     = "1.33.4-cmk.43"
+  default     = "1.35.5-cmk.13"
+}
+
+variable "cluster_subnet_id" {
+  description = <<-EOT
+    Optional VPC subnet ID to pin the cluster/control-plane into. Leave "" to let
+    CMK auto-select the default subnet for the location. Must be a subnet in the
+    cluster's location (e.g. default-subnet-us-east2-a).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "cluster_add_ons" {
+  description = <<-EOT
+    CMK add-ons to enable on the cluster. Default enables the CMK-managed AMD
+    GPU + network operators (no manual GPU-operator install / Docker Hub creds
+    needed). Requires an AMD "Bundle 1" cluster version (e.g. 1.33.4-cmk.93).
+    For the legacy path, set to ["crusoe_csi"] and run `make install-amd-gpu-operator`.
+  EOT
+  type        = list(string)
+  default     = ["amd_network_operator", "amd_gpu_operator", "crusoe_csi"]
 }
 
 variable "location" {
@@ -78,6 +99,26 @@ variable "amd_node_count" {
 variable "amd_node_type" {
   description = "AMD GPU node instance type (e.g. mi300x-192gb-ib.8x)"
   type        = string
+}
+
+variable "node_pool_version" {
+  description = <<-EOT
+    Kubernetes version applied to BOTH node pools (AMD GPU + CPU), kept in sync.
+    For MI355X (gfx950) this differs from the cluster version and must be a
+    gfx950-compatible node image (Bundle 1). Leave "" to inherit the cluster version.
+  EOT
+  type        = string
+  default     = "1.33.4-cmk.18"
+}
+
+variable "amd_ephemeral_storage_for_containerd" {
+  description = <<-EOT
+    Use node ephemeral storage for containerd's image/layer store. Recommended for
+    MI355X — the gfx950 ROCm serving image is ~30 GB and overflows the small default
+    containerd partition otherwise.
+  EOT
+  type        = bool
+  default     = true
 }
 
 variable "amd_ib_partition_id" {
