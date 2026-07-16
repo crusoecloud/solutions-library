@@ -23,7 +23,10 @@ AMD_DRIVER_IMAGE ?= docker.io/$(DOCKER_USERNAME)/amd-gpu-driver
 AUTOSCALER_IMAGE ?= ghcr.io/crusoecloud/cluster-autoscaler-crusoecloud:1.33.2-crusoe.8
 AUTOSCALER_MIN   ?= 2
 AUTOSCALER_MAX   ?= 4
-AUTOSCALER_POOL  ?= mi355-workers
+# Must match the GPU node pool's NAME (not its k8s node prefix). The terraform-amd
+# default is "amd-pool" (var.amd_pool_name); override if you renamed the pool. A
+# mismatch here fails silently — the autoscaler logs "skipping nodepool" and never scales.
+AUTOSCALER_POOL  ?= amd-pool
 
 # vLLM pod HPA (KEDA + Prometheus on vllm:num_requests_running) between SCALE_MIN/MAX.
 # NOTE: on KServe LLMInferenceService the standalone ScaledObject does not actuate — KServe owns
@@ -243,8 +246,14 @@ REPLICAS ?= 1
 # AUTOSCALE=1 hands replica count to the autoscaler (emits spec.scaling instead of a fixed replicas).
 AUTOSCALE ?=
 
+# --force-conflicts (below): re-running deploy-amd-mi355x to change REPLICAS re-applies the
+# LLMInferenceService via server-side apply (helm 3.18+/4). KServe's controller (and any prior
+# `kubectl patch/scale`) co-own spec.replicas, so a plain apply fails with "conflicts with
+# before-first-apply". Forcing conflicts lets the chart reclaim the helm-templated fields it
+# owns (spec.replicas, resources.limits) -- the intended source of truth.
 deploy-amd-mi355x: ## Deploy large single-node LLM on AMD MI355X gfx950 (Qwen3-235B on 8x MI355X, TP=8+EP) w/ RWX shared disk + tool calling. REPLICAS=N to use N nodes.
 	helm upgrade --install crusoe-kserve-example ./helm/crusoe-kserve-example \
+	  --force-conflicts \
 	  --set hfToken=$(HF_TOKEN) \
 	  --set basic.enabled=false \
 	  --set large.enabled=false \
