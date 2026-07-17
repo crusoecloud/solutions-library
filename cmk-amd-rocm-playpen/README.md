@@ -2,7 +2,7 @@
 
 A stateful set of pods based on AMD's `rocm/roce-workload:ubuntu24_rocm-7.0.2_rccl-7.0.2_anp-v1.2.0_ainic-1.117.1-a-63` image with a front-end SSH service on an External LoadBalancer. The pods have MPI installed and passwordless SSH configured so that MPI jobs can be easily run by the built-in clouduser account. `launch-distributed.sh` starts a simple distributed pytorch job using RCCL and GPU Direct RDMA. `launch-rccl.sh` runs a multi-node RCCL test. The scripts are configured for a 2-node (2-pod) cluster - edit them to match the size of your cluster.
 
-**Prerequisites:**. 
+**Prerequisites:**    
 1 - A working CMK cluster with at least 2 AMD MI355X nodes in Ready state, CSI drivers installed, and Load Balancer Helm chart from https://github.com/crusoecloud/crusoe-load-balancer-controller-helm-charts. 
 
 2 - Firewall rules:
