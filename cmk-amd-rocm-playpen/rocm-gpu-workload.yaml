@@ -48,7 +48,6 @@ data:
     Subsystem sftp /usr/lib/openssh/sftp-server
 
 ---
-# Shared ReadWriteMany filesystem volume for /home across all pods.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -156,7 +155,6 @@ spec:
           type: Directory
 
 ---
-# Headless service required by StatefulSet for pod DNS (rocm-workload-0.rocm-workload-headless, etc.)
 apiVersion: v1
 kind: Service
 metadata:
@@ -175,8 +173,6 @@ spec:
     targetPort: 29500
 
 ---
-# LoadBalancer for pod 0 — targets rocm-workload-0 specifically via the
-# stable pod-name label that Kubernetes automatically adds to StatefulSet pods.
 apiVersion: v1
 kind: Service
 metadata:
@@ -201,7 +197,6 @@ spec:
     protocol: TCP
 
 ---
-# LoadBalancer for pod 1 — targets rocm-workload-1 specifically.
 apiVersion: v1
 kind: Service
 metadata:
