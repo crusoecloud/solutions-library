@@ -1,0 +1,57 @@
+# Distributed gateway load test — fans out ${LOADTEST_PODS} pods, each driving
+# ${LOADTEST_CONCURRENCY} persistent-connection workers at the target gateway.
+# Total offered concurrency = LOADTEST_PODS * LOADTEST_CONCURRENCY.
+#
+# Deploy on a SEPARATE cluster (e.g. a different region) and point TARGET_URL at
+# the serving cluster's gateway VIP to simulate cross-region client traffic.
+# Applied + parameterized by `make loadtest-distributed` (envsubst). The loadgen.py
+# script is mounted from the `loadgen-script` ConfigMap the make target creates.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gateway-loadtest
+  namespace: ${LOADTEST_NS}
+  labels:
+    app: gateway-loadtest
+spec:
+  parallelism: ${LOADTEST_PODS}
+  completions: ${LOADTEST_PODS}
+  completionMode: Indexed
+  backoffLimit: 0                 # a pod that errors is not retried — we want raw results
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: gateway-loadtest
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        ${LOADTEST_NODE_SELECTOR}
+      containers:
+        - name: loadgen
+          image: ${LOADTEST_IMAGE}
+          command: ["python", "/scripts/loadgen.py"]
+          env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: TARGET_URL
+              value: "${LOADTEST_TARGET_URL}"
+            - name: MODEL
+              value: "${LOADTEST_MODEL}"
+            - name: CONCURRENCY
+              value: "${LOADTEST_CONCURRENCY}"
+            - name: DURATION
+              value: "${LOADTEST_DURATION}"
+            - name: INPUT_LEN
+              value: "${LOADTEST_INPUT_LEN}"
+            - name: OUTPUT_LEN
+              value: "${LOADTEST_OUTPUT_LEN}"
+          resources:
+            requests: { cpu: "500m", memory: "256Mi" }
+            limits:   { cpu: "2",    memory: "1Gi" }
+          volumeMounts:
+            - { name: script, mountPath: /scripts }
+      volumes:
+        - name: script
+          configMap:
+            name: loadgen-script
