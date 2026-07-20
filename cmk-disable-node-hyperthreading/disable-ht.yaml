@@ -1,0 +1,127 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: disable-ht
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disable-ht
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: disable-ht
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: disable-ht
+subjects:
+- kind: ServiceAccount
+  name: disable-ht
+  namespace: kube-system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: disable-ht-script
+  namespace: kube-system
+data:
+  run.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    SMT_CONTROL=/sys/devices/system/cpu/smt/control
+
+    if [ ! -f "$SMT_CONTROL" ]; then
+      echo "SMT control file not found; node may not support hyperthreading. Nothing to do."
+      kubectl label node "$NODE_NAME" hyperthreading=disabled --overwrite
+      exec sleep infinity
+    fi
+
+    current=$(tr -d '[:space:]' < "$SMT_CONTROL")
+    if [ "$current" = "off" ]; then
+      echo "Hyperthreading is already off on $NODE_NAME. Nothing to do."
+      kubectl label node "$NODE_NAME" hyperthreading=disabled --overwrite
+      exec sleep infinity
+    fi
+
+    echo "SMT state on $NODE_NAME is '$current' — disabling hyperthreading..."
+    echo off > "$SMT_CONTROL"
+
+    echo "Labelling node $NODE_NAME with hyperthreading=disabled..."
+    kubectl label node "$NODE_NAME" hyperthreading=disabled --overwrite
+
+    echo "Restarting kubelet (entering host mount namespace via PID 1)..."
+    nsenter -t 1 -m -- systemctl restart kubelet
+
+    echo "Kubelet restarted. Sleeping until this pod is removed."
+    exec sleep infinity
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: disable-ht
+  namespace: kube-system
+  labels:
+    app: disable-ht
+spec:
+  selector:
+    matchLabels:
+      app: disable-ht
+  template:
+    metadata:
+      labels:
+        app: disable-ht
+    spec:
+      serviceAccountName: disable-ht
+      hostPID: true  # required for nsenter -t 1
+      tolerations:
+      - operator: Exists
+      affinity:
+      # You can adjust nodeAffinity to ignore nodes or nodepools that you don't want
+      # to disable hyperthreading on
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: hyperthreading
+                operator: DoesNotExist
+      containers:
+      - name: disable-ht
+        # You can also build and push your own custom version of the image
+        # using the Dockerfile in this repo
+        image: ghcr.io/datadoc24/disable-ht:latest
+        command: ["/bin/bash", "/scripts/run.sh"]
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        volumeMounts:
+        - name: sys
+          mountPath: /sys
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: scripts
+        configMap:
+          name: disable-ht-script
+          defaultMode: 0755
+      terminationGracePeriodSeconds: 30
