@@ -1,0 +1,164 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: enable-ht
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: enable-ht
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "patch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: enable-ht
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: enable-ht
+subjects:
+- kind: ServiceAccount
+  name: enable-ht
+  namespace: kube-system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enable-ht-script
+  namespace: kube-system
+data:
+  orchestrate.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    echo "Listing nodes labeled hyperthreading=disabled..."
+    nodes=$(kubectl get nodes -l hyperthreading=disabled -o jsonpath='{.items[*].metadata.name}')
+
+    if [ -z "$nodes" ]; then
+      echo "No nodes with hyperthreading=disabled found. Nothing to do."
+      exit 0
+    fi
+
+    echo "Will re-enable hyperthreading on: $nodes"
+
+    for node in $nodes; do
+      echo "Creating per-node job for $node..."
+      kubectl apply -f - <<EOF
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: enable-ht-node-${node}
+      namespace: kube-system
+      labels:
+        app: enable-ht
+    spec:
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          serviceAccountName: enable-ht
+          hostPID: true
+          restartPolicy: OnFailure
+          tolerations:
+          - operator: Exists
+          nodeName: ${node}
+          containers:
+          - name: enable-ht
+            image: ghcr.io/datadoc24/disable-ht:latest
+            command: ["/bin/bash", "/scripts/enable-node.sh"]
+            env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            securityContext:
+              privileged: true
+              runAsUser: 0
+            volumeMounts:
+            - name: sys
+              mountPath: /sys
+            - name: scripts
+              mountPath: /scripts
+          volumes:
+          - name: sys
+            hostPath:
+              path: /sys
+          - name: scripts
+            configMap:
+              name: enable-ht-script
+              defaultMode: 0755
+    EOF
+    done
+
+    echo "Waiting for all per-node jobs to complete..."
+    for node in $nodes; do
+      kubectl wait job/enable-ht-node-${node} -n kube-system \
+        --for=condition=Complete --timeout=300s
+      echo "Node $node: done."
+    done
+
+    echo "Hyperthreading re-enabled on all nodes."
+
+  enable-node.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    SMT_CONTROL=/sys/devices/system/cpu/smt/control
+
+    if [ ! -f "$SMT_CONTROL" ]; then
+      echo "SMT control file not found on $NODE_NAME; skipping SMT change."
+    else
+      current=$(tr -d '[:space:]' < "$SMT_CONTROL")
+      if [ "$current" = "on" ]; then
+        echo "Hyperthreading already on on $NODE_NAME."
+      else
+        echo "SMT state on $NODE_NAME is '$current' — enabling hyperthreading..."
+        echo on > "$SMT_CONTROL"
+      fi
+    fi
+
+    echo "Restarting kubelet on $NODE_NAME..."
+    nsenter -t 1 -m -- systemctl restart kubelet
+
+    echo "Removing hyperthreading=disabled label from $NODE_NAME..."
+    kubectl label node "$NODE_NAME" hyperthreading-
+
+    echo "Done on $NODE_NAME."
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: enable-ht
+  namespace: kube-system
+  labels:
+    app: enable-ht
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      serviceAccountName: enable-ht
+      restartPolicy: OnFailure
+      containers:
+      - name: orchestrate
+        image: ghcr.io/datadoc24/disable-ht:latest
+        command: ["/bin/bash", "/scripts/orchestrate.sh"]
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: enable-ht-script
+          defaultMode: 0755

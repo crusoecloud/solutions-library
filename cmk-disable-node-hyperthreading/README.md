@@ -1,6 +1,6 @@
 # Disable Hyperthreading on Crusoe Managed Kubernetes Nodes
 
-This directory contains a Kubernetes DaemonSet (`disable-ht.yaml`) that disables Simultaneous Multi-Threading (SMT / hyperthreading) on every node in a Crusoe Managed Kubernetes cluster. It also includes a `Dockerfile` for building the container image used by the DaemonSet.
+This directory contains a Kubernetes DaemonSet (`disable-ht.yaml`) that disables Simultaneous Multi-Threading (SMT / hyperthreading) on every node in a Crusoe Managed Kubernetes cluster, and a companion Job (`enable-ht.yaml`) that reverses the change. It also includes a `Dockerfile` for building the container image used by both manifests.
 
 ## Important: Only use this solution if required by your organization
 
@@ -50,7 +50,54 @@ To remove the DaemonSet after it has finished:
 kubectl delete -f disable-ht.yaml
 ```
 
-> Note: removing the DaemonSet does not re-enable hyperthreading. SMT state is reset at next node reboot or by writing `on` to `/sys/devices/system/cpu/smt/control`.
+> Note: removing the DaemonSet does not re-enable hyperthreading. Use `enable-ht.yaml` (see below) to restore SMT on all affected nodes, or reboot the nodes.
+
+## Re-enabling hyperthreading
+
+`enable-ht.yaml` is a Kubernetes Job that reverses the changes made by `disable-ht.yaml`. It targets every node that carries the `hyperthreading=disabled` label and, on each one: writes `on` to `/sys/devices/system/cpu/smt/control`, restarts kubelet, and removes the `hyperthreading=disabled` label.
+
+### How it works
+
+Because a Job does not fan out to multiple nodes the way a DaemonSet does, `enable-ht.yaml` uses an orchestrator pattern:
+
+1. An **orchestrator Job** pod lists all nodes labeled `hyperthreading=disabled`.
+2. For each node it creates a **per-node Job** pod targeted to that node via `nodeName`.
+3. Each per-node pod re-enables SMT, restarts kubelet via `nsenter`, and removes the label.
+4. The orchestrator waits for all per-node jobs to complete before exiting.
+
+Per-node Jobs are automatically deleted 600 seconds after they finish via `ttlSecondsAfterFinished`.
+
+### Steps to re-enable hyperthreading
+
+1. Delete the `disable-ht` DaemonSet first so it does not immediately re-disable SMT on nodes as they come back up:
+
+   ```bash
+   kubectl delete -f disable-ht.yaml
+   ```
+
+2. Apply the Job:
+
+   ```bash
+   kubectl apply -f enable-ht.yaml
+   ```
+
+3. Monitor the orchestrator:
+
+   ```bash
+   kubectl -n kube-system logs -f job/enable-ht
+   ```
+
+4. Once complete, verify that nodes no longer carry the label and that logical CPU counts have doubled:
+
+   ```bash
+   kubectl get nodes -L hyperthreading
+   ```
+
+5. Clean up:
+
+   ```bash
+   kubectl delete -f enable-ht.yaml
+   ```
 
 ## Restricting to nodes with a specific label
 
