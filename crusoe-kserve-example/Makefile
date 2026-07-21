@@ -1,4 +1,4 @@
-.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller install-crusoe-autoscaler destroy-crusoe-autoscaler install-vllm-hpa destroy-vllm-hpa install-gateway-scaling destroy-gateway-scaling install-gateway-bypass destroy-gateway-bypass deploy-openwebui openwebui-forward openwebui-url destroy-openwebui watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
+.PHONY: help setup setup-amd install-kserve patch-storage-initializer install-amd-gpu-operator deploy-basic deploy-large deploy-multi-node deploy-disaggregated deploy-amd-basic deploy-amd-large redeploy-amd-large deploy-amd-multi-node install-lb-controller install-crusoe-autoscaler destroy-crusoe-autoscaler install-vllm-hpa destroy-vllm-hpa install-gateway-scaling destroy-gateway-scaling install-gateway-bypass destroy-gateway-bypass deploy-openwebui openwebui-forward openwebui-url destroy-openwebui loadtest-distributed loadtest-report loadtest-clean watch watch-metrics test chat bench bench-all bench-all-amd bench-amd monitor-up monitor-up-nvidia monitor-up-amd monitor-down monitor-clean destroy
 
 SHELL := /bin/bash
 NAMESPACE ?= kserve-test
@@ -36,6 +36,25 @@ KEDA_VERSION    ?= 2.16.1
 SCALE_MIN       ?= 2
 SCALE_MAX       ?= 4
 SCALE_THRESHOLD ?= 100   # target running seqs per replica (num_requests_running); scale out above this
+
+# Distributed gateway load test — fan out LOADTEST_PODS pods, each driving
+# LOADTEST_CONCURRENCY persistent-connection workers. Total offered concurrency =
+# LOADTEST_PODS * LOADTEST_CONCURRENCY. Deploy on a SEPARATE cluster (set KUBECONFIG/context
+# to it) and point LOADTEST_TARGET_URL at the serving cluster's gateway VIP to simulate
+# cross-region traffic. Get the VIP: kubectl get gateway kserve-ingress-gateway -n kserve \
+#   -o jsonpath='{.status.addresses[0].value}' (run against the SERVING cluster).
+LOADTEST_TARGET_URL ?=
+LOADTEST_PODS        ?= 10
+LOADTEST_CONCURRENCY ?= 256
+LOADTEST_DURATION    ?= 60
+LOADTEST_MODEL       ?= qwen3
+LOADTEST_INPUT_LEN   ?= 512
+LOADTEST_OUTPUT_LEN  ?= 150
+LOADTEST_IMAGE       ?= python:3.12-slim
+LOADTEST_NS          ?= loadtest
+# Pin load-gen pods to a node pool (one "key: value"). Default is a no-op (always-true label);
+# override to keep load-gen off serving/gateway nodes, e.g. LOADTEST_NODE_SELECTOR='node.kubernetes.io/instance-type: c1a.8x'.
+LOADTEST_NODE_SELECTOR ?= kubernetes.io/os: linux
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -503,7 +522,7 @@ bench-amd-mi355x-all: ## Benchmark EVERY replica pod at once (loads all nodes; r
 	    --model /mnt/models --served-model-name $(or $(BENCH_MODEL),qwen3) \
 	    --base-url http://localhost:8000 --backend openai-chat --endpoint /v1/chat/completions \
 	    --dataset-name random --random-input-len $(BENCH_INPUT_LEN) --random-output-len $(BENCH_OUTPUT_LEN) \
-	    --num-prompts $(BENCH_NUM_PROMPTS) --request-rate $(BENCH_RATE) > "$$TMP/$$POD.log" 2>&1 & \
+	    --num-prompts $(BENCH_NUM_PROMPTS) --request-rate $(BENCH_RATE) --disable-tqdm $(if $(BENCH_CONCURRENCY),--max-concurrency $(BENCH_CONCURRENCY),) > "$$TMP/$$POD.log" 2>&1 & \
 	done; \
 	wait; \
 	echo ""; echo "===== per-pod results ====="; \
@@ -532,6 +551,58 @@ bench-amd-mi355x-lb: ## Benchmark THROUGH the Envoy gateway/EPP — production p
 	  --dataset-name random --random-input-len $(BENCH_INPUT_LEN) --random-output-len $(BENCH_OUTPUT_LEN) \
 	  --num-prompts $(BENCH_NUM_PROMPTS) --request-rate $(BENCH_RATE) \
 	  $(if $(BENCH_CONCURRENCY),--max-concurrency $(BENCH_CONCURRENCY),)
+
+# ---------------------------------------------------------------------------
+# Distributed gateway load test (deploy on a SEPARATE cluster to simulate cross-region load)
+# ---------------------------------------------------------------------------
+
+loadtest-distributed: ## Fan out LOADTEST_PODS load-gen pods at a gateway VIP (set LOADTEST_TARGET_URL). Total users = PODS*CONCURRENCY. Runs on the CURRENT kubecontext.
+	@if [ -z "$(LOADTEST_TARGET_URL)" ]; then \
+	  echo "ERROR: set LOADTEST_TARGET_URL to the serving cluster's gateway base URL, e.g."; \
+	  echo "  make loadtest-distributed LOADTEST_TARGET_URL=http://<VIP>/kserve-test/qwen3-llm LOADTEST_PODS=25"; \
+	  echo "Get <VIP> from the SERVING cluster: kubectl get gateway kserve-ingress-gateway -n kserve -o jsonpath='{.status.addresses[0].value}'"; \
+	  exit 1; fi
+	@echo "Load test -> $(LOADTEST_TARGET_URL)"
+	@echo "  pods=$(LOADTEST_PODS)  concurrency/pod=$(LOADTEST_CONCURRENCY)  => total offered concurrency=$$(( $(LOADTEST_PODS) * $(LOADTEST_CONCURRENCY) ))"
+	@echo "  duration=$(LOADTEST_DURATION)s  input=$(LOADTEST_INPUT_LEN)  output=$(LOADTEST_OUTPUT_LEN)  model=$(LOADTEST_MODEL)"
+	@echo "  running against kubecontext: $$(kubectl config current-context)"
+	kubectl create namespace $(LOADTEST_NS) --dry-run=client -o yaml | kubectl apply -f -
+	kubectl -n $(LOADTEST_NS) delete job gateway-loadtest --ignore-not-found
+	kubectl -n $(LOADTEST_NS) create configmap loadgen-script --from-file=loadgen.py=load-test/loadgen.py \
+	  --dry-run=client -o yaml | kubectl apply -f -
+	@LOADTEST_NS="$(LOADTEST_NS)" LOADTEST_PODS="$(LOADTEST_PODS)" LOADTEST_IMAGE="$(LOADTEST_IMAGE)" \
+	  LOADTEST_TARGET_URL="$(LOADTEST_TARGET_URL)" LOADTEST_MODEL="$(LOADTEST_MODEL)" \
+	  LOADTEST_CONCURRENCY="$(LOADTEST_CONCURRENCY)" LOADTEST_DURATION="$(LOADTEST_DURATION)" \
+	  LOADTEST_INPUT_LEN="$(LOADTEST_INPUT_LEN)" LOADTEST_OUTPUT_LEN="$(LOADTEST_OUTPUT_LEN)" \
+	  LOADTEST_NODE_SELECTOR="$(LOADTEST_NODE_SELECTOR)" \
+	  envsubst < load-test/distributed-loadtest.yaml | kubectl apply -f -
+	@echo ""
+	@echo "Launched. Watch:   kubectl -n $(LOADTEST_NS) get pods -w"
+	@echo "When complete:     make loadtest-report"
+
+loadtest-report: ## Aggregate results from all load-gen pods (sum throughput, total success/fail)
+	@echo "Collecting RESULT_JSON from pods in $(LOADTEST_NS)..."
+	@for p in $$(kubectl -n $(LOADTEST_NS) get pods -l app=gateway-loadtest -o name 2>/dev/null); do \
+	  kubectl -n $(LOADTEST_NS) logs $$p 2>/dev/null | grep '^RESULT_JSON '; \
+	done | sed 's/^RESULT_JSON //' | python3 -c 'import sys,json; \
+rows=[json.loads(l) for l in sys.stdin if l.strip()]; \
+n=len(rows); \
+succ=sum(r.get("success",0) for r in rows); \
+fail=sum(r.get("fail",0) for r in rows); \
+otps=sum(r.get("out_tok_s",0) for r in rows); \
+rps=sum(r.get("req_s",0) for r in rows); \
+tt=sorted(r.get("ttft_ms_median",0) for r in rows if r.get("ttft_ms_median")); \
+med=tt[len(tt)//2] if tt else 0; \
+print("\n===== AGGREGATE across %d pod(s) =====" % n); \
+print("  Successful requests:   %d" % succ); \
+print("  Failed requests:       %d  (%.1f%%)" % (fail, 100.0*fail/max(succ+fail,1))); \
+print("  Output token/s (sum):  %.1f" % otps); \
+print("  Request/s (sum):       %.2f" % rps); \
+print("  Per-pod TTFT median:   min/med/max = %.0f / %.0f / %.0f ms" % (tt[0] if tt else 0, med, tt[-1] if tt else 0)); \
+print("  (per-pod detail: kubectl -n %s logs -l app=gateway-loadtest | grep RESULT_JSON)" % "$(LOADTEST_NS)")'
+
+loadtest-clean: ## Remove the load-test Job, ConfigMap, and namespace
+	-kubectl delete namespace $(LOADTEST_NS) --ignore-not-found
 
 # ---------------------------------------------------------------------------
 # Local monitoring (Grafana + Prometheus via Docker)
