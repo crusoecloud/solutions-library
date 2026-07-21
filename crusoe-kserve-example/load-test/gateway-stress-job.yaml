@@ -1,0 +1,59 @@
+# High-concurrency gateway stress Job — fans out ${PODS} pods, each holding
+# ${CONCURRENCY} persistent async connections at the target VIP. Deploy on
+# load-gen clusters (a different region) to stress the Envoy gateway's connection
+# handling. The command raises the fd limit above CONCURRENCY. loadgen_async.py is
+# mounted as /scripts/loadgen.py from the `loadgen-async` ConfigMap.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gw-stress-${REGION}
+  namespace: loadtest
+  labels: { app: gw-stress }
+spec:
+  parallelism: ${PODS}
+  completions: ${PODS}
+  completionMode: Indexed
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app: gw-stress }
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/instance-type: ${NODE_SELECTOR}
+      containers:
+        - name: loadgen
+          image: python:3.12-slim
+          command: ["sh", "-c", "ulimit -n 1048576 2>/dev/null || true; echo fd_limit=$(ulimit -n); exec python3 /scripts/loadgen.py"]
+          securityContext:
+            capabilities:
+              add: ["SYS_RESOURCE"]
+          env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: TARGET_URL
+              value: "${TARGET_URL}"
+            - name: MODEL
+              value: "qwen3"
+            - name: CONCURRENCY
+              value: "${CONCURRENCY}"
+            - name: DURATION
+              value: "${DURATION}"
+            - name: RAMP_SECONDS
+              value: "${RAMP_SECONDS}"
+            - name: REQ_TIMEOUT
+              value: "300"
+            - name: INPUT_LEN
+              value: "512"
+            - name: OUTPUT_LEN
+              value: "${OUTPUT_LEN}"
+          resources:
+            requests: { cpu: "${CPU_REQ}", memory: "${MEM_REQ}" }
+            limits:   { cpu: "3",           memory: "${MEM_LIM}" }
+          volumeMounts:
+            - { name: script, mountPath: /scripts }
+      volumes:
+        - name: script
+          configMap:
+            name: loadgen-async
