@@ -39,12 +39,20 @@ assert "customer prefixes present in RIB via BGP" bash -c '
 
 echo "== Data plane =="
 
+# Probes originated ON the VPN VM would otherwise source from the 169.254
+# tunnel address (first addr on the egress xfrm interface), which the peer
+# side rightly filters. Pin the source to the VM's VPC address; forwarded
+# workload traffic is unaffected by this quirk.
+SRC_IP=$(vssh "$VPN_HOST" "hostname -I" | awk '{print $1}')
+export SRC_IP
+assert "resolved VPN VM source address" bash -c '[ -n "$SRC_IP" ]'
+
 assert "ICMP to remote test host" bash -c '
-  vssh "$VPN_HOST" ping -c 4 -W 2 "$REMOTE_TEST_IP" > /dev/null
+  vssh "$VPN_HOST" "ping -c 4 -W 2 -I $SRC_IP $REMOTE_TEST_IP" > /dev/null
 '
 
-assert "TCP path works (ssh port probe or iperf3)" bash -c '
-  vssh "$VPN_HOST" "timeout 10 bash -c \"exec 3<>/dev/tcp/$REMOTE_TEST_IP/22\" 2>/dev/null || timeout 15 iperf3 -c $REMOTE_TEST_IP -t 3 >/dev/null 2>&1"
+assert "TCP path works (source-bound connect to :22, iperf3 fallback)" bash -c '
+  vssh "$VPN_HOST" "timeout 10 python3 -c \"import socket,sys; socket.create_connection((sys.argv[1],22),8,source_address=(sys.argv[2],0))\" $REMOTE_TEST_IP $SRC_IP 2>/dev/null || timeout 15 iperf3 -B $SRC_IP -c $REMOTE_TEST_IP -t 3 >/dev/null 2>&1"
 '
 
 summary

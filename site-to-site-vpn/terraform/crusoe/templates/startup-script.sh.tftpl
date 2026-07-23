@@ -130,8 +130,20 @@ EOF
 systemctl daemon-reload
 systemctl enable --now vpn-xfrm.service
 systemctl enable --now nftables
-systemctl enable --now strongswan
-systemctl enable --now frr
-swanctl --load-all || true
+# Restart (not enable --now): apt starts strongswan/frr with stock config
+# before ours lands, and the legacy starter can leave a stale vici socket.
+# A restart forces both to pick up the rendered configs (frr only launches
+# bgpd if the daemons file said so at start time).
+systemctl enable strongswan frr
+systemctl restart strongswan
+systemctl restart frr
+# vici socket comes up asynchronously after charon starts; retry the load.
+for i in $(seq 1 10); do
+  if swanctl --load-all; then
+    break
+  fi
+  if [ "$i" = 10 ]; then echo "ERROR: swanctl --load-all failed after 10 attempts" >&2; exit 1; fi
+  sleep 3
+done
 
 echo "=== vpn bootstrap complete $(date -Is) ==="

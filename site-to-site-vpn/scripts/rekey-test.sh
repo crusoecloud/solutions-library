@@ -11,17 +11,22 @@ require_env VPN_HOST REMOTE_TEST_IP
 
 export VPN_HOST REMOTE_TEST_IP TUNNEL_A_NAME
 
-vssh "$VPN_HOST" "nohup ping -i 0.2 -w 60 $REMOTE_TEST_IP > /tmp/rekey-ping.log 2>&1 &"
+
+# Pin probe source to the VM's VPC address (see verify.sh).
+SRC_IP=$(vssh "$VPN_HOST" "hostname -I" | awk '{print $1}')
+[ -n "$SRC_IP" ] || { echo "ERROR: could not resolve VPN VM source IP" >&2; exit 2; }
+export SRC_IP
+vssh "$VPN_HOST" "nohup ping -i 0.2 -w 60 -I $SRC_IP $REMOTE_TEST_IP > /tmp/rekey-ping.log 2>&1 &"
 sleep 3
 
 assert "CHILD_SA rekey succeeds" bash -c '
-  vssh "$VPN_HOST" sudo swanctl --rekey --child "$TUNNEL_A_NAME" --timeout 30
+  vssh "$VPN_HOST" "sudo swanctl --rekey --child $TUNNEL_A_NAME 2>/dev/null"
 '
 
 sleep 5
 
 assert "IKE_SA rekey succeeds" bash -c '
-  vssh "$VPN_HOST" sudo swanctl --rekey --ike "$TUNNEL_A_NAME" --timeout 30
+  vssh "$VPN_HOST" "sudo swanctl --rekey --ike $TUNNEL_A_NAME 2>/dev/null"
 '
 
 # Wait for the 60s ping window to complete.

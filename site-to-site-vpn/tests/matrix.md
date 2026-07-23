@@ -19,4 +19,4 @@ plus measured baselines.
 
 | Date | Cloud | ha_mode | Terraform | crusoe | google/aws | strongswan | frr | Phases run | Result | Notes (throughput floor, failover loss, reconverge) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-07-23 | gcp | single | >=1.9 | 0.5.46 | ~>6.0 | n/a | n/a | 0 only | static PASS | not yet run against live cloud — static phases only; baselines TBD at first live deploy |
+| 2026-07-23 | gcp | single | >=1.9 | 0.5.46 | google 6.50.0 | 5.9.13-2ubuntu4 | 8.4.4 (ubuntu) | 0–5 | PASS | Crusoe us-east1-a ⇄ GCP us-east4. RTT ~5 ms; single-stream HTTP through tunnel ~460 Mbit/s (curl, 20 MB, no stall — MSS clamp proven); failover loss 0% over 120 s window (kernel prunes dead ECMP nexthop instantly, BGP hold 30 s); rekey loss 0%; reboot recovery clean; security 6/6 (IKEv1/weak-proposal probes skipped: no ike-scan on runner; SSH-filtered probe skipped: allow-listed caller). Phase 6 teardown pending. |

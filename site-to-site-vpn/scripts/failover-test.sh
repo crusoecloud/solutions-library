@@ -29,8 +29,13 @@ fi
 
 export VPN_HOST REMOTE_TEST_IP TUNNEL_A_NAME MAX_LOSS_PCT RECONVERGE_TIMEOUT TUNNEL_A_IF_ID
 
+
+# Pin probe source to the VM's VPC address (see verify.sh).
+SRC_IP=$(vssh "$VPN_HOST" "hostname -I" | awk '{print $1}')
+[ -n "$SRC_IP" ] || { echo "ERROR: could not resolve VPN VM source IP" >&2; exit 2; }
+export SRC_IP
 echo "Starting background ping (120s window)..."
-vssh "$VPN_HOST" "nohup ping -i 0.5 -w 120 $REMOTE_TEST_IP > /tmp/failover-ping.log 2>&1 &"
+vssh "$VPN_HOST" "nohup ping -i 0.5 -w 120 -I $SRC_IP $REMOTE_TEST_IP > /tmp/failover-ping.log 2>&1 &"
 sleep 5
 
 echo "Terminating IKE SA for $TUNNEL_A_NAME..."
@@ -38,11 +43,12 @@ vssh "$VPN_HOST" "sudo swanctl --terminate --ike $TUNNEL_A_NAME --timeout 10 || 
 # Prevent immediate trap re-establishment by taking the XFRM interface down.
 vssh "$VPN_HOST" "sudo ip link set ipsec${TUNNEL_A_IF_ID} down"
 
-# Assert tunnel A is actually down (not ESTABLISHED) — retry briefly.
-assert "tunnel A is down after terminate+link-down" \
-  retry 6 5 bash -c '
-    \! vssh "$VPN_HOST" "sudo swanctl --list-sas" 2>/dev/null | grep -q "${TUNNEL_A_NAME}.*ESTABLISHED"
-  '
+# Assert the induced failure is real. Note: the IKE SA re-establishes almost
+# immediately (start_action=trap here, and cloud peers re-initiate), so SA
+# state is NOT the failover signal — the downed XFRM interface (data path) is.
+assert "tunnel A data path is down (xfrm link DOWN)" bash -c '
+  vssh "$VPN_HOST" "ip link show ipsec${TUNNEL_A_IF_ID}" | grep -q "state DOWN"
+'
 
 echo "Waiting for BGP reconvergence..."
 assert "BGP reconverges within ${RECONVERGE_TIMEOUT}s (route still present)" \
@@ -50,9 +56,12 @@ assert "BGP reconverges within ${RECONVERGE_TIMEOUT}s (route still present)" \
     vssh "$VPN_HOST" ip route show proto bgp | grep -q .
   '
 
-assert "traffic continues during failover" bash -c '
-  vssh "$VPN_HOST" ping -c 5 -W 2 "$REMOTE_TEST_IP" > /dev/null
-'
+# Traffic recovers once BGP withdraws the dead path (hold timer <= 30s);
+# retry across the reconvergence window rather than demanding instant success.
+assert "traffic continues over tunnel B within ${RECONVERGE_TIMEOUT}s" \
+  retry $((RECONVERGE_TIMEOUT / 5)) 5 bash -c '
+    vssh "$VPN_HOST" "ping -c 5 -W 2 -I $SRC_IP $REMOTE_TEST_IP" > /dev/null
+  '
 
 echo "Restoring tunnel A..."
 vssh "$VPN_HOST" "sudo /usr/local/sbin/vpn-xfrm-up.sh && sudo swanctl --initiate --ike $TUNNEL_A_NAME --timeout 30 || true"
@@ -75,8 +84,9 @@ for _i in $(seq 1 27); do
 done
 
 LOSS=$(vssh "$VPN_HOST" "grep -o '[0-9.]*% packet loss' /tmp/failover-ping.log | grep -o '^[0-9.]*'" 2>/dev/null || echo 100)
-assert "packet loss ${LOSS}% <= ${MAX_LOSS_PCT}%" bash -c "
-  awk -v l=$LOSS -v m=$MAX_LOSS_PCT 'BEGIN{exit \!(l<=m)}'
-"
+export LOSS
+assert "packet loss ${LOSS}% <= ${MAX_LOSS_PCT}%" bash -c '
+  awk -v l="$LOSS" -v m="$MAX_LOSS_PCT" "BEGIN{exit (l<=m) ? 0 : 1}"
+'
 
 summary

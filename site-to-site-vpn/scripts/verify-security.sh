@@ -12,9 +12,11 @@ export VPN_HOST
 
 echo "== External surface (from this machine; expected NOT allow-listed) =="
 
-if command -v nc >/dev/null; then
+if [ "${CALLER_ALLOWLISTED:-0}" = "1" ]; then
+  echo "SKIP: caller is in ssh_allowed_cidrs — SSH-filtered probe is meaningless from here"
+elif command -v nc >/dev/null; then
   assert "SSH (22/tcp) filtered from non-allow-listed source" bash -c '
-    \! nc -z -w 5 "$VPN_HOST" 22
+    ! nc -z -w 5 "$VPN_HOST" 22
   '
 else
   echo "SKIP: nc not installed (SSH filtered check)"
@@ -28,9 +30,17 @@ if command -v nmap >/dev/null; then
     echo "FAIL: nmap exited $_nmap_rc (tool error — treating as FAIL, not SKIP)"
     FAIL_COUNT=$((FAIL_COUNT+1))
   else
-    assert "no unexpected TCP ports open (top 1000)" bash -c '
-      \! grep -oE "[0-9]+/open/tcp" '"$_nmap_out"' | grep -q .
-    '
+    if [ "${CALLER_ALLOWLISTED:-0}" = "1" ]; then
+      # From an allow-listed source, SSH (22) is legitimately reachable;
+      # anything else open is a finding.
+      assert "no TCP ports open besides allow-listed SSH (top 1000)" bash -c '
+        ! grep -oE "[0-9]+/open/tcp" '"$_nmap_out"' | grep -v "^22/" | grep -q .
+      '
+    else
+      assert "no unexpected TCP ports open (top 1000)" bash -c '
+        ! grep -oE "[0-9]+/open/tcp" '"$_nmap_out"' | grep -q .
+      '
+    fi
   fi
   rm -f "$_nmap_out"
 else
@@ -40,7 +50,7 @@ fi
 echo "== On-box config assertions (needs allow-listed SSH; set VPN_SSH_VIA=1 to run) =="
 if [ "${VPN_SSH_VIA:-0}" = "1" ]; then
   assert "IKEv2 only in swanctl config" bash -c '
-    vssh "$VPN_HOST" "sudo grep -q '"'"'version = 2'"'"' /etc/swanctl/conf.d/tunnels.conf && \! sudo grep -q '"'"'version = 1'"'"' /etc/swanctl/conf.d/tunnels.conf"
+    vssh "$VPN_HOST" "sudo grep -q '"'"'version = 2'"'"' /etc/swanctl/conf.d/tunnels.conf && ! sudo grep -q '"'"'version = 1'"'"' /etc/swanctl/conf.d/tunnels.conf"
   '
 
   assert "secrets file is 0600" bash -c '
@@ -63,11 +73,11 @@ fi
 echo "== Negative IKE probes (requires ike-scan installed locally) =="
 if command -v ike-scan >/dev/null; then
   assert "IKEv1 rejected (no handshake returned)" bash -c '
-    \! sudo ike-scan -M "$VPN_HOST" 2>/dev/null | grep -q "Handshake returned"
+    ! sudo ike-scan -M "$VPN_HOST" 2>/dev/null | grep -q "Handshake returned"
   '
 
   assert "weak IKEv1 aggressive-mode DH1 proposal rejected" bash -c '
-    \! sudo ike-scan -A --trans=1,1,1,1 "$VPN_HOST" 2>/dev/null | grep -q "Handshake returned"
+    ! sudo ike-scan -A --trans=1,1,1,1 "$VPN_HOST" 2>/dev/null | grep -q "Handshake returned"
   '
 else
   echo "SKIP: ike-scan not installed (IKEv1/weak-proposal probes)"

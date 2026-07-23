@@ -124,7 +124,7 @@ resource "crusoe_vpc_firewall_rule" "ike" {
   protocols         = "udp"
   source            = "${each.value.peer}/32"
   source_ports      = "1-65535"
-  destination       = crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].private_ipv4.address
+  destination       = "${crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].private_ipv4.address}/32"
   destination_ports = "500,4500"
   name              = "${var.deployment_name}-ike-${each.key}"
   network           = crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].network
@@ -138,7 +138,7 @@ resource "crusoe_vpc_firewall_rule" "ssh" {
   protocols         = "tcp"
   source            = each.value.cidr
   source_ports      = "1-65535"
-  destination       = crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].private_ipv4.address
+  destination       = "${crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].private_ipv4.address}/32"
   destination_ports = "22"
   name              = "${var.deployment_name}-ssh-${each.key}"
   network           = crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].network

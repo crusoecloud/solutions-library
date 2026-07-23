@@ -64,6 +64,13 @@ All live-phase scripts source `scripts/lib.sh` and use these env vars:
 | `MAX_LOSS_PCT` | no | script default | Max acceptable ping loss during failover |
 | `RECONVERGE_TIMEOUT` | no | script default | Seconds allowed for BGP reconvergence |
 | `TUNNEL_MTU` | no | `1400` | Expected tunnel MTU for boundary probes |
+| `TRANSFER_URL` | no | — | HTTP URL through the tunnel for the large-transfer proof (e.g. `http://<remote>:5201/blob` from `python3 -m http.server`); used when no iperf3 server runs remotely |
+| `CALLER_ALLOWLISTED` | no | `0` | Set to `1` when running `verify-security.sh` from an IP in `ssh_allowed_cidrs`: skips the SSH-filtered probe and instead asserts nothing but :22 is open |
+
+Note: probes originated **on** the VPN VM are source-bound (`-I <vpc-ip>`) by
+the scripts — VM-originated traffic otherwise sources from the 169.254 tunnel
+address, which the peer side rightly filters. Forwarded workload traffic is
+unaffected.
 
 ## Phase 1 — provision (GCP dev/test)
 
