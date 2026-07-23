@@ -93,8 +93,12 @@ resource "crusoe_compute_instance" "vpn" {
     swanctl_secrets = templatefile("${path.module}/templates/swanctl-secrets.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], psks = { for t in local.tunnels_by_vm[count.index] : t.name => var.tunnel_psks[t.psk_var_name] } })
     frr_daemons     = file("${path.module}/templates/frr-daemons.tftpl")
     frr_bgpd_conf   = templatefile("${path.module}/templates/frr-bgpd.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], local_asn = var.local_asn, crusoe_cidrs = var.crusoe_vpc_cidrs, customer_cidrs = var.customer_cidrs })
-    nftables_conf   = templatefile("${path.module}/templates/nftables.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], ssh_allowed_cidrs = var.ssh_allowed_cidrs, mss_clamp = var.mss_clamp })
+    nftables_conf   = templatefile("${path.module}/templates/nftables.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], ssh_allowed_cidrs = var.ssh_allowed_cidrs, mss_clamp = var.mss_clamp, cluster_egress = var.cluster_egress, crusoe_vpc_cidrs = var.crusoe_vpc_cidrs })
     xfrm_script     = templatefile("${path.module}/templates/xfrm-interfaces.sh.tftpl", { tunnels = local.tunnels_by_vm[count.index], tunnel_mtu = var.tunnel_mtu })
+    cluster_egress  = var.cluster_egress
+    tunnel_ifids    = [for t in local.tunnels_by_vm[count.index] : t.xfrm_if_id]
+    gw_overlay_ip   = var.cluster_egress.enabled ? cidrhost(var.cluster_egress.overlay_cidr, 1) : ""
+    overlay_prefix  = var.cluster_egress.enabled ? split("/", var.cluster_egress.overlay_cidr)[1] : ""
   })
 
   lifecycle {
@@ -115,6 +119,11 @@ locals {
     for pair in setproduct(range(local.vm_count), var.ssh_allowed_cidrs) :
     "vm${pair[0]}-ssh-${replace(replace(pair[1], ".", "-"), "/", "-")}" => { vm = pair[0], cidr = pair[1] }
   }
+  # Cluster-egress vxlan transport: allow the overlay UDP from VPC hosts to the gateway.
+  ceg_rules = var.cluster_egress.enabled ? {
+    for pair in setproduct(range(local.vm_count), var.crusoe_vpc_cidrs) :
+    "vm${pair[0]}-ceg-${replace(replace(pair[1], ".", "-"), "/", "-")}" => { vm = pair[0], cidr = pair[1] }
+  } : {}
 }
 
 resource "crusoe_vpc_firewall_rule" "ike" {
@@ -127,6 +136,20 @@ resource "crusoe_vpc_firewall_rule" "ike" {
   destination       = "${crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].private_ipv4.address}/32"
   destination_ports = "500,4500"
   name              = "${var.deployment_name}-ike-${each.key}"
+  network           = crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].network
+  project_id        = var.crusoe_project_id
+}
+
+resource "crusoe_vpc_firewall_rule" "cluster_egress" {
+  for_each          = local.ceg_rules
+  action            = "allow"
+  direction         = "ingress"
+  protocols         = "udp"
+  source            = each.value.cidr
+  source_ports      = "1-65535"
+  destination       = "${crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].private_ipv4.address}/32"
+  destination_ports = tostring(var.cluster_egress.vxlan_port)
+  name              = "${var.deployment_name}-ceg-${each.key}"
   network           = crusoe_compute_instance.vpn[each.value.vm].network_interfaces[0].network
   project_id        = var.crusoe_project_id
 }

@@ -20,6 +20,12 @@ table inet filter {
     iifname "ipsec${t.xfrm_if_id}" ip saddr ${t.bgp_remote_ip} tcp dport 179 accept
     iifname "ipsec${t.xfrm_if_id}" icmp type echo-request accept
 %{ endfor ~}
+%{ if cluster_egress.enabled ~}
+    # Cluster-egress overlay transport (vxlan) from Crusoe VPC hosts only
+%{ for c in crusoe_vpc_cidrs ~}
+    ip saddr ${c} udp dport ${cluster_egress.vxlan_port} accept
+%{ endfor ~}
+%{ endif ~}
   }
   chain forward {
     type filter hook forward priority 0; policy drop;
@@ -28,13 +34,25 @@ table inet filter {
     iifname "ipsec${t.xfrm_if_id}" tcp flags syn tcp option maxseg size set ${mss_clamp}
     oifname "ipsec${t.xfrm_if_id}" tcp flags syn tcp option maxseg size set ${mss_clamp}
 %{ endfor ~}
+%{ if cluster_egress.enabled ~}
+    # Clamp on the overlay leg too (pod MTU is large; the vxlan+ESP stack is small)
+    iifname "vxlan-ceg" tcp flags syn tcp option maxseg size set ${mss_clamp}
+    oifname "vxlan-ceg" tcp flags syn tcp option maxseg size set ${mss_clamp}
+%{ endif ~}
     ct state established,related accept
 %{ for t in tunnels ~}
     iifname "ipsec${t.xfrm_if_id}" accept
     oifname "ipsec${t.xfrm_if_id}" accept
 %{ endfor ~}
+%{ if cluster_egress.enabled ~}
+    iifname "vxlan-ceg" accept
+    oifname "vxlan-ceg" accept
+%{ endif ~}
   }
   chain output {
     type filter hook output priority 0; policy accept;
   }
 }
+# NOTE: when cluster_egress is enabled, the bootstrap script adds a separate
+# NAT table at runtime (it needs this VM's own LAN IP, unknown at plan time)
+# that SNATs ${cluster_egress.overlay_cidr} to the gateway LAN IP out the tunnel.

@@ -146,4 +146,53 @@ for i in $(seq 1 10); do
   sleep 3
 done
 
+%{ if cluster_egress.enabled ~}
+# --- cluster egress overlay (vxlan hub) ---
+# Lets other Crusoe hosts route through this gateway. Needs this VM's own LAN
+# IP (unknown at plan time), so it is set up at runtime and persisted as a unit.
+cat > /usr/local/sbin/vpn-cluster-egress.sh <<'CEG_EOF'
+#!/bin/bash
+set -uo pipefail
+WAN_IF=$(ip -o -4 route show default | awk '{print $5}' | head -1)
+PRIV=$(ip -o -4 addr show "$WAN_IF" | awk '{print $4}' | cut -d/ -f1)
+if [ -z "$WAN_IF" ] || [ -z "$PRIV" ]; then
+  echo "ERROR: cannot resolve WAN interface / LAN IP for cluster egress" >&2; exit 1
+fi
+GW_OVERLAY_IP="${gw_overlay_ip}"
+OVERLAY_PREFIX="${overlay_prefix}"
+# Hub vxlan: no static remote; learning populates node underlay from traffic.
+if ! ip link show vxlan-ceg &>/dev/null; then
+  ip link add vxlan-ceg type vxlan id ${cluster_egress.vxlan_id} local "$PRIV" dstport ${cluster_egress.vxlan_port} dev "$WAN_IF"
+fi
+ip addr replace "$GW_OVERLAY_IP/$OVERLAY_PREFIX" dev vxlan-ceg
+ip link set vxlan-ceg mtu 1450 up
+# SNAT overlay traffic to this gateway's LAN IP so the peer accepts it (LAN IP
+# is inside the advertised crusoe_vpc_cidrs) and returns it via the tunnel.
+nft add table inet cluster_egress_nat 2>/dev/null || true
+nft flush table inet cluster_egress_nat 2>/dev/null || true
+nft add chain inet cluster_egress_nat postrouting '{ type nat hook postrouting priority srcnat ; policy accept ; }'
+%{ for id in tunnel_ifids ~}
+nft add rule inet cluster_egress_nat postrouting oifname "ipsec${id}" ip saddr ${cluster_egress.overlay_cidr} snat to "$PRIV"
+%{ endfor ~}
+echo "cluster egress up: vxlan-ceg $GW_OVERLAY_IP/$OVERLAY_PREFIX via $WAN_IF ($PRIV), SNAT ${cluster_egress.overlay_cidr} -> $PRIV"
+CEG_EOF
+chmod 0755 /usr/local/sbin/vpn-cluster-egress.sh
+cat > /etc/systemd/system/vpn-cluster-egress.service <<'EOF'
+[Unit]
+Description=Cluster-egress vxlan hub + SNAT for the VPN gateway
+After=network-online.target nftables.service vpn-xfrm.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/vpn-cluster-egress.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now vpn-cluster-egress.service
+%{ endif ~}
+
 echo "=== vpn bootstrap complete $(date -Is) ==="

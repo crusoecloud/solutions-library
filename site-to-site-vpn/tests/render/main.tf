@@ -32,7 +32,18 @@ resource "local_file" "bgpd" {
 resource "local_file" "nft" {
   filename = "${path.module}/out/nftables.conf"
   content = templatefile("${local.tpl}/nftables.conf.tftpl", {
-    tunnels = local.tunnels, ssh_allowed_cidrs = ["198.51.100.0/24"], mss_clamp = 1360
+    tunnels          = local.tunnels, ssh_allowed_cidrs = ["198.51.100.0/24"], mss_clamp = 1360
+    cluster_egress   = { enabled = false, vxlan_id = 100, vxlan_port = 4789, overlay_cidr = "169.254.0.0/16" }
+    crusoe_vpc_cidrs = ["10.100.0.0/16"]
+  })
+}
+
+resource "local_file" "nft_ceg" {
+  filename = "${path.module}/out/nftables-ceg.conf"
+  content = templatefile("${local.tpl}/nftables.conf.tftpl", {
+    tunnels          = local.tunnels, ssh_allowed_cidrs = ["198.51.100.0/24"], mss_clamp = 1360
+    cluster_egress   = { enabled = true, vxlan_id = 100, vxlan_port = 4789, overlay_cidr = "169.254.0.0/16" }
+    crusoe_vpc_cidrs = ["10.100.0.0/16"]
   })
 }
 
@@ -74,6 +85,10 @@ resource "local_file" "startup" {
     frr_bgpd_conf   = local_file.bgpd.content
     nftables_conf   = local_file.nft.content
     xfrm_script     = local_file.xfrm.content
+    cluster_egress  = { enabled = true, vxlan_id = 100, vxlan_port = 4789, overlay_cidr = "169.254.0.0/16" }
+    tunnel_ifids    = [for t in local.tunnels : t.xfrm_if_id]
+    gw_overlay_ip   = "169.254.0.1"
+    overlay_prefix  = "16"
   })
 }
 

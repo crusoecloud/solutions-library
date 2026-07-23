@@ -42,6 +42,12 @@ assert_grep nftables.conf 'ip saddr 203.0.113.10 udp dport \{ 500, 4500 \}' "IKE
 assert_grep nftables.conf 'maxseg size set 1360'                 "MSS clamp"
 assert_grep nftables.conf 'tcp dport 179'                        "BGP restricted to tunnel ifaces"
 assert_not_grep nftables.conf '0\.0\.0\.0/0 tcp dport 22'        "no world-open SSH"
+assert_not_grep nftables.conf 'vxlan-ceg'                        "cluster-egress rules absent when disabled"
+
+# nftables with cluster_egress enabled
+assert_grep nftables-ceg.conf 'udp dport 4789 accept'            "cluster-egress vxlan transport allowed"
+assert_grep nftables-ceg.conf 'iifname "vxlan-ceg" accept'       "cluster-egress overlay forwarding"
+assert_grep nftables-ceg.conf 'vxlan-ceg" tcp flags syn'         "cluster-egress overlay MSS clamp"
 
 # secrets assertions
 assert_grep tunnels.secrets.conf 'ike-tunnel-a \{'               "secret block per tunnel"
@@ -62,6 +68,7 @@ assert_not_grep handoff.txt 'fixture-psk'                        "no PSKs in han
 # full bootstrap render: a syntax error in any template fails here, not at first apply
 if bash -n out/startup-script.sh 2>/dev/null; then say "PASS: rendered startup script is valid bash"; else say "FAIL: rendered startup script has bash syntax errors"; fail=1; fi
 assert_grep startup-script.sh 'sysctl --system'                  "bootstrap applies sysctls"
-assert_grep startup-script.sh 'systemctl enable --now strongswan' "bootstrap enables strongswan"
+assert_grep startup-script.sh 'systemctl restart strongswan'     "bootstrap (re)starts strongswan"
+assert_grep startup-script.sh 'vpn-cluster-egress'               "cluster-egress unit installed when enabled"
 
 exit $fail

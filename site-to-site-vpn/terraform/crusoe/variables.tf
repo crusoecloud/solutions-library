@@ -180,3 +180,31 @@ variable "crypto_profile" {
   })
   default = null
 }
+
+variable "cluster_egress" {
+  description = <<-EOT
+    Enable a vxlan overlay so other Crusoe hosts (CMK cluster nodes/pods, or
+    plain VMs) can egress through this gateway to the remote peer. Crusoe's VPC
+    fabric drops packets whose destination isn't the receiving VM, so a plain
+    next-hop route can't transit — the overlay makes every host->gateway packet
+    a real VM-to-VM (vxlan) frame. See docs/crusoe-cluster-egress.md and the
+    node-side DaemonSet in k8s/cluster-egress/.
+    Default disabled: the gateway then only carries its own traffic.
+  EOT
+  type = object({
+    enabled      = bool
+    vxlan_id     = number # VNI shared by gateway + nodes
+    vxlan_port   = number # UDP dstport for vxlan transport
+    overlay_cidr = string # /16 overlay; gateway = <base>.0.1, node = <base>.<3rd>.<4th octet of node IP>
+  })
+  default = {
+    enabled      = false
+    vxlan_id     = 100
+    vxlan_port   = 4789
+    overlay_cidr = "169.254.0.0/16"
+  }
+  validation {
+    condition     = !var.cluster_egress.enabled || (can(cidrhost(var.cluster_egress.overlay_cidr, 1)) && split("/", var.cluster_egress.overlay_cidr)[1] == "16")
+    error_message = "cluster_egress.overlay_cidr must be a valid /16 CIDR when enabled (nodes derive unique host IPs from the last two octets of their node IP)."
+  }
+}
