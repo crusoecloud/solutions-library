@@ -5,9 +5,15 @@ exec > >(tee -a /var/log/vpn-bootstrap.log) 2>&1
 echo "=== vpn bootstrap $(date -Is) ==="
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y strongswan strongswan-swanctl charon-systemd frr nftables \
-  iperf3 tcpdump traceroute nmap unattended-upgrades
+# Retry: first boot commonly races apt timers holding the dpkg lock.
+for i in 1 2 3 4 5; do
+  if apt-get update -y && apt-get install -y strongswan strongswan-swanctl charon-systemd frr nftables \
+    iperf3 tcpdump traceroute nmap unattended-upgrades; then
+    break
+  fi
+  if [ "$i" = 5 ]; then echo "ERROR: apt install failed after 5 attempts" >&2; exit 1; fi
+  sleep 15
+done
 
 # --- sysctls ---
 cat > /etc/sysctl.d/99-vpn.conf <<'EOF'
