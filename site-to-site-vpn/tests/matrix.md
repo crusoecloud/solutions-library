@@ -1,7 +1,7 @@
 # Tested-against matrix
 
 One row per full test-suite run (see [README.md](README.md) for the phases).
-Record versions exactly as resolved (lock files / `apt policy` on the VM),
+Record versions exactly as resolved (`terraform providers` output / `apt policy` on the VM; lock files are gitignored, so the constraints below are the committed pinning),
 plus measured baselines.
 
 ## Pinned versions (current)
@@ -10,8 +10,8 @@ plus measured baselines.
 |---|---|---|
 | Terraform | `>= 1.9.0` (crusoe render test), `>= 1.7.0` (gcp/aws modules) | — |
 | Crusoe provider (`crusoecloud/crusoe`) | `~> 0.5.44` | `0.5.46` |
-| Google provider (`hashicorp/google`) | `~> 6.0` | per lock file |
-| AWS provider (`hashicorp/aws`) | `~> 5.0` | per lock file |
+| Google provider (`hashicorp/google`) | `~> 6.0` | `6.50.0` at build |
+| AWS provider (`hashicorp/aws`) | `~> 5.0` | `5.100.0` at build |
 | OS image | `ubuntu24.04:latest` | — |
 | strongSwan / FRR | apt-current at bootstrap (Ubuntu 24.04 archive + security) | record from VM |
 

@@ -14,7 +14,7 @@ and [customer-aws.md](customer-aws.md).
 | Existing Crusoe VPC subnet | The module **consumes** a subnet (`crusoe_vpc_subnet_id`); it does not create VPCs. |
 | SSH key pair | Public key(s) go in `ssh_public_keys`; keep the private key for verification scripts. |
 | Customer-side access | GCP project or AWS account where the peer gateway will be built. |
-| Local tools (tests) | `bash`, `ssh`, `python3`; optionally `tflint`, `tfsec`, `shellcheck` for Phase 0. |
+| Local tools (tests) | `bash`, `ssh`, `python3`; optionally `tflint`, `trivy` (or `tfsec`), `shellcheck` for Phase 0. |
 
 ## 2. Configure
 

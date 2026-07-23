@@ -7,7 +7,7 @@
 # Environment variables:
 #   VPN_HOST          (required) Crusoe VPN VM public IP
 #   REMOTE_TEST_IP    (required) Private IP of a test host on the customer side
-#   TUNNEL_A_NAME     (required) Name of the IKE SA / connection to take down (e.g. "tunnel-a")
+#   TUNNEL_A_NAME     (optional, default tunnel-a) Name of the IKE SA / connection to take down (e.g. "tunnel-a")
 #   TUNNEL_A_IF_ID    (required) XFRM interface ID for tunnel A (e.g. 101).
 #                     Set this to the xfrm_if_id assigned to tunnel A in your Terraform config.
 #                     Without it the script cannot bring the XFRM interface down and will abort.
@@ -16,7 +16,8 @@
 set -uo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
-require_env VPN_HOST REMOTE_TEST_IP TUNNEL_A_NAME
+: "${TUNNEL_A_NAME:=tunnel-a}"
+require_env VPN_HOST REMOTE_TEST_IP
 : "${MAX_LOSS_PCT:=25}"       # documented bound: reconverge within ~30s of a 120s ping window
 : "${RECONVERGE_TIMEOUT:=90}"
 

@@ -24,7 +24,7 @@ resource "local_file" "swanctl" {
 resource "local_file" "bgpd" {
   filename = "${path.module}/out/frr.conf"
   content = templatefile("${local.tpl}/frr-bgpd.conf.tftpl", {
-    tunnels = local.tunnels, local_asn = 65000,
+    tunnels      = local.tunnels, local_asn = 65000,
     crusoe_cidrs = ["10.100.0.0/16"], customer_cidrs = ["10.200.0.0/16"]
   })
 }
@@ -33,6 +33,47 @@ resource "local_file" "nft" {
   filename = "${path.module}/out/nftables.conf"
   content = templatefile("${local.tpl}/nftables.conf.tftpl", {
     tunnels = local.tunnels, ssh_allowed_cidrs = ["198.51.100.0/24"], mss_clamp = 1360
+  })
+}
+
+resource "local_file" "secrets" {
+  filename = "${path.module}/out/tunnels.secrets.conf"
+  content = templatefile("${local.tpl}/swanctl-secrets.conf.tftpl", {
+    tunnels = local.tunnels
+    psks    = { tunnel-a = "fixture-psk-aaaaaaaa", tunnel-b = "fixture-psk-bbbbbbbb" }
+  })
+}
+
+resource "local_file" "xfrm" {
+  filename = "${path.module}/out/vpn-xfrm-up.sh"
+  content = templatefile("${local.tpl}/xfrm-interfaces.sh.tftpl", {
+    tunnels = local.tunnels, tunnel_mtu = 1400
+  })
+}
+
+resource "local_file" "handoff" {
+  filename = "${path.module}/out/handoff.txt"
+  content = templatefile("${local.tpl}/handoff.txt.tftpl", {
+    deployment_name = "fixture"
+    cloud           = "gcp"
+    vm_public_ips   = ["192.0.2.10"]
+    tunnels         = local.tunnels
+    local_asn       = 65000
+    crusoe_cidrs    = ["10.100.0.0/16"]
+  })
+}
+
+# Full bootstrap render — mirrors the argument set in terraform/crusoe/main.tf
+# so a template syntax error fails here instead of at first live apply.
+resource "local_file" "startup" {
+  filename = "${path.module}/out/startup-script.sh"
+  content = templatefile("${local.tpl}/startup-script.sh.tftpl", {
+    swanctl_conf    = local_file.swanctl.content
+    swanctl_secrets = local_file.secrets.content
+    frr_daemons     = file("${local.tpl}/frr-daemons.tftpl")
+    frr_bgpd_conf   = local_file.bgpd.content
+    nftables_conf   = local_file.nft.content
+    xfrm_script     = local_file.xfrm.content
   })
 }
 

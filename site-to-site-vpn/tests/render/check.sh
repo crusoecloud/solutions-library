@@ -43,4 +43,25 @@ assert_grep nftables.conf 'maxseg size set 1360'                 "MSS clamp"
 assert_grep nftables.conf 'tcp dport 179'                        "BGP restricted to tunnel ifaces"
 assert_not_grep nftables.conf '0\.0\.0\.0/0 tcp dport 22'        "no world-open SSH"
 
+# secrets assertions
+assert_grep tunnels.secrets.conf 'ike-tunnel-a \{'               "secret block per tunnel"
+assert_grep tunnels.secrets.conf 'id = 203\.0\.113\.10'          "secret id is peer IP"
+assert_grep tunnels.secrets.conf 'secret = "fixture-psk-aaaaaaaa"' "PSK injected from map"
+
+# xfrm script assertions (+ rendered-shell syntax check)
+assert_grep vpn-xfrm-up.sh 'ip link add "ipsec101" type xfrm'    "xfrm interface per tunnel"
+assert_grep vpn-xfrm-up.sh 'mtu 1400'                            "tunnel MTU applied"
+assert_grep vpn-xfrm-up.sh '169\.254\.21\.2/30'                  "BGP /30 address, mask from inside CIDR"
+if bash -n out/vpn-xfrm-up.sh 2>/dev/null; then say "PASS: xfrm script is valid bash"; else say "FAIL: xfrm script has bash syntax errors"; fail=1; fi
+
+# handoff assertions
+assert_grep handoff.txt 'Crusoe BGP ASN: 65000'                  "handoff carries local ASN"
+assert_grep handoff.txt 'Crusoe endpoint public IP: 192\.0\.2\.10' "handoff maps tunnel to VM endpoint"
+assert_not_grep handoff.txt 'fixture-psk'                        "no PSKs in handoff"
+
+# full bootstrap render: a syntax error in any template fails here, not at first apply
+if bash -n out/startup-script.sh 2>/dev/null; then say "PASS: rendered startup script is valid bash"; else say "FAIL: rendered startup script has bash syntax errors"; fail=1; fi
+assert_grep startup-script.sh 'sysctl --system'                  "bootstrap applies sysctls"
+assert_grep startup-script.sh 'systemctl enable --now strongswan' "bootstrap enables strongswan"
+
 exit $fail

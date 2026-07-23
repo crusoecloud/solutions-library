@@ -17,7 +17,7 @@ done
 
 # linters / security scanners (install separately)
 tflint --chdir=terraform/crusoe && tflint --chdir=terraform/gcp && tflint --chdir=terraform/aws
-tfsec terraform/
+trivy config terraform/   # CI runs this (HIGH,CRITICAL fail the build); tfsec works too
 
 # template render dry-run: renders swanctl/frr/nftables from
 # params.example.tfvars values and asserts required stanzas
@@ -59,7 +59,7 @@ All live-phase scripts source `scripts/lib.sh` and use these env vars:
 | `VPN_SSH_USER` | no | `ubuntu` | SSH user on the VPN VM |
 | `VPN_SSH_KEY` | no | ssh-agent | Private key path for SSH |
 | `VPN_SSH_VIA` | no | `0` | Set to `1` to run the on-box SSH assertions in `verify-security.sh` (requires allow-listed SSH access to `VPN_HOST`) |
-| `TUNNEL_A_NAME` | no | `tunnel-a` | Tunnel to take down in the failover test |
+| `TUNNEL_A_NAME` | no | `tunnel-a` | Tunnel targeted by the failover and rekey tests |
 | `TUNNEL_A_IF_ID` | yes (failover) | — | XFRM interface ID of tunnel A (e.g. `101`); must match `xfrm_if_id` in Terraform config |
 | `MAX_LOSS_PCT` | no | script default | Max acceptable ping loss during failover |
 | `RECONVERGE_TIMEOUT` | no | script default | Seconds allowed for BGP reconvergence |

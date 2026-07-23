@@ -6,7 +6,8 @@
 set -uo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
-require_env VPN_HOST REMOTE_TEST_IP TUNNEL_A_NAME
+: "${TUNNEL_A_NAME:=tunnel-a}"
+require_env VPN_HOST REMOTE_TEST_IP
 
 export VPN_HOST REMOTE_TEST_IP TUNNEL_A_NAME
 
