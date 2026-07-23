@@ -1,0 +1,35 @@
+frr defaults traditional
+log syslog informational
+!
+%{ for c in customer_cidrs ~}
+ip prefix-list CUSTOMER-IN seq ${5 + index(customer_cidrs, c) * 5} permit ${c}
+%{ endfor ~}
+ip prefix-list CUSTOMER-IN seq 1000 deny any
+!
+%{ for c in crusoe_cidrs ~}
+ip prefix-list CRUSOE-OUT seq ${5 + index(crusoe_cidrs, c) * 5} permit ${c}
+%{ endfor ~}
+ip prefix-list CRUSOE-OUT seq 1000 deny any
+!
+router bgp ${local_asn}
+ bgp router-id ${tunnels[0].bgp_local_ip}
+ no bgp ebgp-requires-policy
+ no bgp network import-check
+%{ for t in tunnels ~}
+ neighbor ${t.bgp_remote_ip} remote-as ${t.remote_asn}
+ neighbor ${t.bgp_remote_ip} timers 10 30
+ neighbor ${t.bgp_remote_ip} description ${t.name}
+%{ endfor ~}
+ !
+ address-family ipv4 unicast
+%{ for c in crusoe_cidrs ~}
+  network ${c}
+%{ endfor ~}
+  maximum-paths 4
+%{ for t in tunnels ~}
+  neighbor ${t.bgp_remote_ip} activate
+  neighbor ${t.bgp_remote_ip} prefix-list CUSTOMER-IN in
+  neighbor ${t.bgp_remote_ip} prefix-list CRUSOE-OUT out
+%{ endfor ~}
+ exit-address-family
+!

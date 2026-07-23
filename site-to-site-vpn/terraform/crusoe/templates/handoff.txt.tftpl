@@ -1,0 +1,24 @@
+Site-to-Site VPN handoff — ${deployment_name} (${cloud})
+=========================================================
+Crusoe VPN endpoint public IP(s):
+%{ for ip in vm_public_ips ~}
+  - ${ip}
+%{ endfor ~}
+
+Crusoe BGP ASN: ${local_asn}
+Crusoe advertised CIDRs:
+%{ for c in crusoe_cidrs ~}
+  - ${c}
+%{ endfor ~}
+
+Tunnels (configure your gateway to match):
+%{ for t in tunnels ~}
+  ${t.name}:
+    your endpoint (peer_public_ip): ${t.peer_public_ip}
+    inside CIDR: ${t.bgp_inside_cidr}
+    your BGP IP: ${t.bgp_remote_ip}   (ASN ${t.remote_asn})
+    Crusoe BGP IP: ${t.bgp_local_ip}
+    Crusoe endpoint public IP: ${vm_public_ips[t.vm_index]}
+%{ endfor ~}
+
+IKEv2 only. NAT-T (UDP 4500). PSKs delivered out-of-band.
