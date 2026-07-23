@@ -1,0 +1,29 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+
+# Variable files may contain peer IPs/ASNs but must never contain PSKs.
+# Only the example is tracked.
+*.tfvars
+!params/params.example.tfvars
+
+# Secrets — belt and suspenders
+*.secrets
+*.pem
+*.key
+handoff.txt
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+
+# Render test artifacts
+tests/render/out/
