@@ -79,7 +79,7 @@ and [tests/README.md](tests/README.md) for how to run all test phases.
 | [docs/architecture.md](docs/architecture.md) | Topology, route-based vs policy-based rationale, HA trade-offs, tunnel model |
 | [docs/runbook.md](docs/runbook.md) | Deploy → verify → troubleshoot (decision tree) → rotate → teardown; observability |
 | [docs/customer-gcp.md](docs/customer-gcp.md) | Customer-side GCP HA VPN (console + gcloud) |
-| [docs/customer-aws.md](docs/customer-aws.md) | Customer-side AWS S2S VPN (CGW/TGW, PSK handoff, inside CIDRs) |
+| [docs/customer-aws.md](docs/customer-aws.md) | Customer-side AWS S2S VPN (CGW/TGW, PSK handoff, inside CIDRs); existing AWS S2S VPN deployments are supported via Path A |
 | [docs/crypto-profiles.md](docs/crypto-profiles.md) | Default proposals, overrides, provider cipher-doc warning, FIPS hook |
 | [docs/ip-planning.md](docs/ip-planning.md) | CIDR overlap guard, /30 convention, isolation, NAT escape hatch |
 | [docs/outgrowing-this.md](docs/outgrowing-this.md) | Throughput/SPOF ceilings, interconnect graduation path |

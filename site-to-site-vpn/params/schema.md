@@ -138,6 +138,17 @@ and apply `terraform/crusoe/`. The same PSK values are passed to both the
 AWS Site-to-Site VPN creates **one VPN connection with two tunnels**, each with
 its own outside IP and its own AWS-generated PSK.
 
+**Existing AWS S2S VPN deployment?** If you already have a TGW or VGW and are
+adding Crusoe as a new peer (or re-pointing an existing VPN connection), use the
+CLI path in [docs/customer-aws.md Path A](../docs/customer-aws.md#path-a--existing-aws-site-to-site-vpn-managed-deployment).
+Pull the values you need to fill the table below with a single describe call:
+
+```bash
+aws ec2 describe-vpn-connections --vpn-connection-ids <vpn-id> \
+  --query 'VpnConnections[0].Options.TunnelOptions[*].{outside:OutsideIpAddress,inside:TunnelInsideCidr,psk:PreSharedKey}' \
+  --region <region>
+```
+
 | Concept | AWS side | Crusoe `tunnels[*]` field |
 |---|---|---|
 | Tunnel 1 outside IP | `aws_vpn_connection.vpn.tunnel1_address` | `tunnels[0].peer_public_ip` |
