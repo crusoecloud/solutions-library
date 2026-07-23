@@ -22,8 +22,10 @@ bad=[ip for ip,p in peers.items() if p["state"]!="Established"]
 if not peers: print("CRIT: no BGP peers configured"); sys.exit(1)
 if bad: print("CRIT: BGP not Established:", ",".join(bad)); sys.exit(1)' || rc=1
 
-for ifc in $(ip -o link show type xfrm | awk -F': ' '{print $2}'); do
-  ip link show "$ifc" | grep -q 'state UP\|UNKNOWN' || { echo "CRIT: $ifc down"; rc=1; }
+# awk field is "ipsecNNN@parent"; the real device name is the part before "@".
+for ifc in $(ip -o link show type xfrm | awk -F': ' '{print $2}' | cut -d@ -f1); do
+  # xfrm interfaces report operational "state UNKNOWN" while carrying the UP flag.
+  ip link show "$ifc" | grep -qE 'state (UP|UNKNOWN)' || { echo "CRIT: $ifc down"; rc=1; }
 done
 
 [ $rc -eq 0 ] && echo "OK: all tunnels, SAs, BGP sessions healthy"
