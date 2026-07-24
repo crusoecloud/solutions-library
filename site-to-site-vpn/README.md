@@ -9,6 +9,19 @@ AWS Site-to-Site VPN or GCP HA VPN.
 Full design spec: [SPEC.md](SPEC.md). Architecture and rationale:
 [docs/architecture.md](docs/architecture.md).
 
+## Validation status
+
+| Path | Status |
+|---|---|
+| **GCP peer, `ha_mode=single`** | ✅ Validated end-to-end (control + data plane, MTU/MSS, failover, rekey, reboot recovery, security) — see [tests/matrix.md](tests/matrix.md) |
+| **Cluster egress (CMK) → GCP** | ✅ Validated end-to-end incl. multi-node + node-churn self-heal |
+| **AWS peer** | 📄 Documented (existing-VPN Path A + greenfield Path B), module validates; **first live deployment should be guided** — no validated live run yet |
+| **`ha_mode=dual`** | 🔶 Module validated; live tunnel-HA run in progress |
+| **WireGuard overlay transport, per-pod source identity** | 🗺️ Roadmap ([docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md)) |
+
+"Validated" = run live against real Crusoe + cloud and passing. Everything else
+is static-validated (fmt/validate/tflint/tfsec/render) via CI.
+
 ## Quickstart
 
 ```bash
