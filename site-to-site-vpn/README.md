@@ -48,6 +48,36 @@ tunnels, and reconverges on failure. Diagram and full rationale in
 | `single` (default) | 1 VM terminates both tunnels — tunnel redundancy, VM is a SPOF | dev/test, quickstart |
 | `dual` | 2 VMs, tunnels split by `vm_index` — survives VM loss | production |
 
+## Cluster / multi-VM egress through the gateway
+
+By default the gateway carries only its own traffic — Crusoe's VPC fabric drops
+packets whose destination isn't the receiving VM, so a plain next-hop route
+can't make a VM a transit router. Setting `cluster_egress.enabled = true` plus
+deploying the `k8s/cluster-egress` Helm chart lets **CMK pods / nodes and other
+Crusoe VMs egress through the gateway** to the peer, via a lightweight vxlan
+overlay (the only packets crossing the fabric are real VM-to-VM frames).
+
+Validated live: `terraform apply` (gateway) + `helm install` (nodes) only →
+CMK pod → node → overlay → gateway → IPsec tunnel → GCP, 0% loss + 20 MB
+transfer.
+
+**Resilient to node churn and node IP changes by design** — nodes are cattle,
+the gateway is the fixed anchor:
+
+- New/removed/re-IP'd nodes self-heal with **zero manual action** — the
+  DaemonSet auto-covers new nodes and each derives its overlay IP + MAC from its
+  own node IP.
+- **No per-node gateway config, ever.** Nodes use a deterministic MAC encoding
+  their overlay IP; a gateway reconcile loop turns learned forwarding entries
+  into neighbor entries, so return traffic resolves without ARP flooding (which
+  a learning vxlan hub can't do on Crusoe — no multicast).
+- The one non-transparent event is the **gateway** changing IP (only a gateway
+  config change does that); mitigate with its static IP and `ha_mode=dual`.
+
+Flags, trade-offs (throughput funnel, per-pod identity, WireGuard roadmap),
+and the comparison with the in-cluster `ipsec-tunnel-cmk` chart:
+[docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md).
+
 ## Security notes
 
 - **No secrets in this repo.** Real `*.tfvars` and state files are
@@ -82,6 +112,7 @@ and [tests/README.md](tests/README.md) for how to run all test phases.
 | [docs/customer-aws.md](docs/customer-aws.md) | Customer-side AWS S2S VPN (CGW/TGW, PSK handoff, inside CIDRs); existing AWS S2S VPN deployments are supported via Path A |
 | [docs/crypto-profiles.md](docs/crypto-profiles.md) | Default proposals, overrides, provider cipher-doc warning, FIPS hook |
 | [docs/ip-planning.md](docs/ip-planning.md) | CIDR overlap guard, /30 convention, isolation, NAT escape hatch |
+| [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md) | Routing CMK cluster / multi-VM traffic through the gateway; flags, resilience, ipsec-tunnel-cmk comparison |
 | [docs/outgrowing-this.md](docs/outgrowing-this.md) | Throughput/SPOF ceilings, interconnect graduation path |
 | [params/schema.md](params/schema.md) | Every variable, documented |
 | [SPEC.md](SPEC.md) | The full design specification this repo implements |
@@ -99,11 +130,13 @@ and [tests/README.md](tests/README.md) for how to run all test phases.
    (including PSK rotation via Terraform) recreate the instance. The runbook
    documents a zero-drop **in-place** rotation path
    ([runbook §7](docs/runbook.md#7-rotate--rekey)).
-4. **Platform-level IP forwarding (SPEC §17) is an open question** — whether
-   Crusoe requires an AWS/GCP-style "disable source/dest check" toggle is
-   pending validation at the first live deploy; host-level forwarding and
-   return-routing are configured, platform behavior will be recorded in
-   `tests/matrix.md`.
+4. **Platform-level IP forwarding (SPEC §17) — answered.** Crusoe's VPC fabric
+   drops packets whose destination isn't the receiving VM, and exposes no
+   "disable source/dest check" / VPC-route primitive (verified against the CLI
+   and provider). A gateway VM therefore forwards only its **own** traffic by
+   plain routing; transiting **other** hosts' traffic requires the vxlan
+   overlay in [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md)
+   (`cluster_egress`). This is a Crusoe platform property, not a config gap.
 
 ## License
 
