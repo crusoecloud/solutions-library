@@ -70,6 +70,12 @@ if [ "${VPN_SSH_VIA:-0}" = "1" ]; then
   '
 fi
 
+# NOTE: strongSwan pins responders to the configured peer IPs (remote_addrs),
+# so an active IKE scan from any non-peer source gets no response regardless of
+# IKE version — it cannot distinguish "IKEv1 rejected" from "source not a peer".
+# The authoritative IKEv1-disabled evidence is the on-box config assertion above
+# (version = 2, no version = 1). These probes are a best-effort extra signal;
+# run them from a configured peer source for a meaningful positive control.
 echo "== Negative IKE probes (requires ike-scan installed locally) =="
 if command -v ike-scan >/dev/null; then
   assert "IKEv1 rejected (no handshake returned)" bash -c '
