@@ -136,8 +136,10 @@ sudo nft list ruleset | less
 4. **nftables forward chain** — tunnel interfaces must be accepted both
    directions; `sudo nft list chain inet filter forward`.
 5. **Crusoe VPC return route** — workloads in the Crusoe subnet must route
-   customer CIDRs via the VPN VM's private IP (platform routing — verify on
-   first deploy, see SPEC §17).
+   customer CIDRs via the VPN VM's private IP. Verify on first deploy that
+   return traffic reaches the VPN VM; see
+   [docs/crusoe-cluster-egress.md](crusoe-cluster-egress.md) for the
+   platform forwarding constraint.
 
 ### 6.3 Ping works but transfers hang (SSH stalls, TLS times out)
 

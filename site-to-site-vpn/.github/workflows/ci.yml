@@ -1,7 +1,7 @@
 # ci.yml — assumes this directory IS the repo root (site-to-site-vpn/).
-# Drop all site-to-site-vpn/ path prefixes accordingly.
 #
-# Live test phases (1-6) are gated/manual per SPEC §15 and are not run here.
+# Static (Phase 0) checks only. Live test phases run against a real deployment
+# and are not run in CI.
 
 name: ci
 on:

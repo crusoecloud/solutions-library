@@ -31,12 +31,9 @@ assert "DF ping at tunnel MTU (${FIT}B payload) succeeds" bash -c '
   vssh "$VPN_HOST" "ping -M do -s $FIT -c 3 -W 2 -I $SRC_IP $REMOTE_TEST_IP" > /dev/null
 '
 
-# Plan bug fix: an oversized DF ping through the tunnel may be silently dropped
-# (ICMP too-big may not be returned to the sender, depending on path MTU probing
-# and the remote gateway's behaviour).  We therefore accept EITHER:
-#   (a) a local "message too long / frag needed" error from the sending kernel, OR
-#   (b) 100% packet loss (all probes timed out — tunnel silently dropped them).
-# Both outcomes prove there is no MTU black-hole blowing up larger frames silently.
+# An oversized DF ping may be rejected locally or silently dropped (ICMP too-big
+# is not always returned). Accept either a local "message too long / frag needed"
+# error or 100% loss; both prove there is no silent MTU black-hole.
 assert "DF ping above tunnel MTU (${TOOBIG}B payload) is rejected or dropped (no silent pass-through)" bash -c '
   output=$(vssh "$VPN_HOST" "ping -M do -s $TOOBIG -c 2 -W 2 -I $SRC_IP $REMOTE_TEST_IP" 2>&1 || true)
   # Pass if local ICMP error was returned (too-big message) OR if all packets were lost.

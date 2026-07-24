@@ -71,11 +71,8 @@ assert "tunnel A re-established" \
     vssh "$VPN_HOST" sudo swanctl --list-sas | grep -q "${TUNNEL_A_NAME}.*ESTABLISHED"
   '
 
-# Plan bug fix: the original script had `sleep 120 & wait $\!` after starting the
-# ping, which is pointless — 120s may have already elapsed and the ping log is
-# already complete by the time we reach this point.  Instead we poll until the
-# log contains "packet loss" (which ping prints in its summary line), then read
-# the result immediately.  We allow up to 135s total (120s ping + 15s slack).
+# Poll until the ping log contains "packet loss" (the summary line), then read
+# the result. Allow up to 135s total (120s ping window + 15s slack).
 echo "Waiting for ping to finish and report loss summary..."
 # shellcheck disable=SC2034
 for _i in $(seq 1 27); do

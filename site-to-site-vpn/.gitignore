@@ -27,3 +27,7 @@ handoff.txt
 
 # Render test artifacts
 tests/render/out/
+
+# Internal build methodology & learnings — not shipped to customers
+context/
+docs/superpowers/

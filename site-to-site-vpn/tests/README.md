@@ -1,7 +1,7 @@
 # Test suite
 
-Phased per SPEC §14. Phase 0 is static (local + CI, no cloud). Phases 1–6
-run against a live deployment — our reference target is the `terraform/gcp/`
+Six phases: Phase 0 is static (local + CI, no cloud). Phases 1–6
+run against a live deployment — the reference target is the `terraform/gcp/`
 dev/test module. Every script exits non-zero on failure and prints a
 PASS/FAIL summary.
 

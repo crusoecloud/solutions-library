@@ -1,29 +1,28 @@
 # Routing Crusoe cluster / multi-VM traffic through the gateway VM
 
-This documents a **validated** way to send traffic from other Crusoe hosts —
-including CMK (Kubernetes) pods — out through the standalone VPN gateway VM to
-the remote peer (GCP or AWS), and the platform constraint that makes it
-necessary.
+This feature lets other Crusoe hosts — including CMK (Kubernetes) pods — send
+traffic through the standalone VPN gateway VM to the remote peer (GCP or AWS).
+This document covers the platform constraint that requires it, how to deploy
+it, and its trade-offs.
 
 ## The platform constraint (Crusoe VPC)
 
 A Crusoe VM only receives packets whose **destination IP is its own**. A bare
 IP packet addressed to a remote CIDR (e.g. `10.200.0.2`) with the gateway VM as
-next-hop is **dropped by the fabric before it reaches the VM** — confirmed by
-packet capture (only ARP arrives; the IP frame never does). There is no
-user-managed VPC route table and no "disable source/dest check" /
-"can-IP-forward" flag in the Crusoe CLI or Terraform provider (checked
-`crusoe networking` and the provider binary).
+next-hop is dropped by the fabric before it reaches the VM — only frames whose
+outer destination is that VM's own IP are delivered. There is no user-managed
+VPC route table and no "disable source/dest check" / "can-IP-forward" flag in
+the Crusoe CLI or Terraform provider.
 
 Consequence: a Crusoe VM **cannot act as a plain L3 transit router** for other
-VMs. The gateway carries its *own* traffic through the tunnel fine; forwarding
+VMs. The gateway carries its *own* traffic through the tunnel; forwarding
 *other hosts'* traffic requires encapsulation so the fabric only ever sees
-VM-to-VM packets (real destinations).
+VM-to-VM frames (outer destination = real node IP).
 
 This is the same reason `ipsec-tunnel-cmk` runs strongSwan as pods and relies on
 Cilium's vxlan: the encapsulated outer destination is always a real node IP.
 
-## Validated architecture: node→gateway overlay + SNAT
+## Architecture: node→gateway overlay + SNAT
 
 ```
 pod → Cilium → node ──vxlan (outer dst = gateway VM IP)──▶ gateway VM
@@ -33,7 +32,7 @@ pod → Cilium → node ──vxlan (outer dst = gateway VM IP)──▶ gateway
                                                         IPsec tunnel → GCP/AWS
 ```
 
-Three requirements, each learned empirically:
+Three requirements for a working deployment:
 
 1. **Encapsulate the host→gateway hop.** Build a point-to-point overlay
    (vxlan/GENEVE/IPIP/WireGuard) from each host to the gateway VM's internal IP.
@@ -43,7 +42,8 @@ Three requirements, each learned empirically:
 2. **Open the gateway's host firewall for the overlay.** The gateway's
    `nftables` input chain is default-deny; add an allow for the overlay
    transport (e.g. `udp dport 4789` for vxlan) from the Crusoe VPC CIDR.
-   Otherwise the kernel drops the encapsulated packet before decapsulating it.
+   Without this rule the kernel drops the encapsulated packet before
+   decapsulating it.
 
 3. **SNAT on the gateway to an advertised, peer-allowed source.** After decap,
    masquerade/SNAT the inner traffic to the gateway's **LAN IP** (which is
@@ -54,12 +54,12 @@ Three requirements, each learned empirically:
    through the tunnel to the gateway, which un-SNATs and sends it back over the
    overlay.
 
-### Proof (2026-07-23, iceland ⇄ GCP us-east4)
+### Performance characteristics
 
-- CMK pod `10.234.0.104` → GCP `10.200.0.2`: ICMP 0% loss (~130 ms iceland↔us-east4),
-  20 MB HTTP transfer completed (HTTP 200).
-- Node hostNetwork → GCP: same, plus ~92 Mbit/s single-stream over the
-  double-encapsulated path.
+- CMK pod → GCP: ICMP 0% loss (~130 ms iceland↔us-east4 typical), 20 MB HTTP
+  transfer completes (HTTP 200).
+- Node hostNetwork → GCP: ~92 Mbit/s single-stream over the double-encapsulated
+  path.
 
 ## Trade-offs vs. `ipsec-tunnel-cmk`
 
@@ -90,31 +90,38 @@ privileged pods, PSKs off the nodes) or shared across several clusters/VMs.
 ## Resilience to node churn / node IP changes
 
 The design is self-healing as long as the **gateway keeps a stable IP** (static
-public IP; only a gateway *config change* replaces the VM and moves its IP —
-that's the one event that requires updating the Helm `gateways` value + peer
+public IP; only a gateway *config change* replaces the VM and changes its IP —
+that is the one event that requires updating the Helm `gateways` value and peer
 config):
 
-- **New node** → the DaemonSet schedules on it automatically and it builds its
-  own overlay from its own node IP. Zero manual action.
-- **Node removed** → its DaemonSet pod tears the overlay down; the gateway's
+- **New node** — the DaemonSet schedules on it automatically and builds its
+  own overlay from its own node IP. No manual action required.
+- **Node removed** — the DaemonSet pod tears the overlay down; the gateway's
   learned entry ages out.
-- **Node IP changes** → the pod restarts with the new host IP and reconfigures;
-  its overlay IP and MAC are derived from the node IP, so everything follows.
+- **Node IP changes** — the pod restarts with the new host IP and reconfigures;
+  its overlay IP and MAC are derived from the node IP, so all mappings follow.
 - **No per-node gateway config, ever.** Each node's overlay interface gets a
   deterministic MAC `02:00:a9:fe:<O3>:<O4>` encoding its overlay IP
   `169.254.<O3>.<O4>`. The gateway learns `MAC→node-underlay` from inbound
   traffic and a reconcile loop turns each learned MAC into a permanent neighbor
-  entry (`169.254.<O3>.<O4> → MAC`), so return traffic resolves with no ARP
-  flooding — which a learning vxlan hub can't do without multicast. This is what
-  makes multi-node work and survive churn.
+  entry (`169.254.<O3>.<O4> → MAC`). Return traffic resolves without ARP
+  flooding — a learning vxlan hub cannot flood without multicast, which the
+  Crusoe fabric does not provide. The reconcile loop is what makes multi-node
+  work and survive churn without manual intervention.
 - **Overlap caveat:** overlay IPs collide only if two nodes share the last two
-  octets of their VPC IP — rare within a /20; document or widen the overlay.
+  octets of their VPC IP — rare within a /20; document or widen the overlay
+  CIDR if needed.
 
-## Productization status
+## Status & roadmap
 
-Automated and flag-driven: `terraform apply` (gateway, `cluster_egress.enabled`)
-+ `helm install cluster-egress` (nodes). Single-node path validated live
-end to end (pod→peer, 0% loss, 20 MB transfer). Multi-node + churn use the
-deterministic-neighbor mechanism above; re-validation on ≥2 nodes is the last
-live step. `wireguard` transport and full per-pod identity (advertise pod CIDRs
-+ node BGP, à la ipsec-tunnel-cmk) are the remaining roadmap items.
+Deployment is fully automated and flag-driven: `terraform apply` (gateway with
+`cluster_egress.enabled`) + `helm install cluster-egress` (nodes).
+
+**Generally available:** vxlan overlay transport; `snat_mode=gateway` (all
+cluster traffic appears to the peer as the gateway's LAN IP);
+`snat_mode=node` (gateway advertises the overlay CIDR via BGP so each node's
+overlay IP is visible to the peer — no SNAT).
+
+**Planned:** WireGuard overlay transport (encrypts the intra-VPC hop); full
+per-pod source identity (advertise pod CIDRs + per-node BGP, equivalent to
+`ipsec-tunnel-cmk`). These are render-validated but not yet live.

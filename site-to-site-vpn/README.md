@@ -6,8 +6,7 @@ or two Ubuntu 24.04 VMs running strongSwan (XFRM interfaces) + FRR,
 provisioned entirely by Terraform from a single params file. Customer side:
 AWS Site-to-Site VPN or GCP HA VPN.
 
-Full design spec: [SPEC.md](SPEC.md). Architecture and rationale:
-[docs/architecture.md](docs/architecture.md).
+Architecture and rationale: [docs/architecture.md](docs/architecture.md).
 
 ## Validation status
 
@@ -128,28 +127,29 @@ and [tests/README.md](tests/README.md) for how to run all test phases.
 | [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md) | Routing CMK cluster / multi-VM traffic through the gateway; flags, resilience, ipsec-tunnel-cmk comparison |
 | [docs/outgrowing-this.md](docs/outgrowing-this.md) | Throughput/SPOF ceilings, interconnect graduation path |
 | [params/schema.md](params/schema.md) | Every variable, documented |
-| [SPEC.md](SPEC.md) | The full design specification this repo implements |
 
-## Deliberate deviations from SPEC.md
+## Platform notes
 
 1. **Bash startup script, not cloud-init YAML** — the Crusoe provider takes
    a `startup_script`; templates render into
-   `terraform/crusoe/templates/startup-script.sh.tftpl` instead of
-   `cloud-init.yaml.tftpl`. Behavior (packages, sysctls, rendered configs,
-   services) is as specified.
+   `terraform/crusoe/templates/startup-script.sh.tftpl`. Behavior (packages,
+   sysctls, rendered configs, services) is equivalent to a cloud-init
+   deployment.
 2. **VPC/subnet consumed, not created** — the module attaches to an existing
    `crusoe_vpc_subnet_id`; there is no VPC-creation resource in scope.
 3. **Day-2 config changes replace the VM** — startup-script changes
    (including PSK rotation via Terraform) recreate the instance. The runbook
    documents a zero-drop **in-place** rotation path
    ([runbook §7](docs/runbook.md#7-rotate--rekey)).
-4. **Platform-level IP forwarding (SPEC §17) — answered.** Crusoe's VPC fabric
-   drops packets whose destination isn't the receiving VM, and exposes no
-   "disable source/dest check" / VPC-route primitive (verified against the CLI
-   and provider). A gateway VM therefore forwards only its **own** traffic by
-   plain routing; transiting **other** hosts' traffic requires the vxlan
-   overlay in [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md)
-   (`cluster_egress`). This is a Crusoe platform property, not a config gap.
+4. **Crusoe VPC fabric forwards only own-destination frames.** Crusoe's VPC
+   fabric drops packets whose destination IP is not the receiving VM's own IP.
+   There is no "disable source/dest check" or user-managed VPC route primitive
+   in the Crusoe CLI or Terraform provider. A gateway VM therefore forwards
+   only its **own** traffic by plain routing; routing other hosts' traffic
+   through the gateway requires the vxlan overlay described in
+   [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md)
+   (`cluster_egress`). This is a Crusoe platform property, not a
+   configuration gap.
 
 ## License
 

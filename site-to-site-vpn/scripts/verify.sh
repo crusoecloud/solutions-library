@@ -13,9 +13,7 @@ export VPN_HOST REMOTE_TEST_IP
 
 echo "== Control plane =="
 
-# Count ESTABLISHED IKE SAs and compare to number of configured connections.
-# Plan bug fix: original `grep -c ESTABLISHED | grep -qvw 0` was convoluted and
-# could spuriously pass.  Instead we compare established count >= conn count.
+# Require the ESTABLISHED IKE SA count to be at least the configured connection count.
 assert "IKE SAs ESTABLISHED for all tunnels" bash -c '
   est=$(vssh "$VPN_HOST" sudo swanctl --list-sas 2>/dev/null | grep -c ESTABLISHED || true)
   conns=$(vssh "$VPN_HOST" sudo swanctl --list-conns 2>/dev/null | grep -cE "^[a-z0-9_-]+:" || true)
