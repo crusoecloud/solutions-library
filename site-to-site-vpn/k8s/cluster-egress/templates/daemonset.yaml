@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cluster-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: cluster-egress
+spec:
+  selector:
+    matchLabels:
+      app: cluster-egress
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: cluster-egress
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+      - operator: Exists
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: overlay
+        image: {{ .Values.image | quote }}
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["NET_ADMIN"]
+        envFrom:
+        - configMapRef:
+            name: cluster-egress-config
+        env:
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uo pipefail
+          WAN_IF=$(ip -o -4 route show default | awk '{print $5}' | head -1)
+          # Pick one gateway per node (hash of node IP) -> nodes spread across
+          # the gateway set for horizontal scale. Each gateway independently
+          # runs the hub on <base>.0.1 and SNATs/advertises, so a node only
+          # ever talks to one.
+          IFS=',' read -ra GWS <<< "$GATEWAY_LAN_IPS"
+          H=$(printf '%s' "$NODE_IP" | cksum | cut -d' ' -f1)
+          GATEWAY_LAN_IP="${GWS[$((H % ${#GWS[@]}))]}"
+          # Overlay addressing within the /16: gateway = <base>.0.1,
+          # node = <base>.<3rd>.<4th octet of node IP> (collision-free per VPC subnet).
+          O3=$(printf '%s' "$NODE_IP" | cut -d. -f3); O4=$(printf '%s' "$NODE_IP" | cut -d. -f4)
+          BASE=$(printf '%s' "$OVERLAY_CIDR" | cut -d. -f1-2)
+          PREFIX=$(printf '%s' "$OVERLAY_CIDR" | cut -d/ -f2)
+          GW_OVERLAY_IP="${BASE}.0.1"
+          NODE_OVERLAY_IP="${BASE}.${O3}.${O4}"
+
+          # Deterministic MAC from the overlay IP: 02:00:a9:fe:<O3hex>:<O4hex>
+          # (a9fe = 169.254). The gateway derives each node's overlay IP and
+          # underlay from this MAC, so it never needs to ARP-flood — the key to
+          # multi-node + node-churn resilience without any per-node gateway config.
+          NODE_MAC=$(printf '02:00:a9:fe:%02x:%02x' "$O3" "$O4")
+          setup() {
+            ip link del vxlan-ceg 2>/dev/null || true
+            ip link add vxlan-ceg address "$NODE_MAC" type vxlan id "$VXLAN_ID" local "$NODE_IP" \
+              remote "$GATEWAY_LAN_IP" dstport "$VXLAN_PORT" dev "$WAN_IF"
+            ip addr replace "${NODE_OVERLAY_IP}/${PREFIX}" dev vxlan-ceg
+            ip link set vxlan-ceg mtu 1450 up
+            # Static path to the gateway overlay IP (deterministic gateway MAC +
+            # known gateway underlay) — no ARP needed node->gateway.
+            ip neigh replace "$GW_OVERLAY_IP" lladdr 02:00:a9:fe:00:01 dev vxlan-ceg nud permanent
+            bridge fdb replace 02:00:a9:fe:00:01 dev vxlan-ceg dst "$GATEWAY_LAN_IP"
+            for c in $REMOTE_CIDRS; do
+              ip route replace "$c" via "$GW_OVERLAY_IP" dev vxlan-ceg
+            done
+            iptables -t mangle -C FORWARD -o vxlan-ceg -p tcp --tcp-flags SYN,RST SYN \
+              -j TCPMSS --set-mss "$MSS_CLAMP" 2>/dev/null || \
+            iptables -t mangle -A FORWARD -o vxlan-ceg -p tcp --tcp-flags SYN,RST SYN \
+              -j TCPMSS --set-mss "$MSS_CLAMP"
+            echo "cluster-egress up on $(hostname): vxlan-ceg ${NODE_OVERLAY_IP}/${PREFIX} (mac ${NODE_MAC}) via ${WAN_IF} -> gateway ${GATEWAY_LAN_IP}, routes [$REMOTE_CIDRS] via ${GW_OVERLAY_IP}"
+          }
+          setup
+          while true; do
+            if ! ip link show vxlan-ceg &>/dev/null; then
+              echo "vxlan-ceg missing, re-creating"; setup
+            fi
+            sleep "${RECONCILE_SECONDS:-30}"
+          done
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/bash", "-c", "ip link del vxlan-ceg 2>/dev/null || true"]

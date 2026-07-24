@@ -1,0 +1,23 @@
+# cluster-egress values. Fill from `terraform -chdir=terraform/crusoe output`.
+# Every knob here mirrors a cluster_egress flag on the gateway side.
+
+# Private (VPC) IPs of the gateway VM(s). Multiple => nodes hash-spread across
+# them for horizontal scale. From: terraform output -json crusoe_private_ips.
+gateways:
+  - "REPLACE_GATEWAY_PRIVATE_IP"
+
+# Remote peer CIDRs to route through the tunnel (the AWS/GCP side CIDRs).
+remoteCidrs:
+  - "10.200.0.0/16"
+
+# Must match cluster_egress in terraform/crusoe.
+vxlanId: 100
+vxlanPort: 4789
+overlayCidr: "169.254.0.0/16" # /16; node IP derived from its node-IP octets
+mssClamp: 1360
+
+# The gateway's snat_mode (gateway|node) does not change node-side behavior —
+# SNAT (or its absence) is handled on the gateway. Node config is identical.
+image: nicolaka/netshoot:latest
+namespace: kube-system
+reconcileSeconds: 30

@@ -70,5 +70,12 @@ if bash -n out/startup-script.sh 2>/dev/null; then say "PASS: rendered startup s
 assert_grep startup-script.sh 'sysctl --system'                  "bootstrap applies sysctls"
 assert_grep startup-script.sh 'systemctl restart strongswan'     "bootstrap (re)starts strongswan"
 assert_grep startup-script.sh 'vpn-cluster-egress'               "cluster-egress unit installed when enabled"
+assert_grep startup-script.sh 'snat_mode=gateway'                "snat_mode=gateway does SNAT"
+assert_grep startup-script.sh 'snat to'                          "gateway-mode SNAT rule present"
+# node mode: no SNAT, overlay advertised via BGP
+assert_grep startup-script-node.sh 'snat_mode=node'              "snat_mode=node branch"
+assert_not_grep startup-script-node.sh 'snat to'                 "node mode has no SNAT"
+assert_grep frr-node.conf 'network 169.254.0.0/16'              "node mode advertises overlay via BGP"
+assert_grep frr-node.conf 'CRUSOE-OUT seq 10 permit 169.254.0.0/16' "overlay in outbound prefix filter"
 
 exit $fail

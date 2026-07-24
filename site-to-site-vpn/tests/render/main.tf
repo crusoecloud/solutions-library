@@ -24,8 +24,16 @@ resource "local_file" "swanctl" {
 resource "local_file" "bgpd" {
   filename = "${path.module}/out/frr.conf"
   content = templatefile("${local.tpl}/frr-bgpd.conf.tftpl", {
-    tunnels      = local.tunnels, local_asn = 65000,
-    crusoe_cidrs = ["10.100.0.0/16"], customer_cidrs = ["10.200.0.0/16"]
+    tunnels         = local.tunnels, local_asn = 65000,
+    advertise_cidrs = ["10.100.0.0/16"], customer_cidrs = ["10.200.0.0/16"]
+  })
+}
+
+resource "local_file" "bgpd_node_snat" {
+  filename = "${path.module}/out/frr-node.conf"
+  content = templatefile("${local.tpl}/frr-bgpd.conf.tftpl", {
+    tunnels         = local.tunnels, local_asn = 65000,
+    advertise_cidrs = ["10.100.0.0/16", "169.254.0.0/16"], customer_cidrs = ["10.200.0.0/16"]
   })
 }
 
@@ -85,7 +93,24 @@ resource "local_file" "startup" {
     frr_bgpd_conf   = local_file.bgpd.content
     nftables_conf   = local_file.nft.content
     xfrm_script     = local_file.xfrm.content
-    cluster_egress  = { enabled = true, vxlan_id = 100, vxlan_port = 4789, overlay_cidr = "169.254.0.0/16" }
+    cluster_egress  = { enabled = true, snat_mode = "gateway", overlay_transport = "vxlan", vxlan_id = 100, vxlan_port = 4789, overlay_cidr = "169.254.0.0/16" }
+    tunnel_ifids    = [for t in local.tunnels : t.xfrm_if_id]
+    gw_overlay_ip   = "169.254.0.1"
+    overlay_prefix  = "16"
+  })
+}
+
+# snat_mode=node bootstrap render — exercises the no-SNAT branch.
+resource "local_file" "startup_node" {
+  filename = "${path.module}/out/startup-script-node.sh"
+  content = templatefile("${local.tpl}/startup-script.sh.tftpl", {
+    swanctl_conf    = local_file.swanctl.content
+    swanctl_secrets = local_file.secrets.content
+    frr_daemons     = file("${local.tpl}/frr-daemons.tftpl")
+    frr_bgpd_conf   = local_file.bgpd_node_snat.content
+    nftables_conf   = local_file.nft.content
+    xfrm_script     = local_file.xfrm.content
+    cluster_egress  = { enabled = true, snat_mode = "node", overlay_transport = "vxlan", vxlan_id = 100, vxlan_port = 4789, overlay_cidr = "169.254.0.0/16" }
     tunnel_ifids    = [for t in local.tunnels : t.xfrm_if_id]
     gw_overlay_ip   = "169.254.0.1"
     overlay_prefix  = "16"

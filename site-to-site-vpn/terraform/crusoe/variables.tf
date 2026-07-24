@@ -192,19 +192,30 @@ variable "cluster_egress" {
     Default disabled: the gateway then only carries its own traffic.
   EOT
   type = object({
-    enabled      = bool
-    vxlan_id     = number # VNI shared by gateway + nodes
-    vxlan_port   = number # UDP dstport for vxlan transport
-    overlay_cidr = string # /16 overlay; gateway = <base>.0.1, node = <base>.<3rd>.<4th octet of node IP>
+    enabled           = bool
+    snat_mode         = optional(string, "gateway")        # "gateway": SNAT overlay->gateway LAN IP (peer sees gateway IP). "node": no SNAT, advertise overlay via BGP (peer sees per-node overlay IP).
+    overlay_transport = optional(string, "vxlan")          # "vxlan" (implemented). "wireguard" reserved (encrypts the intra-VPC hop) — see docs/crusoe-cluster-egress.md.
+    vxlan_id          = optional(number, 100)              # VNI shared by gateway + nodes
+    vxlan_port        = optional(number, 4789)             # UDP dstport for vxlan transport
+    overlay_cidr      = optional(string, "169.254.0.0/16") # /16 overlay; gateway = <base>.0.1, node = <base>.<3rd>.<4th octet of node IP>
   })
   default = {
-    enabled      = false
-    vxlan_id     = 100
-    vxlan_port   = 4789
-    overlay_cidr = "169.254.0.0/16"
+    enabled = false
   }
   validation {
     condition     = !var.cluster_egress.enabled || (can(cidrhost(var.cluster_egress.overlay_cidr, 1)) && split("/", var.cluster_egress.overlay_cidr)[1] == "16")
     error_message = "cluster_egress.overlay_cidr must be a valid /16 CIDR when enabled (nodes derive unique host IPs from the last two octets of their node IP)."
+  }
+  validation {
+    condition     = contains(["gateway", "node"], var.cluster_egress.snat_mode)
+    error_message = "cluster_egress.snat_mode must be \"gateway\" (SNAT to gateway IP) or \"node\" (no SNAT, advertise overlay via BGP for per-node source identity)."
+  }
+  validation {
+    condition     = contains(["vxlan", "wireguard"], var.cluster_egress.overlay_transport)
+    error_message = "cluster_egress.overlay_transport must be \"vxlan\" or \"wireguard\"."
+  }
+  validation {
+    condition     = var.cluster_egress.overlay_transport != "wireguard"
+    error_message = "cluster_egress.overlay_transport = \"wireguard\" is reserved and not yet implemented; use \"vxlan\". The intra-VPC hop is within your isolated Crusoe VPC; see docs/crusoe-cluster-egress.md for the WireGuard roadmap."
   }
 }

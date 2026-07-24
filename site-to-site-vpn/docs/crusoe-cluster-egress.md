@@ -75,10 +75,46 @@ For a CMK-only deployment, `ipsec-tunnel-cmk` is simpler. Choose the standalone
 gateway when you want the VPN termination isolated from the cluster (no
 privileged pods, PSKs off the nodes) or shared across several clusters/VMs.
 
+## Flags (all under `cluster_egress` in terraform/crusoe + Helm values)
+
+| Flag | Values | Effect |
+|---|---|---|
+| `enabled` | bool | Turn the overlay hub on/off on the gateway (default off). |
+| `snat_mode` | `gateway` \| `node` | `gateway`: SNAT overlay→gateway LAN IP; peer sees one source (this gateway). `node`: no SNAT, gateway advertises the overlay CIDR via BGP; peer sees each node's overlay IP (per-node identity). |
+| `overlay_transport` | `vxlan` \| `wireguard` | `vxlan` implemented. `wireguard` reserved (encrypts the intra-VPC hop) — validation rejects it until implemented; the hop is within your isolated Crusoe VPC. |
+| `vxlan_id` / `vxlan_port` | number | VNI / UDP transport port. |
+| `overlay_cidr` | /16 | Overlay subnet; gateway = `<base>.0.1`, node = `<base>.<3rd>.<4th octet of node IP>`. |
+| gateway sizing | `instance_type` | Throughput knob — the gateway is a shared crypto funnel; scale up, or use `ha_mode=dual`. |
+| multi-gateway | Helm `gateways: [...]` | Nodes hash-spread across the gateway set for horizontal scale. |
+
+## Resilience to node churn / node IP changes
+
+The design is self-healing as long as the **gateway keeps a stable IP** (static
+public IP; only a gateway *config change* replaces the VM and moves its IP —
+that's the one event that requires updating the Helm `gateways` value + peer
+config):
+
+- **New node** → the DaemonSet schedules on it automatically and it builds its
+  own overlay from its own node IP. Zero manual action.
+- **Node removed** → its DaemonSet pod tears the overlay down; the gateway's
+  learned entry ages out.
+- **Node IP changes** → the pod restarts with the new host IP and reconfigures;
+  its overlay IP and MAC are derived from the node IP, so everything follows.
+- **No per-node gateway config, ever.** Each node's overlay interface gets a
+  deterministic MAC `02:00:a9:fe:<O3>:<O4>` encoding its overlay IP
+  `169.254.<O3>.<O4>`. The gateway learns `MAC→node-underlay` from inbound
+  traffic and a reconcile loop turns each learned MAC into a permanent neighbor
+  entry (`169.254.<O3>.<O4> → MAC`), so return traffic resolves with no ARP
+  flooding — which a learning vxlan hub can't do without multicast. This is what
+  makes multi-node work and survive churn.
+- **Overlap caveat:** overlay IPs collide only if two nodes share the last two
+  octets of their VPC IP — rare within a /20; document or widen the overlay.
+
 ## Productization status
 
-The mechanism is proven manually. Making it a first-class feature would add:
-a node-side overlay DaemonSet (build vxlan to the gateway, route the remote
-CIDR in), the gateway firewall allow, and the gateway SNAT rule — none of which
-exist in the module yet. Until then, treat this page as a validated runbook,
-not automation.
+Automated and flag-driven: `terraform apply` (gateway, `cluster_egress.enabled`)
++ `helm install cluster-egress` (nodes). Single-node path validated live
+end to end (pod→peer, 0% loss, 20 MB transfer). Multi-node + churn use the
+deterministic-neighbor mechanism above; re-validation on ≥2 nodes is the last
+live step. `wireguard` transport and full per-pod identity (advertise pod CIDRs
++ node BGP, à la ipsec-tunnel-cmk) are the remaining roadmap items.

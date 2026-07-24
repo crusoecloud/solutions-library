@@ -32,6 +32,10 @@ locals {
   }
   crypto = var.crypto_profile != null ? var.crypto_profile : local.crypto_defaults[var.cloud]
 
+  # In snat_mode="node" the gateway advertises the overlay so the peer returns
+  # per-node traffic through the tunnel (no SNAT). Otherwise only the VPC CIDRs.
+  advertise_cidrs = (var.cluster_egress.enabled && var.cluster_egress.snat_mode == "node") ? concat(var.crusoe_vpc_cidrs, [var.cluster_egress.overlay_cidr]) : var.crusoe_vpc_cidrs
+
   # every (a,b) CIDR pair that must not overlap
   overlap_pairs = concat(
     [for pair in setproduct(var.crusoe_vpc_cidrs, var.customer_cidrs) : pair],
@@ -92,7 +96,7 @@ resource "crusoe_compute_instance" "vpn" {
     swanctl_conf    = templatefile("${path.module}/templates/swanctl.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], crypto = local.crypto })
     swanctl_secrets = templatefile("${path.module}/templates/swanctl-secrets.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], psks = { for t in local.tunnels_by_vm[count.index] : t.name => var.tunnel_psks[t.psk_var_name] } })
     frr_daemons     = file("${path.module}/templates/frr-daemons.tftpl")
-    frr_bgpd_conf   = templatefile("${path.module}/templates/frr-bgpd.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], local_asn = var.local_asn, crusoe_cidrs = var.crusoe_vpc_cidrs, customer_cidrs = var.customer_cidrs })
+    frr_bgpd_conf   = templatefile("${path.module}/templates/frr-bgpd.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], local_asn = var.local_asn, advertise_cidrs = local.advertise_cidrs, customer_cidrs = var.customer_cidrs })
     nftables_conf   = templatefile("${path.module}/templates/nftables.conf.tftpl", { tunnels = local.tunnels_by_vm[count.index], ssh_allowed_cidrs = var.ssh_allowed_cidrs, mss_clamp = var.mss_clamp, cluster_egress = var.cluster_egress, crusoe_vpc_cidrs = var.crusoe_vpc_cidrs })
     xfrm_script     = templatefile("${path.module}/templates/xfrm-interfaces.sh.tftpl", { tunnels = local.tunnels_by_vm[count.index], tunnel_mtu = var.tunnel_mtu })
     cluster_egress  = var.cluster_egress

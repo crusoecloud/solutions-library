@@ -161,31 +161,61 @@ fi
 GW_OVERLAY_IP="${gw_overlay_ip}"
 OVERLAY_PREFIX="${overlay_prefix}"
 # Hub vxlan: no static remote; learning populates node underlay from traffic.
+# Fixed gateway MAC (02:00:a9:fe:00:01) so nodes reach it without ARP.
 if ! ip link show vxlan-ceg &>/dev/null; then
-  ip link add vxlan-ceg type vxlan id ${cluster_egress.vxlan_id} local "$PRIV" dstport ${cluster_egress.vxlan_port} dev "$WAN_IF"
+  ip link add vxlan-ceg address 02:00:a9:fe:00:01 type vxlan id ${cluster_egress.vxlan_id} local "$PRIV" dstport ${cluster_egress.vxlan_port} dev "$WAN_IF"
 fi
 ip addr replace "$GW_OVERLAY_IP/$OVERLAY_PREFIX" dev vxlan-ceg
+ip link set vxlan-ceg address 02:00:a9:fe:00:01
 ip link set vxlan-ceg mtu 1450 up
-# SNAT overlay traffic to this gateway's LAN IP so the peer accepts it (LAN IP
-# is inside the advertised crusoe_vpc_cidrs) and returns it via the tunnel.
+%{ if cluster_egress.snat_mode == "gateway" ~}
+# snat_mode=gateway: SNAT overlay traffic to this gateway's LAN IP so the peer
+# accepts it (LAN IP is inside the advertised crusoe_vpc_cidrs) and returns it
+# via the tunnel. Peer sees a single source (this gateway).
 nft add table inet cluster_egress_nat 2>/dev/null || true
 nft flush table inet cluster_egress_nat 2>/dev/null || true
 nft add chain inet cluster_egress_nat postrouting '{ type nat hook postrouting priority srcnat ; policy accept ; }'
 %{ for id in tunnel_ifids ~}
 nft add rule inet cluster_egress_nat postrouting oifname "ipsec${id}" ip saddr ${cluster_egress.overlay_cidr} snat to "$PRIV"
 %{ endfor ~}
-echo "cluster egress up: vxlan-ceg $GW_OVERLAY_IP/$OVERLAY_PREFIX via $WAN_IF ($PRIV), SNAT ${cluster_egress.overlay_cidr} -> $PRIV"
+echo "cluster egress up (snat_mode=gateway): vxlan-ceg $GW_OVERLAY_IP/$OVERLAY_PREFIX via $WAN_IF ($PRIV), SNAT ${cluster_egress.overlay_cidr} -> $PRIV"
+%{ else ~}
+# snat_mode=node: no SNAT; the overlay CIDR is advertised via BGP so the peer
+# returns per-node traffic through the tunnel. Peer sees the node overlay IP.
+nft delete table inet cluster_egress_nat 2>/dev/null || true
+echo "cluster egress up (snat_mode=node): vxlan-ceg $GW_OVERLAY_IP/$OVERLAY_PREFIX via $WAN_IF ($PRIV), overlay advertised via BGP (no SNAT)"
+%{ endif ~}
+
+# Neighbor reconcile loop: nodes use a deterministic MAC 02:00:a9:fe:<O3>:<O4>
+# encoding their overlay IP (169.254.<O3>.<O4>). Learning fills the FDB
+# (MAC->node underlay) from inbound traffic; here we turn each learned node MAC
+# into a permanent neigh entry so return traffic resolves with no ARP flood.
+# This is what makes multi-node + node-IP-churn work with zero per-node config.
+while true; do
+  bridge fdb show dev vxlan-ceg 2>/dev/null | awk '/dst/{mac=$1; for(i=1;i<=NF;i++) if($i=="dst"){print mac, $(i+1)}}' | \
+  while read -r mac dst; do
+    case "$mac" in
+      02:00:a9:fe:*)
+        o3=$((16#$(echo "$mac" | cut -d: -f5)))
+        o4=$((16#$(echo "$mac" | cut -d: -f6)))
+        ip neigh replace "169.254.$o3.$o4" lladdr "$mac" dev vxlan-ceg nud permanent 2>/dev/null || true
+        ;;
+    esac
+  done
+  sleep 10
+done
 CEG_EOF
 chmod 0755 /usr/local/sbin/vpn-cluster-egress.sh
 cat > /etc/systemd/system/vpn-cluster-egress.service <<'EOF'
 [Unit]
-Description=Cluster-egress vxlan hub + SNAT for the VPN gateway
+Description=Cluster-egress vxlan hub + neighbor reconcile for the VPN gateway
 After=network-online.target nftables.service vpn-xfrm.service
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
+Restart=always
+RestartSec=5
 ExecStart=/usr/local/sbin/vpn-cluster-egress.sh
 
 [Install]

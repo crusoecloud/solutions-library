@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-egress-config
+  namespace: {{ .Values.namespace }}
+data:
+  GATEWAY_LAN_IPS: {{ join "," .Values.gateways | quote }}
+  REMOTE_CIDRS: {{ join " " .Values.remoteCidrs | quote }}
+  VXLAN_ID: {{ .Values.vxlanId | quote }}
+  VXLAN_PORT: {{ .Values.vxlanPort | quote }}
+  OVERLAY_CIDR: {{ .Values.overlayCidr | quote }}
+  MSS_CLAMP: {{ .Values.mssClamp | quote }}
+  RECONCILE_SECONDS: {{ .Values.reconcileSeconds | quote }}
