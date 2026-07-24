@@ -270,6 +270,17 @@ vendor) — the downloaded file contains both PSKs and all tunnel parameters.
 > Pipe directly into an env var or immediately clear history
 > (`history -d $(history 1)`). Never screenshot or copy into a ticket.
 
+> **PSK length — the Crusoe module requires ≥ 16 characters.** AWS
+> auto-generated PSKs are 32+ chars of `[A-Za-z0-9._]`, which pass the Crusoe
+> module's validation (`^[A-Za-z0-9+/=_.-]+$`, min 16) unchanged. But if you set
+> a **custom** tunnel PSK on the AWS side shorter than 16 chars (AWS allows down
+> to 8), the Crusoe `terraform apply` will reject it with
+> *"PSKs must be >=16 chars…"*. Fix: use a ≥16-char PSK on both sides — set it
+> explicitly with `aws ec2 modify-vpn-tunnel-options --tunnel-options
+> PreSharedKey=<≥16 chars>` per tunnel, or let AWS generate it. AWS also forbids
+> a leading `0` and the char set is a subset of the module's, so the only
+> practical mismatch is length.
+
 ### 6. PSK handoff
 
 **Never send PSKs by email, chat, or ticket.** Options:
