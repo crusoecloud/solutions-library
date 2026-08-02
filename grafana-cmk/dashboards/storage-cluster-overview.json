@@ -17,20 +17,20 @@
   "templating": {
     "list": [
       {
-        "name": "disk_id",
-        "label": "Crusoe SDisk (by Crusoe ID)",
+        "name": "disk_name",
+        "label": "Crusoe SDisk (by name)",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "crusoe-metrics"
         },
-        "query": "label_values(crusoe_sdisk_disk_capacity_used_bytes, disk_id)",
+        "query": "label_values(crusoe_sdisk_disk_capacity_used_bytes, disk_name)",
         "refresh": 1,
         "sort": 1,
         "multi": false,
         "includeAll": false,
         "current": {},
-        "description": "Crusoe-side disk identifier (matches what `crusoe storage disks list` and the Crusoe Console show). The K8s PVC UID is shown as `disk_name` in the capacity bar gauge legend for translation."
+        "description": "Crusoe SDisk name. For CSI-dynamic disks this is the PVC UID (pvc-<uuid>); for imported disks this is the friendly name set at creation."
       }
     ]
   },
@@ -182,7 +182,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "last_over_time(crusoe_sdisk_disk_capacity_used_bytes{disk_id=\"$disk_id\"}[2m])",
+          "expr": "last_over_time(crusoe_sdisk_disk_capacity_used_bytes{disk_name=\"$disk_name\"}[2m])",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -233,7 +233,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_read_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "expr": "sum(rate(crusoe_sdisk_disk_read_bw_bytes_sum{disk_name=\"$disk_name\"}[2m]))",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -284,7 +284,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_write_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "expr": "sum(rate(crusoe_sdisk_disk_write_bw_bytes_sum{disk_name=\"$disk_name\"}[2m]))",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -335,7 +335,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_read_latency_sum{disk_id=\"$disk_id\"}[2m])) / sum(rate(crusoe_sdisk_disk_read_latency_count{disk_id=\"$disk_id\"}[2m])) or vector(0)",
+          "expr": "sum(rate(crusoe_sdisk_disk_read_latency_sum{disk_name=\"$disk_name\"}[2m])) / sum(rate(crusoe_sdisk_disk_read_latency_count{disk_name=\"$disk_name\"}[2m])) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -617,7 +617,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_read_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "expr": "sum(rate(crusoe_sdisk_disk_read_bw_bytes_sum{disk_name=\"$disk_name\"}[2m]))",
           "legendFormat": "read"
         },
         {
@@ -625,7 +625,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_write_bw_bytes_sum{disk_id=\"$disk_id\"}[2m]))",
+          "expr": "sum(rate(crusoe_sdisk_disk_write_bw_bytes_sum{disk_name=\"$disk_name\"}[2m]))",
           "legendFormat": "write"
         }
       ]
@@ -669,7 +669,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_read_iops_count{disk_id=\"$disk_id\"}[2m]))",
+          "expr": "sum(rate(crusoe_sdisk_disk_read_iops_count{disk_name=\"$disk_name\"}[2m]))",
           "legendFormat": "read"
         },
         {
@@ -677,7 +677,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_write_iops_count{disk_id=\"$disk_id\"}[2m]))",
+          "expr": "sum(rate(crusoe_sdisk_disk_write_iops_count{disk_name=\"$disk_name\"}[2m]))",
           "legendFormat": "write"
         }
       ]
@@ -721,7 +721,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_read_latency_sum{disk_id=\"$disk_id\"}[2m])) / sum(rate(crusoe_sdisk_disk_read_latency_count{disk_id=\"$disk_id\"}[2m])) or vector(0)",
+          "expr": "sum(rate(crusoe_sdisk_disk_read_latency_sum{disk_name=\"$disk_name\"}[2m])) / sum(rate(crusoe_sdisk_disk_read_latency_count{disk_name=\"$disk_name\"}[2m])) or vector(0)",
           "legendFormat": "avg read latency"
         }
       ]
@@ -765,7 +765,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(rate(crusoe_sdisk_disk_write_latency_sum{disk_id=\"$disk_id\"}[2m])) / sum(rate(crusoe_sdisk_disk_write_latency_count{disk_id=\"$disk_id\"}[2m])) or vector(0)",
+          "expr": "sum(rate(crusoe_sdisk_disk_write_latency_sum{disk_name=\"$disk_name\"}[2m])) / sum(rate(crusoe_sdisk_disk_write_latency_count{disk_name=\"$disk_name\"}[2m])) or vector(0)",
           "legendFormat": "avg write latency"
         }
       ]
