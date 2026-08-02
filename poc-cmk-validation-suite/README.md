@@ -110,10 +110,15 @@ selective activation checkpointing. See `02-torchtitan-llama3-8b/README.md`.
 | H100 80GB SXM | `^mlx5_0:1` | `h100-80gb-sxm-ib-cloud-hypervisor.xml` | native IB; no GID override |
 | H200 141GB SXM | `^mlx5_0:1` | `h200-141gb-sxm-ib-cloud-hypervisor.xml` | native IB; no GID override |
 | B200 192GB SXM | `mlx5_5,mlx5_6,…,mlx5_12` | `b200-180gb-sxm-ib-cloud-hypervisor.xml` | Blackwell HCA layout; consider `NCCL_IB_GID_INDEX=3` |
-| B300 288GB SXM | `mlx5_5,mlx5_6,…,mlx5_12` | `b300-288gb-sxm-ib-cloud-hypervisor.xml` | same as B200; see `b300-nccltest-cmk-mpijob/` reference |
+| B300 288GB SXM | `mlx5_5,mlx5_6,…,mlx5_12` | `b300-288gb-sxm-ib-cloud-hypervisor.xml` | Blackwell HCA layout; NVLS/SHARP on; topology XML **baked into image**, not mounted |
 
-All topology XMLs ship on Crusoe GPU nodes at `/etc/crusoe/nccl_topo/` and are mounted into
-pods via `hostPath` — no need to bake them into images.
+For H100/H200, topology XMLs ship on Crusoe GPU nodes at `/etc/crusoe/nccl_topo/` and are
+mounted into pods via `hostPath` — no need to bake them into images.
+
+For B300, the topology XML is **baked into the container image** at `/opt/nccl_topo/` (see
+`b300-nccltest-cmk-mpijob/Dockerfile`). This is because Blackwell nodes may not ship the
+topology file on-host, and Blackwell also needs a `sm_100`-compiled `nccl-tests` binary
+which the generic multi-arch image can't provide.
 
 ---
 
@@ -121,6 +126,7 @@ pods via `hostPath` — no need to bake them into images.
 
 - [`torchtitan-llama3_1_8B-kubernetes-pytorchjob/`](../torchtitan-llama3_1_8B-kubernetes-pytorchjob/)
   — standalone torchtitan example, fuller documentation, multi-variant manifests
-- [`b300-nccltest-cmk-mpijob/`](../b300-nccltest-cmk-mpijob/) — original B300-only NCCL test
-  example; the H100/H200 variants in this suite use the same MPIJob pattern but a
-  prebuilt multi-arch image
+- [`b300-nccltest-cmk-mpijob/`](../b300-nccltest-cmk-mpijob/) — original B300 NCCL test
+  example. The suite's `01-nccl-test/nccl-test-b300.yaml` is derived from this, with the
+  DNS-wait initContainer added for reliable scale-up. The `Dockerfile` there is the source
+  of truth for building the `ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2` image.

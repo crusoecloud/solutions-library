@@ -1,0 +1,172 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: nccl-tests-gdr-16-b300
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+          # The init container waits for all worker pods' DNS records to be
+          # resolvable AND stable for 10s before yielding to the main mpirun.
+          # Without this, the launcher races ahead of slow worker creation
+          # (especially during cluster-autoscaler scale-up at larger node counts),
+          # mpirun ssh fails to resolve missing workers, and the launcher hits
+          # BackoffLimitExceeded before workers come online.
+          # ────────────────────────────────────────────────────────────────────
+          # IMPORTANT: when scaling Worker.replicas, you MUST also update N
+          # below AND the mpirun -np value to keep all three in sync. See
+          # README.md "Scaling to more nodes" for the one-liner.
+          - image: ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2
+            imagePullPolicy: IfNotPresent
+            name: init
+            command:
+            - sh
+            - -c
+            - |-
+              N=2
+              SVC=nccl-tests-gdr-16-b300
+              while true; do
+                for i in $(seq 0 $((N-1))); do
+                  peer="${SVC}-worker-${i}.${SVC}"
+                  until getent hosts "$peer" > /dev/null 2>&1; do
+                    echo "waiting for $peer..."; sleep 5
+                  done
+                  echo "$peer resolved"
+                done
+                ok=1
+                for _ in $(seq 1 10); do
+                  for i in $(seq 0 $((N-1))); do
+                    peer="${SVC}-worker-${i}.${SVC}"
+                    if \! getent hosts "$peer" > /dev/null 2>&1; then
+                      echo "$peer dropped during stability check; re-discovering..."
+                      ok=0; break 2
+                    fi
+                  done
+                  sleep 1
+                done
+                [ "$ok" = "1" ] && break
+              done
+              echo "All $N workers DNS-stable; launcher can proceed"
+          # NOTE: Unlike the H100/H200 manifests, B300 does NOT mount the
+          # NCCL topology XML from a hostPath. The topology file is baked
+          # into the container image at /opt/nccl_topo/b300-*.xml (see
+          # b300-nccltest-cmk-mpijob/Dockerfile in this repo).
+          containers:
+          - image: ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2
+            imagePullPolicy: IfNotPresent
+            name: nccl-test-launcher
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+             - name: NCCL_TOPO_FILE
+               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+             - name: UCX_RNDV_SCHEME
+               value: "get_zcopy"
+            command:
+            - /opt/amazon/openmpi/bin/mpirun
+            - --allow-run-as-root
+            - --tag-output
+            - -np
+            - "16"
+            - -N
+            - "8"
+            - -bind-to
+            - none
+            - -map-by
+            - slot
+            - -mca
+            - coll_hcoll_enable
+            - "0"
+            # B300-specific NCCL tuning — a superset of the H100/H200 flags.
+            # NCCL_NVLS_ENABLE=1 turns on Blackwell's in-network SHARP reduction
+            # which is the biggest bandwidth win for all_reduce on B200/B300.
+            - -x
+            - NCCL_IB_PCI_RELAXED_ORDERING=1
+            - -x
+            - NCCL_IB_SPLIT_DATA_ON_QPS=0
+            - -x
+            - NCCL_IB_QPS_PER_CONNECTION=2
+            - -x
+            - NCCL_IB_MERGE_VFS=0
+            # B300 has 13 mlx5 devices; only mlx5_5..mlx5_12 are the 8 compute
+            # HCAs. Unlike H100/H200 (^mlx5_0:1 auto-detect), we list them
+            # explicitly because the layout differs on Blackwell nodes.
+            - -x
+            - NCCL_IB_HCA=mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12
+            - -x
+            - NCCL_IBEXT_DISABLE=1
+            - -x
+            - NCCL_TOPO_FILE
+            - -x
+            - PATH
+            - -x
+            - LD_LIBRARY_PATH
+            - -x
+            - NCCL_DEBUG=INFO
+            - -x
+            - NCCL_NVLS_ENABLE=1
+            - -x
+            - NCCL_IB_SL=1
+            # B300 test range: skip latency-dominated small sizes (< 2G) and
+            # focus on the bandwidth-dominated large sizes where SHARP wins
+            # are visible. Expect ~1 TB/s+ busbw at 32G on healthy B300 IB.
+            - /opt/nccl-tests/build/all_reduce_perf
+            - -b
+            - "2G"
+            - -e
+            - "32G"
+            - -f
+            - "2"
+            - -t
+            - "1"
+            - -g
+            - "1"
+            - -c
+            - "1"
+            - -n
+            - "100"
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          runtimeClassName: nvidia
+          volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 64Gi
+          containers:
+          - image: ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2
+            imagePullPolicy: IfNotPresent
+            name: nccl-worker
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+             - name: NCCL_TOPO_FILE
+               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+             - name: NCCL_DEBUG
+               value: INFO
+             - name: UCX_RNDV_SCHEME
+               value: "get_zcopy"
+            volumeMounts:
+            - mountPath: /dev/shm
+              name: dshm
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                nvidia.com/hostdev: 8
+                memory: 128000Mi
+              requests:
+                nvidia.com/gpu: 8
+                nvidia.com/hostdev: 8
+                memory: 128000Mi

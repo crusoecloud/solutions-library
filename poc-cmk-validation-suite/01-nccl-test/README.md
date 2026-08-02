@@ -26,9 +26,16 @@ use with prebuilt `public.ecr.aws/hpc-cloud/nccl-tests:latest` (no image build r
 |---|---|
 | H100 80GB SXM IB | `nccl-test-h100.yaml` |
 | H200 141GB SXM IB | `nccl-test-h200.yaml` |
+| B300 288GB SXM IB | `nccl-test-b300.yaml` |
 
-For B200/B300 today, use the sibling [`b300-nccltest-cmk-mpijob/`](../../b300-nccltest-cmk-mpijob/)
-in this repo until Blackwell variants are added here.
+The B300 variant uses a different container image
+(`ghcr.io/datadoc24/b300-nccl-tests:cuda-13.2` — CUDA 13.x, `sm_100`-compiled
+`nccl-tests`, topology XML baked in). It also uses a different `NCCL_IB_HCA` list
+and enables `NCCL_NVLS_ENABLE=1` for Blackwell in-network SHARP reduction. The
+DNS-wait initContainer pattern is shared with H100/H200.
+
+For B200 today, use the sibling [`b300-nccltest-cmk-mpijob/`](../../b300-nccltest-cmk-mpijob/)
+as a starting point — it works for both Blackwell SKUs; swap the topology XML.
 
 ```bash
 # 1. Create a dedicated namespace
@@ -46,18 +53,30 @@ kubectl -n nccl-test logs -f -l training.kubeflow.org/job-role=launcher
 
 ## Reading the output
 
-`all_reduce_perf` produces a 32-row table from 8 bytes to 16 GiB. The `busbw` column on the
-right side of each row is what to read — the bus bandwidth that NCCL achieved across the
-ring of GPUs.
+`all_reduce_perf` produces a table across a range of message sizes. The `busbw` column on
+the right side of each row is what to read — the bus bandwidth that NCCL achieved across
+the ring of GPUs.
+
+The H100/H200 manifests sweep 8 B → 16 GiB (32 rows) to cover both the latency- and
+bandwidth-dominated regimes. The B300 manifest sweeps only 2 GiB → 32 GiB (5 rows) — the
+small-size latency numbers aren't useful diagnostic signal for Blackwell, and the large-size
+rows are where SHARP wins become visible.
 
 **Look for:**
 
-- `busbw at 16 GiB`: this is the asymptotic, bandwidth-dominated number. For H200 16-GPU
-  SHARP-enabled clusters, expect **~480–490 GB/s**. Significantly lower means the IB fabric
-  or NCCL config is unhealthy.
+- **`busbw at the largest size`** — this is the asymptotic, bandwidth-dominated number.
+  Expected per SKU (16-GPU / 2-node, SHARP-enabled):
+
+  | SKU | Expected large-size busbw |
+  |---|---|
+  | H100 80GB SXM IB | ~370–390 GB/s |
+  | H200 141GB SXM IB | ~480–490 GB/s |
+  | B300 288GB SXM IB | **~1 TB/s+** (NVLS/SHARP kicks in for `size ≥ 2 GiB`) |
+
+  Significantly below the expected number means the IB fabric or NCCL config is unhealthy.
 - `# Out of bounds values : 0 OK` — must be `0`. Any nonzero is a correctness failure.
-- Latency at 8 B: should be ~25–30 µs for 16-rank all-reduce. Anomalous (>100 µs) suggests
-  IB issues.
+- Latency at 8 B (H100/H200 only): should be ~25–30 µs for 16-rank all-reduce. Anomalous
+  (>100 µs) suggests IB issues.
 
 Reference run on 2× h200-141gb-sxm-ib.8x in `eu-iceland1-a` (2026-05-14):
 
@@ -91,7 +110,8 @@ ssh to the unwaited workers.
 ### One-liner to apply at scale
 
 ```bash
-# Replace 8 with your desired worker count
+# Replace 8 with your desired worker count, and swap the manifest filename
+# for your SKU (nccl-test-h100.yaml / nccl-test-h200.yaml / nccl-test-b300.yaml).
 N=8
 sed -e "s|      replicas: 2$|      replicas: ${N}|" \
     -e "s|            - \"16\"|            - \"$((N*8))\"|" \
@@ -118,7 +138,7 @@ DNS-resolvable and stable for 10s. It costs ~5 seconds at 2-node scale
 ## Cleanup
 
 ```bash
-kubectl -n nccl-test delete mpijob nccl-tests-gdr-16-h200    # (or -h100)
+kubectl -n nccl-test delete mpijob nccl-tests-gdr-16-h200    # (or -h100 / -b300)
 # Optionally tear the namespace
 kubectl delete namespace nccl-test
 ```

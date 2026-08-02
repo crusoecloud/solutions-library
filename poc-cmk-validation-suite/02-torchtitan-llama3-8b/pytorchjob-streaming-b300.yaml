@@ -1,0 +1,296 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: torchtitan-llama3-70b-config
+data:
+  llama3_70B.toml: |
+    [job]
+    dump_folder = "/outputs"
+    description = "Llama 3.1 70B training on Crusoe Cloud B300"
+
+    [profiling]
+    enable_profiling = true
+    save_traces_folder = "/outputs/profile_trace"
+    profile_freq = 100
+
+    [metrics]
+    log_freq = 10
+    enable_tensorboard = true
+    save_tb_folder = "/outputs/tb"
+
+    [model]
+    name = "llama3"
+    flavor = "70B"
+    # Tokenizer/config assets are baked into the Docker image at build time
+    # (see torchtitan-llama3_1-kubernetes-pytorchjob/Dockerfile in this repo).
+    hf_assets_path = "/workspace/torchtitan/assets/hf/Llama-3.1-70B"
+
+    [optimizer]
+    name = "AdamW"
+    lr = 1.5e-4
+    eps = 1e-8
+
+    [lr_scheduler]
+    warmup_steps = 200
+
+    [training]
+    # 3-node B300 (24 GPUs). With TP=4 × FSDP=6 and each B300 having 288 GB HBM
+    # (~2× H200's 141 GB), we have massive headroom. Starting conservative at
+    # batch=5 to enable a like-for-like comparison with the 12-node H200 result
+    # (43.29% MFU). Bump batch to 10-16 to fill the memory and push MFU higher
+    # once the baseline is verified.
+    local_batch_size = 5
+    seq_len = 8192
+    max_norm = 1.0
+    steps = 1000
+    dataset = "c4"
+
+    [parallelism]
+    data_parallel_replicate_degree = 1
+    # -1 means shard across the remaining dim (24 GPUs / TP=4 = FSDP=6).
+    data_parallel_shard_degree = -1
+    tensor_parallel_degree = 4
+    pipeline_parallel_degree = 1
+    context_parallel_degree = 1
+
+    [checkpoint]
+    enable = false
+    folder = "/outputs/checkpoint"
+    interval = 500
+    last_save_model_only = true
+    export_dtype = "float32"
+    async_mode = "async"
+
+    [compile]
+    enable = true
+    components = ["model", "loss"]
+
+    # Selective AC keeps the 70B activation memory in check. On B300 with plenty
+    # of HBM headroom we could try mode="none" for higher MFU — worth a follow-up.
+    [activation_checkpoint]
+    mode = "selective"
+    selective_ac_option = "op"
+
+    [quantize.linear.float8]
+    enable_fsdp_float8_all_gather = false
+    precompute_float8_dynamic_scale_for_fsdp = false
+    filter_fqns = ["output"]
+
+---
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: torchtitan-llama3-70b-streaming
+spec:
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            # Same image as H100/H200 — built on nvcr.io/nvidia/pytorch:26.03-py3
+            # which ships sm_100 (Blackwell) kernels. Runs full-speed on B300;
+            # runs with a "driver too old" warning on H100/H200 nodes.
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:latest
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            workingDir: /workspace/torchtitan
+            command:
+            - /bin/bash
+            - -c
+            - |
+              torchrun \
+                --nproc_per_node=8 \
+                --nnodes=3 \
+                --node_rank=${RANK} \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                --rdzv_backend=c10d \
+                --rdzv_conf=timeout=1800 \
+                -m torchtitan.train \
+                --job.config_file /config/llama3_70B.toml
+            env:
+            - name: PYTORCH_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            # Blackwell HCA layout — explicit 8-device list (mlx5_5..mlx5_12).
+            # Different from H100/H200's `^mlx5_0:1` pattern.
+            - name: NCCL_IB_HCA
+              value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
+            # Blackwell-specific NCCL tuning, mirrored from the B300 NCCL test.
+            - name: NCCL_IB_PCI_RELAXED_ORDERING
+              value: "1"
+            - name: NCCL_IB_SPLIT_DATA_ON_QPS
+              value: "0"
+            - name: NCCL_IB_QPS_PER_CONNECTION
+              value: "2"
+            - name: NCCL_IB_MERGE_VFS
+              value: "0"
+            - name: NCCL_IB_SL
+              value: "1"
+            - name: NCCL_IBEXT_DISABLE
+              value: "1"
+            # NCCL_NVLS_ENABLE=1 turns on Blackwell's in-network SHARP reduction.
+            # This is the biggest bandwidth win over H100/H200 for training all_reduce.
+            - name: NCCL_NVLS_ENABLE
+              value: "1"
+            - name: NCCL_BUFFSIZE
+              value: "2097152"
+            - name: UCX_RNDV_SCHEME
+              value: "get_zcopy"
+            # NOTE: NCCL_IB_GID_INDEX is deliberately omitted — same as H100/H200,
+            # B300 native IB does not need the RoCE-style GID override. Setting
+            # GID_INDEX=3 on native IB causes ~10× MFU degradation (documented in
+            # this suite's README under "Common gotchas").
+            - name: HF_TOKEN
+              value: "<YOUR HF TOKEN HERE>"
+            - name: NCCL_TOPO_FILE
+              value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+              requests:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+            volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: outputs
+              mountPath: /outputs
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            - name: infiniband
+              mountPath: /dev/infiniband
+          volumes:
+          - name: config
+            configMap:
+              name: torchtitan-llama3-70b-config
+          - name: outputs
+            emptyDir: {}
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "40Gi"
+          # If /etc/crusoe/nccl_topo/ isn't populated on your B300 nodes yet
+          # (new node pools sometimes lack it), replace this hostPath volume
+          # with an initContainer that curls the XML from this repo into an
+          # emptyDir. Or bake it into a custom image like the B300 NCCL test.
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          - name: infiniband
+            hostPath:
+              path: /dev/infiniband
+              type: Directory
+    Worker:
+      replicas: 2
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            image: ghcr.io/datadoc24/torchtitan-llama3-8b:latest
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            workingDir: /workspace/torchtitan
+            command:
+            - /bin/bash
+            - -c
+            - |
+              torchrun \
+                --nproc_per_node=8 \
+                --nnodes=3 \
+                --node_rank=${RANK} \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                --rdzv_backend=c10d \
+                --rdzv_conf=timeout=1800 \
+                -m torchtitan.train \
+                --job.config_file /config/llama3_70B.toml
+            env:
+            - name: PYTORCH_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: NCCL_IB_HCA
+              value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
+            - name: NCCL_IB_PCI_RELAXED_ORDERING
+              value: "1"
+            - name: NCCL_IB_SPLIT_DATA_ON_QPS
+              value: "0"
+            - name: NCCL_IB_QPS_PER_CONNECTION
+              value: "2"
+            - name: NCCL_IB_MERGE_VFS
+              value: "0"
+            - name: NCCL_IB_SL
+              value: "1"
+            - name: NCCL_IBEXT_DISABLE
+              value: "1"
+            - name: NCCL_NVLS_ENABLE
+              value: "1"
+            - name: NCCL_BUFFSIZE
+              value: "2097152"
+            - name: UCX_RNDV_SCHEME
+              value: "get_zcopy"
+            - name: HF_TOKEN
+              value: "<YOUR HF TOKEN HERE>"
+            - name: NCCL_TOPO_FILE
+              value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+              requests:
+                nvidia.com/gpu: "8"
+                nvidia.com/hostdev: "8"
+            volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: outputs
+              mountPath: /outputs
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nccl-topo
+              mountPath: /opt/nccl_topo
+            - name: infiniband
+              mountPath: /dev/infiniband
+          volumes:
+          - name: config
+            configMap:
+              name: torchtitan-llama3-70b-config
+          - name: outputs
+            emptyDir: {}
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "40Gi"
+          - name: nccl-topo
+            hostPath:
+              path: /etc/crusoe/nccl_topo
+              type: Directory
+          - name: infiniband
+            hostPath:
+              path: /dev/infiniband
+              type: Directory
