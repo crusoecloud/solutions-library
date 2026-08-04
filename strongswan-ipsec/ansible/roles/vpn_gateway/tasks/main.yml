@@ -1,0 +1,387 @@
+---
+# =============================================================================
+# vpn_gateway role
+#
+# Two modes controlled by vpn_use_gre:
+#   true  (Crusoe):          Multipoint GRE tunnel + CIDR-based neighbor table
+#   false (Azure/GCP/AWS):   Standard IP forwarding via cloud NIC-level flag
+# =============================================================================
+
+# ---------- Detect environment ----------
+
+- name: Detect primary network interface and local IP
+  ansible.builtin.set_fact:
+    vpn_primary_iface: "{{ ansible_default_ipv4.interface }}"
+    vpn_local_gw_ip: "{{ ansible_default_ipv4.address }}"
+  tags: [setup, teardown]
+
+# ---------- Install ----------
+
+- name: Install strongSwan (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - strongswan
+      - strongswan-swanctl
+      - charon-systemd
+      - libcharon-extra-plugins
+      - iptables
+      - iproute2
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+  tags: [setup]
+
+- name: Install strongSwan (RHEL/Fedora)
+  ansible.builtin.dnf:
+    name: [strongswan, iptables, iproute]
+    state: present
+  when: ansible_os_family == "RedHat"
+  tags: [setup]
+
+# ---------- Kernel parameters ----------
+
+- name: Configure sysctl (ip_forward, no redirects)
+  ansible.builtin.template:
+    src: sysctl-vpn.conf.j2
+    dest: /etc/sysctl.d/99-vpn-gateway.conf
+    mode: "0644"
+  notify: reload sysctl
+  tags: [setup]
+
+- name: Apply sysctl now
+  ansible.builtin.command: sysctl --system
+  changed_when: false
+  tags: [setup]
+
+# ---------- XFRM interface (IPsec) ----------
+
+- name: Remove stale XFRM interface
+  ansible.builtin.command: ip link del {{ vpn_xfrm_iface }}
+  changed_when: true
+  failed_when: false
+  tags: [setup]
+
+- name: Create XFRM interface
+  ansible.builtin.shell: |
+    ip link add {{ vpn_xfrm_iface }} type xfrm dev {{ vpn_primary_iface }} if_id {{ vpn_xfrm_if_id }}
+    ip link set {{ vpn_xfrm_iface }} mtu {{ vpn_xfrm_mtu }}
+    ip link set {{ vpn_xfrm_iface }} up
+  changed_when: true
+  tags: [setup]
+
+- name: Route remote subnet through XFRM
+  ansible.builtin.command: ip route replace {{ vpn_remote_subnet }} dev {{ vpn_xfrm_iface }}
+  changed_when: true
+  tags: [setup]
+
+# ==========================================================================
+# GRE-over-FOU mode (Crusoe): GRE encapsulated in UDP so it passes through
+# firewalls that block raw GRE (IP protocol 47).
+# ==========================================================================
+
+- name: Load FOU kernel module
+  community.general.modprobe:
+    name: fou
+    state: present
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Remove stale GRE tunnel and FOU port
+  ansible.builtin.shell: |
+    ip link del gre-vpn 2>/dev/null || true
+    ip tunnel del gre-vpn 2>/dev/null || true
+    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
+  changed_when: true
+  failed_when: false
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Create FOU receive endpoint (UDP {{ vpn_fou_port }})
+  ansible.builtin.command: ip fou add port {{ vpn_fou_port }} ipproto 47
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Create multipoint GRE tunnel with FOU encapsulation
+  ansible.builtin.shell: |
+    ip link add name gre-vpn type gre local {{ vpn_local_gw_ip }} key {{ vpn_gre_key }} ttl 255 \
+        encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}
+    ip link set gre-vpn mtu {{ vpn_gre_mtu }}
+    ip link set gre-vpn up
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Populate GRE neighbor table from client CIDR
+  ansible.builtin.shell: |
+    python3 -c "
+    import ipaddress, subprocess, sys
+    gw = '{{ vpn_local_gw_ip }}'
+    net = ipaddress.ip_network('{{ vpn_client_cidr }}', strict=False)
+    for ip in net.hosts():
+        s = str(ip)
+        if s == gw:
+            continue
+        subprocess.run(
+            ['ip', 'neigh', 'replace', s, 'lladdr', s, 'dev', 'gre-vpn', 'nud', 'permanent'],
+            check=True
+        )
+    print(f'Populated {net.num_addresses - 2} neighbor entries for {net}')
+    "
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Add ip rule for xfrm0 → GRE policy routing
+  ansible.builtin.shell: |
+    ip rule del iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }} 2>/dev/null || true
+    ip rule add iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }}
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Route client CIDR through GRE in policy table
+  ansible.builtin.command: >
+    ip route replace {{ vpn_client_cidr }} dev gre-vpn table {{ vpn_rt_table }}
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+# ==========================================================================
+# Firewall
+# ==========================================================================
+
+- name: Flush FORWARD chain
+  ansible.builtin.iptables:
+    chain: FORWARD
+    flush: true
+  tags: [setup]
+
+- name: Set FORWARD policy to DROP
+  ansible.builtin.iptables:
+    chain: FORWARD
+    policy: DROP
+  tags: [setup]
+
+# --- GRE mode: forward between GRE and XFRM ---
+- name: "Allow forwarding: GRE → XFRM"
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "gre-vpn"
+    out_interface: "{{ vpn_xfrm_iface }}"
+    jump: ACCEPT
+    comment: "VPN: client GRE -> IPsec"
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: "Allow forwarding: XFRM → GRE"
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "{{ vpn_xfrm_iface }}"
+    out_interface: "gre-vpn"
+    jump: ACCEPT
+    comment: "VPN: IPsec -> client GRE"
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+# --- Direct mode (Azure/GCP/AWS): forward between LAN and XFRM ---
+- name: "Allow forwarding: LAN → XFRM"
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "{{ vpn_primary_iface }}"
+    out_interface: "{{ vpn_xfrm_iface }}"
+    source: "{{ vpn_local_subnet }}"
+    destination: "{{ vpn_remote_subnet }}"
+    jump: ACCEPT
+    comment: "VPN: local subnet -> IPsec"
+  when: not (vpn_use_gre | default(false))
+  tags: [setup]
+
+- name: "Allow forwarding: XFRM → LAN"
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "{{ vpn_xfrm_iface }}"
+    out_interface: "{{ vpn_primary_iface }}"
+    source: "{{ vpn_remote_subnet }}"
+    destination: "{{ vpn_local_subnet }}"
+    jump: ACCEPT
+    comment: "VPN: IPsec -> local subnet"
+  when: not (vpn_use_gre | default(false))
+  tags: [setup]
+
+# --- Common rules ---
+- name: Allow established/related forwarding
+  ansible.builtin.iptables:
+    chain: FORWARD
+    ctstate: [ESTABLISHED, RELATED]
+    jump: ACCEPT
+  tags: [setup]
+
+- name: Allow IKE and ESP from remote gateway
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: "{{ item.proto }}"
+    destination_port: "{{ item.port | default(omit) }}"
+    source: "{{ vpn_remote_gw_ip }}"
+    jump: ACCEPT
+  loop:
+    - { proto: udp, port: "500" }
+    - { proto: udp, port: "4500" }
+    - { proto: esp }
+  tags: [setup]
+
+- name: Allow FOU (UDP {{ vpn_fou_port }}) from client CIDR
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: udp
+    destination_port: "{{ vpn_fou_port }}"
+    source: "{{ vpn_client_cidr }}"
+    jump: ACCEPT
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+# ==========================================================================
+# strongSwan
+# ==========================================================================
+
+- name: Ensure swanctl conf directory exists
+  ansible.builtin.file:
+    path: /etc/swanctl/conf.d
+    state: directory
+    mode: "0755"
+  tags: [setup]
+
+- name: Write swanctl configuration
+  ansible.builtin.template:
+    src: swanctl-vpn.conf.j2
+    dest: /etc/swanctl/conf.d/site-vpn.conf
+    mode: "0600"
+  no_log: true
+  notify: restart strongswan
+  tags: [setup]
+
+- name: Enable and start strongSwan
+  ansible.builtin.systemd:
+    name: strongswan
+    state: started
+    enabled: true
+  failed_when: false
+  tags: [setup]
+
+- name: Load swanctl configuration
+  ansible.builtin.command: swanctl --load-all
+  changed_when: false
+  failed_when: false
+  tags: [setup]
+
+# ==========================================================================
+# Persistence
+# ==========================================================================
+
+- name: Write vpn-network systemd unit
+  ansible.builtin.template:
+    src: vpn-network.service.j2
+    dest: /etc/systemd/system/vpn-network.service
+    mode: "0644"
+  tags: [setup]
+
+- name: Enable vpn-network service
+  ansible.builtin.systemd:
+    name: vpn-network
+    enabled: true
+    daemon_reload: true
+  tags: [setup]
+
+# ==========================================================================
+# Verify
+# ==========================================================================
+
+- name: Verify XFRM interface is up
+  ansible.builtin.shell: ip link show {{ vpn_xfrm_iface }} | grep -qE 'UP|UNKNOWN'
+  changed_when: false
+  tags: [setup, verify]
+
+- name: Count GRE neighbor entries (GRE mode)
+  ansible.builtin.shell: ip neigh show dev gre-vpn nud permanent | wc -l
+  register: neigh_count
+  changed_when: false
+  when: vpn_use_gre | default(false)
+  tags: [setup, verify]
+
+- name: Report status
+  ansible.builtin.debug:
+    msg: >-
+      Gateway {{ inventory_hostname }} ready
+      (mode={{ 'GRE' if vpn_use_gre | default(false) else 'direct' }})
+      {% if vpn_use_gre | default(false) %}
+      — {{ neigh_count.stdout | default('0') | trim }} GRE neighbors for {{ vpn_client_cidr }}
+      {% endif %}
+      — IPsec peer {{ vpn_remote_gw_ip }}
+      — protecting {{ vpn_local_subnet }} ↔ {{ vpn_remote_subnet }}
+  tags: [setup, verify]
+
+# ==========================================================================
+# Teardown
+# ==========================================================================
+
+- name: "Teardown: stop services"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: [vpn-network, strongswan]
+  failed_when: false
+  tags: [teardown, never]
+
+- name: "Teardown: remove systemd unit"
+  ansible.builtin.file:
+    path: /etc/systemd/system/vpn-network.service
+    state: absent
+  tags: [teardown, never]
+
+- name: "Teardown: remove ip rule (GRE mode)"
+  ansible.builtin.command: ip rule del iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }}
+  failed_when: false
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [teardown, never]
+
+- name: "Teardown: flush policy table (GRE mode)"
+  ansible.builtin.command: ip route flush table {{ vpn_rt_table }}
+  failed_when: false
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [teardown, never]
+
+- name: "Teardown: remove GRE tunnel and FOU port"
+  ansible.builtin.shell: |
+    ip link del gre-vpn 2>/dev/null || true
+    ip tunnel del gre-vpn 2>/dev/null || true
+    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
+  failed_when: false
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [teardown, never]
+
+- name: "Teardown: remove XFRM interface"
+  ansible.builtin.command: ip link del {{ vpn_xfrm_iface }}
+  failed_when: false
+  changed_when: true
+  tags: [teardown, never]
+
+- name: "Teardown: remove configs"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/swanctl/conf.d/site-vpn.conf
+    - /etc/sysctl.d/99-vpn-gateway.conf
+  tags: [teardown, never]
+
+- name: "Teardown: reset iptables"
+  ansible.builtin.shell: |
+    iptables -F FORWARD
+    iptables -P FORWARD ACCEPT
+  changed_when: true
+  tags: [teardown, never]

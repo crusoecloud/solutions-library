@@ -1,0 +1,16 @@
+---
+# Source Gateway — Crusoe Cloud
+
+vpn_local_id: "gw-src@crusoe.vpn"
+vpn_remote_id: "gw-rmt@crusoe.vpn"
+
+# IPsec peers use public IPs (NAT-T handles the rest)
+vpn_remote_gw_ip: "<gw-rmt-public-ip>"
+
+# Traffic selectors use private subnets
+vpn_local_subnet: "<source-private-subnet-cidr>"
+vpn_remote_subnet: "<remote-private-subnet-cidr>"
+
+# GRE mode: target local client VMs by private CIDR
+vpn_use_gre: true
+vpn_client_cidr: "<source-private-subnet-cidr>"

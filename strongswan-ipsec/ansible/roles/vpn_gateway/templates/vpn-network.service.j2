@@ -1,0 +1,51 @@
+# Managed by Ansible — {{ inventory_hostname }}
+[Unit]
+Description=VPN Gateway Network
+After=network-online.target strongswan.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
+ExecStart=/bin/bash -c '\
+    set -e; \
+    ip link del {{ vpn_xfrm_iface }} 2>/dev/null || true; \
+    ip link add {{ vpn_xfrm_iface }} type xfrm dev {{ vpn_primary_iface }} if_id {{ vpn_xfrm_if_id }}; \
+    ip link set {{ vpn_xfrm_iface }} mtu {{ vpn_xfrm_mtu }}; \
+    ip link set {{ vpn_xfrm_iface }} up; \
+    ip route replace {{ vpn_remote_subnet }} dev {{ vpn_xfrm_iface }}; \
+{% if vpn_use_gre | default(false) %}
+    modprobe fou; \
+    ip link del gre-vpn 2>/dev/null || true; \
+    ip tunnel del gre-vpn 2>/dev/null || true; \
+    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true; \
+    ip fou add port {{ vpn_fou_port }} ipproto 47; \
+    ip link add name gre-vpn type gre local {{ vpn_local_gw_ip }} key {{ vpn_gre_key }} ttl 255 \
+        encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}; \
+    ip link set gre-vpn mtu {{ vpn_gre_mtu }}; \
+    ip link set gre-vpn up; \
+    python3 -c "\
+import ipaddress, subprocess; \
+gw = \"{{ vpn_local_gw_ip }}\"; \
+[subprocess.run([\"ip\",\"neigh\",\"replace\",str(ip),\"lladdr\",str(ip),\"dev\",\"gre-vpn\",\"nud\",\"permanent\"], check=True) \
+ for ip in ipaddress.ip_network(\"{{ vpn_client_cidr }}\", strict=False).hosts() if str(ip) != gw]"; \
+    ip rule del iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }} 2>/dev/null || true; \
+    ip rule add iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }}; \
+    ip route replace {{ vpn_client_cidr }} dev gre-vpn table {{ vpn_rt_table }}; \
+{% endif %}
+    echo "VPN network ready"'
+
+ExecStop=/bin/bash -c '\
+{% if vpn_use_gre | default(false) %}
+    ip rule del iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }} 2>/dev/null || true; \
+    ip route flush table {{ vpn_rt_table }} 2>/dev/null || true; \
+    ip link del gre-vpn 2>/dev/null || true; \
+    ip tunnel del gre-vpn 2>/dev/null || true; \
+    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true; \
+{% endif %}
+    ip link del {{ vpn_xfrm_iface }} 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

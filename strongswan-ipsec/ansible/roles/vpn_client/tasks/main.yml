@@ -1,0 +1,121 @@
+---
+# =============================================================================
+# vpn_client role — GRE-over-FOU tunnel to the local Crusoe gateway
+# =============================================================================
+
+- name: Resolve gateway private IP from inventory
+  ansible.builtin.set_fact:
+    vpn_gateway_ip: "{{ hostvars[vpn_gateway_host]['vpn_local_gw_ip'] | default(hostvars[vpn_gateway_host]['ansible_default_ipv4']['address']) }}"
+  tags: [setup, teardown]
+
+- name: Detect local private IP
+  ansible.builtin.set_fact:
+    vpn_local_ip: "{{ ansible_default_ipv4.address }}"
+  tags: [setup]
+
+# ---------- FOU + GRE tunnel ----------
+
+- name: Load FOU kernel module
+  community.general.modprobe:
+    name: fou
+    state: present
+  tags: [setup]
+
+- name: Remove stale tunnel and FOU port
+  ansible.builtin.shell: |
+    ip link del gre-vpn 2>/dev/null || true
+    ip tunnel del gre-vpn 2>/dev/null || true
+    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
+  changed_when: true
+  failed_when: false
+  tags: [setup]
+
+- name: Create FOU receive endpoint
+  ansible.builtin.command: ip fou add port {{ vpn_fou_port }} ipproto 47
+  changed_when: true
+  tags: [setup]
+
+- name: Create GRE-over-FOU tunnel to gateway
+  ansible.builtin.shell: |
+    ip link add name gre-vpn type gre \
+        local {{ vpn_local_ip }} remote {{ vpn_gateway_ip }} key {{ vpn_gre_key }} ttl 255 \
+        encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}
+    ip link set gre-vpn mtu {{ vpn_gre_mtu }}
+    ip link set gre-vpn up
+  changed_when: true
+  tags: [setup]
+
+# ---------- Routing ----------
+
+- name: Route remote subnet through FOU tunnel
+  ansible.builtin.command: ip route replace {{ vpn_remote_subnet }} dev gre-vpn
+  changed_when: true
+  tags: [setup]
+
+# ---------- Firewall ----------
+
+- name: Allow FOU from gateway
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: udp
+    destination_port: "{{ vpn_fou_port }}"
+    source: "{{ vpn_gateway_ip }}"
+    jump: ACCEPT
+  failed_when: false
+  tags: [setup]
+
+# ---------- Persistence ----------
+
+- name: Write vpn-client systemd unit
+  ansible.builtin.template:
+    src: vpn-client.service.j2
+    dest: /etc/systemd/system/vpn-client.service
+    mode: "0644"
+  tags: [setup]
+
+- name: Enable vpn-client service
+  ansible.builtin.systemd:
+    name: vpn-client
+    enabled: true
+    daemon_reload: true
+  tags: [setup]
+
+# ---------- Verify ----------
+
+- name: Verify FOU tunnel is up
+  ansible.builtin.shell: ip link show gre-vpn | grep -qE 'UP|UNKNOWN'
+  changed_when: false
+  tags: [setup, verify]
+
+- name: Report status
+  ansible.builtin.debug:
+    msg: >-
+      Client {{ inventory_hostname }} ({{ vpn_local_ip }}) ready:
+      FOU tunnel to gateway {{ vpn_gateway_ip }},
+      remote subnet {{ vpn_remote_subnet }} via gre-vpn
+  tags: [setup, verify]
+
+# ---------- Teardown ----------
+
+- name: "Teardown: stop and disable vpn-client service"
+  ansible.builtin.systemd:
+    name: vpn-client
+    state: stopped
+    enabled: false
+  failed_when: false
+  tags: [teardown, never]
+
+- name: "Teardown: remove systemd unit"
+  ansible.builtin.file:
+    path: /etc/systemd/system/vpn-client.service
+    state: absent
+  tags: [teardown, never]
+
+- name: "Teardown: remove tunnel and FOU"
+  ansible.builtin.shell: |
+    ip link del gre-vpn 2>/dev/null || true
+    ip tunnel del gre-vpn 2>/dev/null || true
+    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
+  failed_when: false
+  changed_when: true
+  tags: [teardown, never]

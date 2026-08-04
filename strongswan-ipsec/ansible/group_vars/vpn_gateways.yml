@@ -1,0 +1,4 @@
+---
+# Generate with: openssl rand -base64 48
+# For production, encrypt with: ansible-vault encrypt group_vars/vpn_gateways.yml
+vpn_psk: "<pre-shared-key>"

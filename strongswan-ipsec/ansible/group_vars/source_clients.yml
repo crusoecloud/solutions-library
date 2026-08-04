@@ -1,0 +1,4 @@
+---
+# Source-side Crusoe client VMs → source gateway
+vpn_gateway_host: "gw-src"
+vpn_remote_subnet: "<remote-private-subnet-cidr>"
