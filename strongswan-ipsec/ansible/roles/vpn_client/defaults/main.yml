@@ -1,0 +1,4 @@
+---
+vpn_gre_mtu: 1360
+vpn_gre_key: 100
+vpn_fou_port: 9473

@@ -1,0 +1,16 @@
+---
+# 1. Configure gateways (IPsec + conditional FOU)
+# 2. Configure Crusoe client VMs (FOU tunnel + route)
+#    Remote cloud VMs (Azure/GCP/AWS) need nothing.
+
+- name: Configure VPN gateways
+  hosts: vpn_gateways
+  become: true
+  roles:
+    - vpn_gateway
+
+- name: Configure Crusoe client VMs
+  hosts: vpn_clients
+  become: true
+  roles:
+    - vpn_client

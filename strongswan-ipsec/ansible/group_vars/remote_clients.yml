@@ -1,0 +1,4 @@
+---
+# Remote-side Crusoe client VMs → remote gateway (Crusoe↔Crusoe only)
+vpn_gateway_host: "gw-rmt"
+vpn_remote_subnet: "<source-private-subnet-cidr>"

@@ -1,0 +1,23 @@
+---
+vpn_xfrm_iface: "xfrm0"
+vpn_xfrm_if_id: 100
+vpn_xfrm_mtu: 1400
+
+# GRE-over-FOU (GRE encapsulated in UDP — works through firewalls that
+# only allow TCP/UDP and block raw GRE protocol 47)
+vpn_gre_mtu: 1360
+vpn_gre_key: 100
+vpn_fou_port: 9473
+
+vpn_ike_proposals: "aes256-sha384-ecp256-modp3072"
+vpn_esp_proposals: "aes256gcm128-ecp256-modp3072"
+vpn_ike_rekey_time: "14400s"
+vpn_child_rekey_time: "3600s"
+vpn_dpd_delay: "30s"
+
+# Policy routing table for xfrm → GRE forwarding
+vpn_rt_table: 100
+
+# Set to true + vpn_client_cidr for Crusoe (GRE-over-FOU mode)
+vpn_use_gre: false
+# vpn_client_cidr: "<source-private-subnet-cidr>"

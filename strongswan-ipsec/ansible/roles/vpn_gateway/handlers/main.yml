@@ -1,0 +1,15 @@
+---
+- name: reload sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: false
+
+- name: restart strongswan
+  ansible.builtin.shell: |
+    systemctl restart strongswan 2>/dev/null || systemctl restart strongswan-starter 2>/dev/null || true
+    sleep 2
+    swanctl --load-all 2>/dev/null || true
+  changed_when: false
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true

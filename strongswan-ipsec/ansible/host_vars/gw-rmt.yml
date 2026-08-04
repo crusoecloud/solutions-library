@@ -1,0 +1,22 @@
+---
+# Remote Gateway
+#
+# For Azure/GCP/AWS: set vpn_use_gre=false
+# For Crusoe-to-Crusoe: set vpn_use_gre=true and vpn_client_cidr
+
+vpn_local_id: "gw-rmt@crusoe.vpn"
+vpn_remote_id: "gw-src@crusoe.vpn"
+
+# IPsec peers use public IPs (NAT-T handles the rest)
+vpn_remote_gw_ip: "<gw-src-public-ip>"
+
+# Traffic selectors use private subnets
+vpn_local_subnet: "<remote-private-subnet-cidr>"
+vpn_remote_subnet: "<source-private-subnet-cidr>"
+
+# --- Option A: Remote side is Azure / GCP / AWS ---
+vpn_use_gre: false
+
+# --- Option B: Remote side is also Crusoe (uncomment, comment out Option A) ---
+# vpn_use_gre: true
+# vpn_client_cidr: "<remote-private-subnet-cidr>"
