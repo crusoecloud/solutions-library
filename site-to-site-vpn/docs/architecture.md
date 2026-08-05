@@ -7,17 +7,26 @@ gateways collapse onto the same tunnel abstraction on our side.
 
 ## Topology
 
+```mermaid
+flowchart LR
+  subgraph crusoe["Crusoe VPC — 172.27.0.0/16"]
+    wl["Workloads / CMK pods"]
+    gw["VPN VM(s)<br/>strongSwan + FRR<br/>XFRM ipsec101/102"]
+    wl --- gw
+  end
+  subgraph cloud["Customer Cloud VPC — 10.200.0.0/16"]
+    cr["Cloud Router / Transit Gateway<br/>BGP, ECMP"]
+    cwl["Workloads"]
+    cr --- cwl
+  end
+  gw ===|"tunnel A — IKEv2/ESP, NAT-T UDP 4500"| cr
+  gw ===|"tunnel B"| cr
+  gw -.->|"eBGP over 169.254.x.x/30 per tunnel"| cr
+  cr -.-> gw
 ```
-                 Internet (encrypted IKEv2/ESP, NAT-T UDP 4500)
-Crusoe VPC                                                   Customer Cloud VPC
-+-------------------+         tunnel A (peer IP #1)          +----------------------+
-|  workloads        |  <====================================>  |  GCP HA VPN if0 /    |
-|  10.CRU.0.0/16    |         tunnel B (peer IP #2)          |  AWS tunnel #1       |
-|        |          |  <====================================>  |                      |
-|   [strongSwan+FRR]|                                         |  Cloud Router / TGW  |
-|   VM(s) w/ pub IP |----BGP over 169.254.x.x/30 per tunnel---|  (BGP, ECMP)         |
-+-------------------+                                         +----------------------+
-```
+
+Both cloud gateways collapse onto the same "list of two tunnels" abstraction on
+the Crusoe side — see [The tunnel object model](#the-tunnel-object-model).
 
 Components on each Crusoe VPN VM (Ubuntu 24.04 LTS):
 
@@ -79,6 +88,26 @@ allow rule yourself — not covered by this module.
 The tunnel list abstraction is identical in both modes; only `vm_index`
 assignments and the VM count change. A Terraform precondition rejects
 `vm_index` values that exceed the VM count and VMs with zero tunnels.
+
+```mermaid
+flowchart LR
+  subgraph crusoe["Crusoe VPC — ha_mode = dual"]
+    v0["VM0<br/>tunnel-a · ipsec101"]
+    v1["VM1<br/>tunnel-b · ipsec102"]
+  end
+  subgraph peer["Customer cloud — two-interface gateway"]
+    i0["interface 0"]
+    i1["interface 1"]
+    rt["Cloud Router / TGW<br/>ECMP over both tunnels"]
+    i0 --- rt
+    i1 --- rt
+  end
+  v0 ===|"tunnel-a"| i0
+  v1 ===|"tunnel-b"| i1
+```
+
+Stopping one VM withdraws its BGP routes; the peer reconverges onto the
+surviving VM's tunnel within the BGP hold time.
 
 ### VTI fallback (pre-4.19 kernels)
 

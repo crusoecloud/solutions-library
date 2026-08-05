@@ -24,12 +24,21 @@ Cilium's vxlan: the encapsulated outer destination is always a real node IP.
 
 ## Architecture: node→gateway overlay + SNAT
 
-```
-pod → Cilium → node ──vxlan (outer dst = gateway VM IP)──▶ gateway VM
-                                                              │ decap
-                                                              │ SNAT to gateway LAN IP
-                                                              ▼
-                                                        IPsec tunnel → GCP/AWS
+```mermaid
+flowchart LR
+  subgraph node["CMK node (Crusoe VPC)"]
+    pod["Pod<br/>10.234.x"]
+    cil["Cilium"]
+    vx["vxlan-ceg<br/>169.254.O3.O4"]
+    pod --> cil --> vx
+  end
+  subgraph gwvm["Gateway VM"]
+    dec["decap + SNAT to LAN IP"]
+    xf["ipsec101 (XFRM)"]
+    dec --> xf
+  end
+  vx -->|"vxlan · outer dst = gateway LAN IP"| dec
+  xf -->|"IKEv2/ESP tunnel"| peer["GCP / AWS<br/>10.200.0.0/16"]
 ```
 
 Three requirements for a working deployment:
