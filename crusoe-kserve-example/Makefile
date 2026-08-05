@@ -393,42 +393,38 @@ install-gateway-bypass: ## Make the standard gateway path use least_request LB a
 destroy-gateway-bypass: ## Remove the bypass route (standard paths fall back to EPP/InferencePool routing)
 	-kubectl delete httproute $(ISVC_NAME)-bypass-epp -n $(NAMESPACE) --ignore-not-found
 
-deploy-openwebui: install-lb-controller ## Deploy Open WebUI chat frontend with self-signed TLS on :443 via a Crusoe LoadBalancer
+deploy-openwebui: ## Deploy Open WebUI chat frontend, exposed privately on a NodePort (30080)
 	kubectl apply -f frontend/manifests/00-namespace.yaml
-	kubectl apply -f frontend/manifests/20-tls.yaml
-	@echo "Waiting for the self-signed certificate to be issued..."
-	kubectl wait --for=condition=Ready certificate/openwebui-tls -n openwebui --timeout=120s
 	kubectl apply -f frontend/manifests/
 	@set -e; \
-	BACKEND="$(OPENWEBUI_BACKEND_URL)"; \
-	if [ -z "$$BACKEND" ]; then \
-	  SVC=$$(kubectl get svc -n $(NAMESPACE) -o name | grep workload | head -1 | sed 's|service/||'); \
-	  if [ -z "$$SVC" ]; then echo "ERROR: no '*workload*' Service in $(NAMESPACE) — deploy a model first (e.g. make deploy-amd-mi355x), then re-run."; exit 1; fi; \
-	  BACKEND="http://$$SVC.$(NAMESPACE).svc.cluster.local:8000/v1"; \
-	  echo "Auto-detected backend Service: $$SVC"; \
+	BACKENDS="$(OPENWEBUI_BACKEND_URLS)"; \
+	if [ -z "$$BACKENDS" ]; then \
+	  SVCS=$$(kubectl get svc -n $(NAMESPACE) -o name | grep workload | sed 's|service/||'); \
+	  if [ -z "$$SVCS" ]; then echo "ERROR: no '*workload*' Service in $(NAMESPACE) — deploy a model first (e.g. make deploy-amd-mi355x), then re-run."; exit 1; fi; \
+	  for S in $$SVCS; do U="http://$$S.$(NAMESPACE).svc.cluster.local:8000/v1"; BACKENDS="$${BACKENDS:+$$BACKENDS;}$$U"; done; \
+	  echo "Auto-detected backend Service(s):"; echo "$$SVCS" | sed 's/^/  - /'; \
 	fi; \
-	echo "Open WebUI backend -> $$BACKEND"; \
-	kubectl set env deploy/open-webui -n openwebui OPENAI_API_BASE_URL="$$BACKEND"; \
+	KEYS=$$(echo "$$BACKENDS" | awk -F';' '{s="";for(i=1;i<=NF;i++)s=s (i>1?";":"") "sk-noauth"; print s}'); \
+	echo "Open WebUI backends -> $$BACKENDS"; \
+	kubectl set env deploy/open-webui -n openwebui OPENAI_API_BASE_URLS="$$BACKENDS" OPENAI_API_KEYS="$$KEYS"; \
 	kubectl rollout status deploy/open-webui -n openwebui --timeout=600s; \
-	echo "Waiting for the LoadBalancer VIP (crusoe-lb-controller)..."; \
-	IP=""; for i in $$(seq 1 30); do \
-	  IP=$$(kubectl get svc openwebui-lb -n openwebui -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
-	  [ -n "$$IP" ] && break; sleep 6; done; \
 	echo ""; \
 	echo "=== Open WebUI is up ==="; \
-	echo "  Public HTTPS : https://$$IP  (self-signed cert — accept the browser warning)"; \
-	echo "  Backend      : $$BACKEND"; \
-	echo "  The model appears automatically from the backend's /v1/models (served-model-name, e.g. qwen3)."; \
-	echo "  Port-forward : make openwebui-forward   (then http://localhost:8080)"; \
-	echo "  First visitor signs up and becomes admin (WEBUI_AUTH=True)."
+	echo "  Access   : private NodePort 30080 — reach it in-cluster, 'make openwebui-forward', or front it with your own ingress/gateway/VPN."; \
+	echo "  Backends : $$BACKENDS"; \
+	echo "  The model-autodetect CronJob keeps this list in sync as models come and go."; \
+	echo "  Each model appears in the dropdown by its served-model-name (e.g. qwen3)."; \
+	echo "  First visitor signs up and becomes admin; approve others in Admin Panel -> Users."
 
 openwebui-forward: ## Port-forward Open WebUI to http://localhost:8080 (no public IP needed)
 	@echo "Open WebUI at http://localhost:8080 (Ctrl-C to stop)"
 	kubectl port-forward -n openwebui svc/openwebui 8080:8080
 
-openwebui-url: ## Print the Open WebUI public HTTPS URL
-	@IP=$$(kubectl get svc openwebui-lb -n openwebui -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
-	if [ -n "$$IP" ]; then echo "https://$$IP"; else echo "LoadBalancer VIP not assigned yet — check 'kubectl get svc openwebui-lb -n openwebui'"; fi
+openwebui-url: ## Print how to reach Open WebUI (private NodePort)
+	@echo "Open WebUI is exposed privately on NodePort 30080."; \
+	echo "  In-cluster : http://openwebui.openwebui.svc.cluster.local:8080"; \
+	echo "  Local      : make openwebui-forward   (then http://localhost:8080)"; \
+	echo "  Or front the NodePort with your own ingress / gateway / VPN."
 
 destroy-openwebui: ## Remove Open WebUI (leaves the LB controller and KServe in place)
 	kubectl delete -f frontend/manifests/ --ignore-not-found

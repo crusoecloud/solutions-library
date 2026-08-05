@@ -1,0 +1,117 @@
+# Auto-detect model backends for Open WebUI.
+#
+# A small CronJob reconciles Open WebUI's OPENAI_API_BASE_URLS to whatever KServe
+# "*-workload-svc" Services currently have READY endpoints in the model namespace.
+# Deploy a new model -> it appears in the dropdown within a couple minutes; scale one
+# to zero -> it drops off. Idempotent: it only patches (and rolls) Open WebUI when the
+# backend set actually changes, so it won't churn the pod.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openwebui-autodetect
+  namespace: openwebui
+---
+# Read Services + Endpoints in the model namespace (to find ready backends).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openwebui-autodetect-read
+  namespace: kserve-test
+rules:
+  - apiGroups: [""]
+    resources: [services, endpoints]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openwebui-autodetect-read
+  namespace: kserve-test
+subjects:
+  - kind: ServiceAccount
+    name: openwebui-autodetect
+    namespace: openwebui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openwebui-autodetect-read
+---
+# Patch the Open WebUI Deployment (set env + trigger rollout) in its own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openwebui-autodetect-write
+  namespace: openwebui
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openwebui-autodetect-write
+  namespace: openwebui
+subjects:
+  - kind: ServiceAccount
+    name: openwebui-autodetect
+    namespace: openwebui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openwebui-autodetect-write
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openwebui-model-autodetect
+  namespace: openwebui
+spec:
+  schedule: "*/2 * * * *"          # every 2 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          serviceAccountName: openwebui-autodetect
+          restartPolicy: Never
+          containers:
+            - name: reconcile
+              image: alpine/k8s:1.33.4
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  MODEL_NS=kserve-test
+                  # Ready OpenAI backends = "*workload*" Services that currently have endpoints.
+                  SVCS=$(kubectl get svc -n "$MODEL_NS" -o name | grep workload | sed 's|service/||' | sort || true)
+                  BACKENDS=""; KEYS=""
+                  for S in $SVCS; do
+                    EP=$(kubectl get endpoints "$S" -n "$MODEL_NS" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+                    [ -z "$EP" ] && continue      # skip Services with no ready pods (e.g. scaled to 0)
+                    U="http://$S.$MODEL_NS.svc.cluster.local:8000/v1"
+                    BACKENDS="${BACKENDS:+$BACKENDS;}$U"
+                    KEYS="${KEYS:+$KEYS;}sk-noauth"
+                  done
+                  if [ -z "$BACKENDS" ]; then
+                    echo "no ready workload Services in $MODEL_NS; leaving Open WebUI unchanged"; exit 0
+                  fi
+                  CUR=$(kubectl get deploy open-webui -n openwebui \
+                    -o jsonpath='{range .spec.template.spec.containers[0].env[?(@.name=="OPENAI_API_BASE_URLS")]}{.value}{end}' 2>/dev/null || true)
+                  if [ "$CUR" = "$BACKENDS" ]; then
+                    echo "backends unchanged ($(echo "$BACKENDS" | tr ';' '\n' | wc -l | tr -d ' ') model svc): $BACKENDS"; exit 0
+                  fi
+                  echo "backend set changed -> updating Open WebUI"
+                  echo "  old: $CUR"
+                  echo "  new: $BACKENDS"
+                  kubectl set env deploy/open-webui -n openwebui \
+                    OPENAI_API_BASE_URLS="$BACKENDS" OPENAI_API_KEYS="$KEYS"
+                  echo "done (Open WebUI will roll to pick up the new backend list)"
+              resources:
+                requests: { cpu: 25m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 128Mi }

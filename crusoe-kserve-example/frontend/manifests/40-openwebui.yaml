@@ -31,11 +31,15 @@ spec:
             # connection surviving on the PVC, no manual UI fix).
             - name: ENABLE_PERSISTENT_CONFIG
               value: "False"
-            # Backend vLLM endpoint. This is a placeholder — `make deploy-openwebui` overwrites it
-            # via `kubectl set env` with the auto-detected "*-workload-svc" for the deployed model.
-            - name: OPENAI_API_BASE_URL
-              value: "http://qwen-llm-kserve-workload-svc.kserve-test.svc.cluster.local:8000/v1"
-            - name: OPENAI_API_KEY
+            # Backend vLLM endpoint(s). PLURAL form (semicolon-separated) so Open WebUI can front
+            # multiple model servers at once — each appears in the dropdown by its served-model-name.
+            # This is just an initial seed: the model-autodetect CronJob (60-model-autodetect.yaml)
+            # keeps this in sync with whatever "*-workload-svc" Services have ready endpoints, and
+            # `make deploy-openwebui` re-derives it at deploy time. OPENAI_API_KEYS must have one
+            # entry per URL (index-paired).
+            - name: OPENAI_API_BASE_URLS
+              value: "http://qwen3-llm-kserve-workload-svc.kserve-test.svc.cluster.local:8000/v1"
+            - name: OPENAI_API_KEYS
               value: "sk-noauth"      # vLLM ignores this unless started with --api-key
             - name: WEBUI_AUTH
               value: "True"           # first visitor signs up and becomes admin
@@ -49,6 +53,30 @@ spec:
             # model dropdown shows only the served model(s).
             - name: ENABLE_EVALUATION_ARENA_MODELS
               value: "False"
+            # --- Self-service access (sign up + mint a personal API key) ---
+            # A user signs up at the Open WebUI URL, lands in "pending", and an admin approves them
+            # in Admin Panel -> Users. They then generate a personal key in Settings -> Account and
+            # drive the models from OpenAI-compatible tools (e.g. OpenCode) at <base>/api with
+            # `Authorization: Bearer <their key>`.
+            - name: ENABLE_SIGNUP
+              value: "True"
+            - name: ENABLE_LOGIN_FORM
+              value: "True"
+            # New signups are gated on admin approval, so access stays limited to approved users.
+            - name: DEFAULT_USER_ROLE
+              value: "pending"
+            # NOTE the PLURAL name: this build reads ENABLE_API_KEYS (os.getenv), NOT the
+            # older singular ENABLE_API_KEY (which is silently ignored). Master switch for
+            # the personal-API-key system.
+            - name: ENABLE_API_KEYS
+              value: "True"
+            # Key creation is ALSO gated by the per-role permission features.api_keys
+            # (default False). Grant it to the default "user" role so approved users can mint
+            # keys. On a pre-existing instance whose DB already persisted user.permissions, also
+            # flip features.api_keys=True in that stored blob (env seeds new installs; the DB value
+            # wins on instances created earlier).
+            - name: USER_PERMISSIONS_FEATURES_API_KEYS
+              value: "True"
           volumeMounts:
             - name: data
               mountPath: /app/backend/data
@@ -61,31 +89,19 @@ spec:
             httpGet: { path: /health, port: 8080 }
             initialDelaySeconds: 60
             periodSeconds: 20
-        # Caddy TLS sidecar — terminates HTTPS on :8443 from the self-signed cert.
-        - name: caddy-tls
-          image: caddy:2-alpine
-          command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
-          ports:
-            - containerPort: 8443
-          volumeMounts:
-            - name: caddy-config
-              mountPath: /etc/caddy/Caddyfile
-              subPath: Caddyfile
-            - name: tls
-              mountPath: /etc/caddy/certs
-              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: openwebui-data
-        - name: caddy-config
-          configMap:
-            name: openwebui-caddy
-        - name: tls
-          secret:
-            secretName: openwebui-tls
+      # Pin to the CPU (c1a) pool: Open WebUI needs no GPU, so keep it off the GPU nodes.
+      # Runs in the same zone as the model workloads so its RWO PVC attaches.
+      nodeSelector:
+        node.kubernetes.io/instance-type: c1a.8x
 ---
-# ClusterIP — the port-forward target (plaintext :8080).
+# NodePort — exposes Open WebUI privately on a fixed node port (30080), plain HTTP. No public
+# LoadBalancer is created; reach it in-cluster, via `make openwebui-forward`, or front it with
+# your own ingress / gateway / VPN (which also terminates TLS). kube-proxy opens the port on
+# every node, so it keeps routing even if the pod reschedules within the pool.
 apiVersion: v1
 kind: Service
 metadata:
@@ -94,10 +110,11 @@ metadata:
   labels:
     app: open-webui
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: open-webui
   ports:
     - name: http
       port: 8080
       targetPort: 8080
+      nodePort: 30080
