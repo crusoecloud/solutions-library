@@ -1,0 +1,122 @@
+# Kimi K3 on AMD MI355X (gfx950) — single-node TP=8, native tiktoken tokenizer.
+#
+# One-click serving recipe for Moonshot AI's Kimi K3 (2.8T MoE, MXFP4, 1M ctx)
+# on one 8-GPU MI355X node via KServe + vLLM (ROCm). See README.md for prerequisites.
+#
+# Apply into the namespace that holds your HuggingFace secret (default: kserve-test):
+#   kubectl apply -n kserve-test -f kimi-k3.yaml
+#
+# The model is served OpenAI-compatibly as `kimi-k3` once the pod is Ready
+# (first start ~15-20 min: ~1.56 TB weight pull to the shared disk + AITER MoE compile).
+---
+# ReadWriteMany shared disk for the ~1.56 TB MXFP4 weights (min 1 TiB). RWX lets a
+# rolling update stage the new pod on another node while the old one keeps serving
+# (zero downtime, no single-GPU-node deadlock). Backed by the Crusoe shared-fs CSI.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: crusoe-fs
+provisioner: fs.csi.crusoe.ai
+volumeBindingMode: Immediate
+reclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kimi-k3-weights
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: crusoe-fs
+  resources:
+    requests:
+      storage: 2Ti
+---
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: kimi-k3
+spec:
+  model:
+    uri: hf://moonshotai/Kimi-K3
+    name: kimi-k3
+  replicas: 1
+  template:
+    containers:
+      - name: main
+        # Must be the HYPHEN repo. The recipe's underscore `vllm-openai_rocm` is empty.
+        # This gfx950 image ships the MI355X (CDNA4) kernels; the generic ROCm image lacks them.
+        image: vllm/vllm-openai-rocm:kimi-k3
+        args:
+          - --tensor-parallel-size
+          - "8"
+          - --trust-remote-code                 # custom tiktoken tokenizer (encoding_k3.py)
+          - --max-model-len
+          - "131072"
+          - --load-format
+          - auto
+          - --gpu-memory-utilization
+          - "0.95"
+          - --mm-encoder-tp-mode
+          - data
+          - --max-num-seqs
+          - "128"
+          - --reasoning-parser
+          - kimi_k3                             # separates K3's <|open|>think<|sep|> channel
+          - --max-num-batched-tokens
+          - "4096"
+          # Prefix caching works on K3's hybrid KDA(mamba)+MLA attention via an EXPERIMENTAL
+          # Mamba "align" cache mode (vLLM auto-selects it). Benefits stable-prefix (RAG / API)
+          # traffic; the chat endpoint currently yields few hits. Drop this flag to disable.
+          - --enable-prefix-caching
+          - --enable-auto-tool-choice           # OpenAI clients send tool_choice: auto
+          - --tool-call-parser
+          - kimi_k3
+          # Do NOT add `--kv-cache-dtype fp8`: the aiter mla_gluon MLA kernel needs bf16 queries.
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret        # created by `make setup` (see repo root)
+                key: HF_TOKEN
+          - name: HF_HUB_DISABLE_XET
+            value: "1"
+          - name: VLLM_ROCM_USE_AITER
+            value: "1"                 # AITER MoE kernels — major throughput win on MI355X
+          - name: SAFETENSORS_FAST_GPU
+            value: "1"
+          - name: AITER_SITUV2_A8W4
+            value: "1"                 # a8w4 MoE path (set 0 for a16w4)
+          - name: AITER_BF16_FP8_MOE_BOUND
+            value: "0"
+          - name: VLLM_USE_BREAKABLE_CUDAGRAPH
+            value: "0"                 # REQUIRED on ROCm; the build auto-enables =1, which
+                                       # crashes K3's mla_gluon at CUDA-graph capture
+        resources:
+          limits: { amd.com/gpu: "8", cpu: "64", memory: 1Ti }
+          requests: { amd.com/gpu: "8", cpu: "16", memory: 128Gi }
+        # KServe v0.19's hardened securityContext sets runAsNonRoot; the vLLM ROCm image
+        # runs as root — relax it or the pod is CreateContainerConfigError.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          readOnlyRootFilesystem: false
+        # ~50-min budget (15 s x 200): the first start compiles the 235B-class MoE AITER
+        # kernels well past KServe's default 10-min probe. A restart recompiles but does
+        # not re-download (weights persist on the shared disk).
+        startupProbe:
+          httpGet: { path: /health, port: 8000 }
+          periodSeconds: 15
+          failureThreshold: 200
+          timeoutSeconds: 5
+    nodeSelector:
+      crusoe.ai/accelerator: amd-mi355x-288gb-roce
+    securityContext:
+      fsGroup: 1000
+    volumes:
+      - name: kserve-provision-location   # KServe's model-download volume; override to the RWX PVC
+        persistentVolumeClaim:
+          claimName: kimi-k3-weights
+  router:
+    gateway: {}
+    route: {}
+    scheduler: {}
