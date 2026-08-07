@@ -47,9 +47,13 @@ benchmark/monitoring docs). Tool calling and reasoning parsing are enabled.
 - **Prefix caching** is enabled and runs on K3's hybrid KDA(mamba)+MLA attention via an
   **experimental** Mamba "align" cache mode. It helps stable-prefix (RAG / API) traffic; remove the
   `--enable-prefix-caching` arg to disable.
+- **Fast weight loading:** `--load-format fastsafetensors` parallelizes the read across the 8 TP
+  ranks and overlaps it with the host→device copy. On the shared disk's large ~16 GB shards this
+  loads the 1.5 TB in **~3.75 min** (sustained ~6–7 GB/s) vs ~14 min for `auto`. Do **not** instead
+  reach for `--model-loader-extra-config` multithread loading — that default-loader knob issues
+  concurrent small reads that are *slower* on the latency-bound network filesystem.
 - **Weights on network storage:** the RWX disk lets a rolling `kubectl apply` (e.g. to change args)
   stage the new pod on a second node before the old one exits — zero downtime, weights are not
-  re-downloaded. Avoid `--model-loader-extra-config` multithread loading here: concurrent readers
-  contend on the shared filesystem and load *slower*, not faster.
+  re-downloaded.
 - Single-node TP=8 is the recommended layout for K3 on MI355X. To add capacity, run more replicas
   (independent full copies behind the router), rather than multi-node tensor/expert parallel.
