@@ -9,7 +9,7 @@ math. Per shape, concurrency escalates until the SLO/stop rule trips; saturation
 Usage:
   VARIANT=kimi-ep SVC=kimi-ep-llm-kserve-workload-svc python3 kimi_pareto_bench.py
 Env: VARIANT (served-model-name, required) · SVC (workload svc, default <VARIANT>-llm-kserve-workload-svc)
-     NS=kserve-test · CTX=mi-poc-amd-355 · CLIENT=deploy/kimi-bench-client · OUT=<csv>
+     NS=kserve-test · CTX=<kube-context> (optional, default: current-context) · CLIENT=deploy/kimi-bench-client · OUT=<csv>
      SHAPES="512:128,4096:512,32768:1024,131072:2048,1024:8192" · CONC="1,4,16,64,128,256,512"
 Stop rules (per shape): TTFT-p95 > 10s, OR output-tok/s plateaus twice (<5% gain), OR any 100% error run.
 SLO reference (flagged in output, not a stop): TTFT-p95 < 1s, TPOT < 50ms.
@@ -19,7 +19,7 @@ import os, re, subprocess, sys, csv, time
 VARIANT = os.environ["VARIANT"]
 SVC     = os.environ.get("SVC", f"{VARIANT}-llm-kserve-workload-svc")
 NS      = os.environ.get("NS", "kserve-test")
-CTX     = os.environ.get("CTX", "mi-poc-amd-355")
+CTX     = os.environ.get("CTX", "")   # kube context; empty => kubeconfig current-context
 CLIENT  = os.environ.get("CLIENT", "deploy/kimi-bench-client")
 OUT     = os.environ.get("OUT", f"/tmp/kimi_pareto_{VARIANT}.csv")
 # Long shape input is 124000 (not 128k): vllm's random dataset inflates tokens ~1.4% on
@@ -54,7 +54,7 @@ def run_bench(in_tok, out_tok, conc):
         "--disable-tqdm"]
     # IN_POD=1: run vllm bench directly (inside the client pod, survives the local task lifetime).
     # else: drive it via kubectl exec from the workstation.
-    cmd = vllm if os.environ.get("IN_POD") else ["kubectl","--context",CTX,"-n",NS,"exec",CLIENT,"--"] + vllm
+    cmd = vllm if os.environ.get("IN_POD") else ["kubectl"] + (["--context",CTX] if CTX else []) + ["-n",NS,"exec",CLIENT,"--"] + vllm
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=3600).stdout
     except subprocess.TimeoutExpired:
