@@ -1,0 +1,27 @@
+# Dedicated benchmark client for the Kimi-K3 Pareto sweeps. Runs vllm bench serve
+# against a variant's workload Service (server CPU untouched). No GPU; uses the K3
+# tokenizer via trust_remote_code (downloaded, ~3MB) so it needs no weights mount.
+# Driven by load-test/kimi_pareto_bench.sh (kubectl exec).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-bench-client
+  namespace: kserve-test
+  labels: { app: kimi-bench-client }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: kimi-bench-client }
+  template:
+    metadata:
+      labels: { app: kimi-bench-client }
+    spec:
+      containers:
+        - name: client
+          image: vllm/vllm-openai-rocm:kimi-k3
+          command: ["sh", "-c", "pip install -q hf_transfer 2>/dev/null; sleep infinity"]
+          env:
+            - { name: HF_HUB_ENABLE_HF_TRANSFER, value: "1" }
+          resources:
+            requests: { cpu: "12", memory: 24Gi }
+            limits:   { cpu: "16", memory: 48Gi }

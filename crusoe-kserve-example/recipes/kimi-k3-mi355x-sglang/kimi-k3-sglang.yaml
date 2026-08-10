@@ -1,0 +1,153 @@
+# Kimi K3 on AMD MI355X (gfx950) via SGLang — single-node TP=8, OpenAI-compatible.
+#
+# Why SGLang (vs the day-0 vLLM ROCm image): SGLang serves K3 coherently under long-context
+# agentic load (clean reasoning/content split + tool calls), where the day-0 vLLM image can
+# corrupt into repeated-token garbage. Config is the quality-gated `nospecfp8kv` cell
+# (GPQA 94.71% PASS) from the MI355X optimization work.
+#
+# BEFORE APPLYING:
+#   1. Build + push the derived image (see Dockerfile) and set `image:` below to it (2 places).
+#   2. If your registry is private, create an imagePullSecret and add it under imagePullSecrets.
+#   3. Ensure a `hf-secret` with key HF_TOKEN exists in this namespace (HuggingFace access to
+#      moonshotai/Kimi-K3). The repo root's `make setup-amd` creates it.
+#   4. Apply:  kubectl apply -n kserve-test -f kimi-k3-sglang.yaml
+#
+# First boot downloads the ~1.5 TB MXFP4 weights to the RWX disk (init container, one time),
+# then fastsafetensors loads them in ~5 min. Later restarts skip the download.
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: crusoe-fs
+provisioner: fs.csi.crusoe.ai
+volumeBindingMode: Immediate
+reclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kimi-k3-weights
+spec:
+  accessModes: [ReadWriteMany]      # RWX so a rolling update can stage the new pod on another node
+  storageClassName: crusoe-fs
+  resources:
+    requests:
+      storage: 2Ti                  # min 1 TiB for fs.csi.crusoe.ai; 2Ti fits the 1.5 TB weights
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-k3-sglang
+  labels: { app: kimi-k3-sglang }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: kimi-k3-sglang }
+  template:
+    metadata:
+      labels: { app: kimi-k3-sglang }
+    spec:
+      nodeSelector:
+        crusoe.ai/accelerator: amd-mi355x-288gb-roce
+      securityContext:
+        fsGroup: 1000
+      # imagePullSecrets:            # uncomment + name your secret if the registry is private
+      #   - name: <your-pull-secret>
+      initContainers:
+        # One-time weight download to the RWX disk (skipped if already present). Not gated by
+        # the serving probes, so it can take as long as the 1.5 TB pull needs.
+        - name: fetch-weights
+          image: REPLACE_WITH_YOUR_REGISTRY/kimi-k3-sglang-fss:20260727   # same image (has huggingface_hub)
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -f /models/config.json ]; then echo "weights present, skipping download"; exit 0; fi
+              python3 -c "from huggingface_hub import snapshot_download; snapshot_download('moonshotai/Kimi-K3', local_dir='/models', local_dir_use_symlinks=False)"
+          env:
+            - name: HF_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-secret, key: HF_TOKEN } }
+            - { name: HF_XET_HIGH_PERFORMANCE, value: "1" }
+          volumeMounts:
+            - { name: models, mountPath: /models }
+      containers:
+        - name: sglang
+          image: REPLACE_WITH_YOUR_REGISTRY/kimi-k3-sglang-fss:20260727     # derived image (fastsafetensors + nogds)
+          command: ["python3", "-m", "sglang.launch_server"]
+          args:
+            - --model-path
+            - /models
+            - --served-model-name
+            - kimi-k3
+            - --trust-remote-code
+            - --load-format
+            - fastsafetensors          # MANDATORY on network storage; default 'auto' = ~2 h multi-thread load
+            - --tp-size
+            - "8"
+            - --dtype
+            - bfloat16
+            - --mem-fraction-static
+            - "0.85"
+            - --cuda-graph-max-bs
+            - "256"
+            - --attention-backend
+            - triton                    # the only workable backend on ROCm (aiter MLA illegal at 96 heads)
+            - --kv-cache-dtype
+            - fp8_e4m3                   # 2x KV pool; GPQA-validated PASS (94.71%)
+            - --mamba-ssm-dtype
+            - bfloat16
+            - --reasoning-parser
+            - kimi_k3                    # splits thinking into reasoning_content; keeps content = final answer
+            - --tool-call-parser
+            - kimi_k3
+            - --enable-metrics
+            - --host
+            - 0.0.0.0
+            - --port
+            - "30000"
+          env:
+            - { name: SGLANG_USE_AITER,        value: "1" }
+            - { name: SGLANG_AITER_K3_OPT,     value: "1" }
+            - { name: AITER_FLYDSL_FORCE,      value: "1" }
+            - { name: AITER_SITUV2_A8W4,       value: "1" }
+            - { name: HF_HUB_OFFLINE,          value: "1" }   # weights already on /models
+            - { name: HF_XET_HIGH_PERFORMANCE, value: "1" }
+          ports:
+            - { containerPort: 30000, name: http }
+          resources:
+            limits:   { amd.com/gpu: "8", cpu: "64", memory: 1Ti }
+            requests: { amd.com/gpu: "8", cpu: "16", memory: 128Gi }
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          startupProbe:
+            httpGet: { path: /health, port: 30000 }
+            periodSeconds: 15
+            failureThreshold: 200        # ~50 min for load + graph capture
+            timeoutSeconds: 10           # /health runs a 1-token generation (~1s); give margin
+          readinessProbe:
+            httpGet: { path: /health, port: 30000 }
+            periodSeconds: 30
+            timeoutSeconds: 8            # default 1s times out on /health's ~1s response -> never Ready
+            failureThreshold: 3
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+            - { name: dshm,   mountPath: /dev/shm }
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: kimi-k3-weights
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 128Gi }   # TP8 intra-node comms need large /dev/shm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimi-k3-sglang-workload-svc
+  labels: { app: kimi-k3-sglang }
+spec:
+  selector: { app: kimi-k3-sglang }
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 30000
