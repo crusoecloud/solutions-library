@@ -1,0 +1,161 @@
+---
+# VPN Client DaemonSet — GRE-over-FOU tunnel from K8s nodes to the
+# Crusoe VPN gateway. Same setup as the vpn_client Ansible role, but
+# runs as a DaemonSet for managed K8s nodes where Ansible can't reach.
+#
+# The gateway's multipoint GRE tunnel already covers the entire node
+# CIDR, so new nodes are handled automatically.
+#
+# IMPORTANT: Use a public image (like nicolaka/netshoot) so nodes can
+# pull it before the VPN tunnel is up. Once the tunnel is established,
+# nodes can pull private images from the datacenter registry.
+#
+# Apply with:
+#   kubectl apply -f vpn-client.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpn-client-config
+  namespace: kube-system
+data:
+  # VPN gateway private IP
+  GATEWAY_IP: "<gateway-private-ip>"
+  # GRE-over-FOU settings — must match the gateway's config
+  GRE_KEY: "100"
+  FOU_PORT: "9473"
+  GRE_MTU: "1360"
+  # Remote CIDRs to route through the VPN (space-separated)
+  # Split tunnel (datacenter only):
+  #   REMOTE_CIDRS: "<remote-private-subnet-cidr>"
+  # Full tunnel (all internet via datacenter firewall):
+  REMOTE_CIDRS: "0.0.0.0/1 128.0.0.0/1"
+  #   Intra-cluster traffic (node subnet, pod CIDR) is unaffected because
+  #   those routes are more specific (/20, /24) than /1.
+  #   The datacenter gateway needs vpn_remote_subnet: 0.0.0.0/0 and a
+  #   default route through the firewall for internet egress.
+  # Sync interval in seconds
+  SYNC_INTERVAL: "30"
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vpn-client
+  namespace: kube-system
+  labels:
+    app: vpn-client
+spec:
+  selector:
+    matchLabels:
+      app: vpn-client
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: vpn-client
+    spec:
+      hostNetwork: true
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - name: host-modules
+          hostPath:
+            path: /lib/modules
+            type: Directory
+      containers:
+        - name: vpn-client
+          image: nicolaka/netshoot:latest
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: host-modules
+              mountPath: /lib/modules
+              readOnly: true
+          envFrom:
+            - configMapRef:
+                name: vpn-client-config
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+
+              setup_tunnel() {
+                local LOCAL_IP
+                LOCAL_IP=$(ip -4 route get 1.1.1.1 | awk '/src/{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
+
+                # Skip if tunnel is already up
+                if ip link show gre-vpn 2>/dev/null | grep -q UP; then
+                  return 0
+                fi
+
+                # Clean stale state
+                ip link del gre-vpn 2>/dev/null || true
+                ip tunnel del gre-vpn 2>/dev/null || true
+                ip fou del port "$FOU_PORT" 2>/dev/null || true
+
+                echo "Creating GRE-over-FOU tunnel: $LOCAL_IP -> $GATEWAY_IP"
+
+                modprobe fou
+                ip fou add port "$FOU_PORT" ipproto 47
+                ip link add name gre-vpn type gre \
+                    local "$LOCAL_IP" remote "$GATEWAY_IP" key "$GRE_KEY" ttl 255 \
+                    encap fou encap-sport "$FOU_PORT" encap-dport "$FOU_PORT"
+                ip link set gre-vpn mtu "$GRE_MTU"
+                ip link set gre-vpn up
+
+                # Allow FOU from gateway
+                iptables -C INPUT -p udp --dport "$FOU_PORT" -s "$GATEWAY_IP" -j ACCEPT 2>/dev/null || \
+                  iptables -I INPUT 1 -p udp --dport "$FOU_PORT" -s "$GATEWAY_IP" -j ACCEPT
+
+                echo "GRE-over-FOU tunnel up"
+              }
+
+              sync_routes() {
+                for cidr in $REMOTE_CIDRS; do
+                  ip route replace "$cidr" dev gre-vpn 2>/dev/null || true
+                done
+              }
+
+              cleanup() {
+                echo "Cleaning up"
+                for cidr in $REMOTE_CIDRS; do
+                  ip route del "$cidr" dev gre-vpn 2>/dev/null || true
+                done
+                ip link del gre-vpn 2>/dev/null || true
+                ip tunnel del gre-vpn 2>/dev/null || true
+                ip fou del port "$FOU_PORT" 2>/dev/null || true
+                exit 0
+              }
+
+              trap cleanup SIGTERM SIGINT
+
+              setup_tunnel
+              sync_routes
+              echo "VPN client running (sync every ${SYNC_INTERVAL}s)"
+              echo "  Gateway: $GATEWAY_IP"
+              echo "  Remote CIDRs: $REMOTE_CIDRS"
+
+              while true; do
+                sleep "$SYNC_INTERVAL" &
+                wait $!
+                if ! ip link show gre-vpn 2>/dev/null | grep -q UP; then
+                  echo "Tunnel missing, recreating..."
+                  setup_tunnel
+                fi
+                sync_routes
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
