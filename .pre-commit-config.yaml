@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: solutions-structure
+        name: Solutions library structure check
+        description: Every top-level solution dir needs a README.md and a root README.md entry (see CONTRIBUTING.md)
+        entry: python3 scripts/check_solutions_structure.py
+        language: system
+        pass_filenames: false
+        always_run: true
