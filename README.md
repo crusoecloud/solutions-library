@@ -4,6 +4,7 @@
 
 ## Table of contents
 * [Introduction](#introduction)
+* [Disclaimer](#warning-disclaimer)
 * [Prerequisites](#prerequisites)
 * [Solutions](#solutions)
     * [Training](#training)
@@ -19,6 +20,10 @@
 ## Introduction
 
 This repository is a curated collection of solutions designed to deploy and manage infrastructure and other applications on Crusoe Cloud. 
+
+## :warning: **DISCLAIMER**
+
+These solutions are a community resource and are not **officially supported, endorsed, or maintained by Crusoe**. While we make reasonable, best-effort attempts to maintain and update base images and dependencies, this repository is provided "AS IS" without warranties of any kind. You use this software entirely at your own risk.
 
 ## Prerequisites
 
