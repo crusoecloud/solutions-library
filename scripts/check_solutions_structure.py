@@ -41,13 +41,18 @@ def top_level_solution_dirs() -> list[str]:
 
 
 def linked_dir_names(readme_text: str) -> set[str]:
-    """Directory names referenced by relative links in the root README."""
+    """Top-level directory names referenced by relative links in the root
+    README — e.g. "foo" or "foo/README.md" both count as linking "foo".
+    Links straight at a root-level file ("CONTRIBUTING.md", "CODEOWNERS")
+    are not directory references and are skipped.
+    """
     names = set()
     for match in LINK_RE.finditer(readme_text):
         target = match.group(1)
-        # Links may point at the dir itself ("foo") or a file inside it
-        # ("foo/README.md") — take the first path segment.
-        first_segment = target.split("/", 1)[0]
+        parts = target.split("/")
+        first_segment = parts[0]
+        if len(parts) == 1 and (REPO_ROOT / first_segment).is_file():
+            continue  # bare root-level file link, e.g. ./CONTRIBUTING.md
         names.add(first_segment)
     return names
 

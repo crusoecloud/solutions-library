@@ -6,6 +6,15 @@
 * [Introduction](#introduction)
 * [Prerequisites](#prerequisites)
 * [Solutions](#solutions)
+    * [Training](#training)
+    * [Inference](#inference)
+    * [Storage](#storage)
+    * [Compute](#compute)
+    * [Performance](#performance)
+    * [Observability](#observability)
+    * [Identity & Security](#identity--security)
+    * [Networking](#networking)
+* [Contributing](#contributing)
 
 ## Introduction
 
@@ -146,3 +155,7 @@ A Helm chart that establishes a highly-available IPSec VPN between a remote site
 [StrongSwan Site-to-Site VPN for Crusoe Cloud](./strongswan-ipsec/)
 
 An Ansible-managed, encrypted IPsec site-to-site VPN between a Crusoe Cloud region and a remote site — another Crusoe region, or Azure/GCP/AWS — with VMs on both sides communicating via their real (non-NAT'd) IP addresses. Uses GRE-over-FOU on the Crusoe side to work around SDN port-security source-IP checks, while the remote cloud side relies on native IP-forwarding; supports adding VMs incrementally via inventory changes.
+
+## Contributing
+
+Adding a new solution or improving an existing one? See [CONTRIBUTING.md](./CONTRIBUTING.md) for directory conventions, README requirements, and the automated checks that run on every PR.
