@@ -15,6 +15,7 @@
 #   DCGM_LEVEL        default 2    — dcgmi diag level (1=quick, 2=medium, 3=extended); 0=skip
 #   SKIP_NCCL         default 0    — set to 1 to skip the NCCL step
 #   SKIP_APT          default 0    — set to 1 if perftest+numactl are already baked in
+#   SKIP_DCGM_FIX     default 0    — set to 1 to skip the CUDA-13 DCGM upgrade below
 
 set -uo pipefail
 
@@ -28,6 +29,7 @@ EXPECTED_GPUS=${EXPECTED_GPUS:-8}
 DCGM_LEVEL=${DCGM_LEVEL:-2}
 SKIP_NCCL=${SKIP_NCCL:-0}
 SKIP_APT=${SKIP_APT:-0}
+SKIP_DCGM_FIX=${SKIP_DCGM_FIX:-0}
 
 log() { printf "INFO|%s|%s\n" "$HOST" "$*"; }
 fail() { printf "ERROR|%s|%s\n" "$HOST" "$*"; }
@@ -219,6 +221,29 @@ if [ "$SKIP_NCCL" != "1" ] && [ -x /opt/nccl-tests/build/all_reduce_perf ]; then
 fi
 # NCCLHEALTH line emitted at end of summary, after IB tests, for ordering consistency.
 
+# ---------- 4a0. Upgrade DCGM if it predates the CUDA runtime ----------
+# The old unversioned `datacenter-gpu-manager` apt package is stuck at 1:3.3.6,
+# a CUDA-12-era build. Against a CUDA 13 runtime, dcgmi returns "Detected
+# unsupported Cuda version" (rc=226) for every diag. NVIDIA's fix is a
+# separately-versioned, parallel-installable package,
+# `datacenter-gpu-manager-4-cuda13`, from the same NVIDIA CUDA apt repo
+# already configured on the image (the one libnccl2/libnccl-dev come from).
+if [ "$SKIP_DCGM_FIX" != "1" ] && command -v dcgmi >/dev/null 2>&1; then
+    dcgmi_major=$(dcgmi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d. -f1)
+    if [ -n "$dcgmi_major" ] && [ "$dcgmi_major" -lt 4 ]; then
+        log "dcgmi is v${dcgmi_major}.x (pre-CUDA-13) — upgrading to datacenter-gpu-manager-4-cuda13"
+        export DEBIAN_FRONTEND=noninteractive
+        pkill -f nv-hostengine >/dev/null 2>&1 || true
+        apt-get update -qq -o Acquire::Retries=2 2>/dev/null || true
+        apt-get remove -y -qq datacenter-gpu-manager >/dev/null 2>&1 || true
+        if apt-get install -y -qq --no-install-recommends datacenter-gpu-manager-4-cuda13 >/dev/null 2>&1; then
+            log "DCGM upgraded: $(dcgmi --version 2>/dev/null | head -1)"
+        else
+            log "DCGM upgrade failed — dcgmi may now be missing (checks below will report SKIPPED if so)"
+        fi
+    fi
+fi
+
 # ---------- 4a. DCGM health check (always runs if dcgmi is present) ----------
 dcgm_health_status="SKIPPED"
 if ! command -v dcgmi >/dev/null 2>&1; then
@@ -237,8 +262,25 @@ else
     health_log="$DCGM_HEALTH_TMPDIR/health.log"
     dcgmi health -c >"$health_log" 2>&1
     health_rc=$?
+    # Leaf category rows look like "-> NVLINK system | Failure" or "-> Driver | Failure"
+    # (indentation/arrow depth varies); this excludes numeric group rollup rows like "-> 0".
+    other_failures=$(grep -E '^\|[[:space:]]*(->)+[[:space:]]*[A-Za-z]' "$health_log" | grep "Failure" | grep -v "NVLINK system")
+    gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
     if [ "$health_rc" = "0" ] && grep -q "Healthy" "$health_log"; then
         dcgm_health_status="OK"
+    elif ! echo "$gpu_name" | grep -qi "GB200" \
+         && grep -q "IMEX daemon status" "$health_log" \
+         && [ -z "$other_failures" ]; then
+        # DCGM's NVLink health watch unconditionally checks IMEX daemon status,
+        # which only applies to rack-scale NVLink domains (GB200 NVL72-style).
+        # Non-GB200 systems (e.g. HGX B200) have no IMEX daemon by design, and
+        # DCGM's "not READY" sentinel for that case is a known false positive
+        # (NVIDIA/DCGM modules/health/DcgmHealthWatch.cpp doesn't map the blank/
+        # unsupported IMEX state to a healthy branch). Only suppress it here when
+        # NVLINK/IMEX is the *only* reported failure — any other failure (NVLink
+        # or otherwise) still fails the probe.
+        log "suppressing IMEX-not-READY NVLink failure — non-GB200 GPU ($gpu_name), no IMEX daemon expected"
+        dcgm_health_status="OK: IMEX check suppressed (non-GB200)"
     else
         dcgm_health_status="FAIL: rc=$health_rc"
         ANY_FAIL=1

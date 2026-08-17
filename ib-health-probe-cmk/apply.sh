@@ -21,12 +21,13 @@
 #       h100/h200 pools → nccl-tests:12.8.1-ubuntu24.04-nccl-2.26.5-1  (CUDA 12.8)
 #       all other pools → nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1  (CUDA 13.0)
 #   DCGM_LEVEL          default 0 — skip dcgmi diag. The dcgmi binary bundled
-#                       in the current Crusoe nccl-tests images is built
-#                       against a CUDA version that doesn't match the runtime,
-#                       so every diag returns rc=226 / "Detected unsupported
-#                       Cuda version". Set to 1 (quick), 2 (medium), or
-#                       3 (extended) on clusters using an image where dcgmi
-#                       and CUDA are version-aligned.
+#                       in the current Crusoe nccl-tests images predates the
+#                       runtime's CUDA version, so every diag used to return
+#                       rc=226 / "Detected unsupported Cuda version". probe.sh
+#                       now self-upgrades DCGM at pod startup (see
+#                       SKIP_DCGM_FIX in probe.sh) when it detects a pre-v4
+#                       dcgmi, so this can be set to 1 (quick), 2 (medium), or
+#                       3 (extended) even on the stock image.
 #   TIMEOUT_SECS        default 600  (Job wait cap)
 #   NO_WAIT=1           submit and exit; don't tail / write results
 

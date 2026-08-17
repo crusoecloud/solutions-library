@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nccl-test-cuda13
+  labels:
+    app: nccl-test
+spec:
+  restartPolicy: Never
+  runtimeClassName: nvidia
+  hostNetwork: true
+  hostIPC: true
+  dnsPolicy: ClusterFirstWithHostNet
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Equal
+      value: present
+      effect: NoSchedule
+  volumes:
+    - name: nccl-topo
+      hostPath:
+        path: /etc/crusoe/nccl_topo
+        type: DirectoryOrCreate
+    - name: dev-infiniband
+      hostPath:
+        path: /dev/infiniband
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 16Gi
+  containers:
+    - name: nccl-test
+      # image: ghcr.io/crusoecloud/nccl-tests:12.8.1-ubuntu24.04-nccl-2.26.5-1
+      # image: ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1
+      image: registry.eu-norway1-a.ccr.crusoecloudcompute.com/ib-probe.18075987/ib-probe:amd64-cuda13
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      securityContext:
+        privileged: true
+        capabilities:
+          add: ["IPC_LOCK", "SYS_ADMIN"]
+      env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "compute,utility"
+      volumeMounts:
+        - name: nccl-topo
+          mountPath: /opt/nccl_topo
+        - name: dev-infiniband
+          mountPath: /dev/infiniband
+        - name: dshm
+          mountPath: /dev/shm
+  imagePullSecrets:
+    - name: ccr-credentials

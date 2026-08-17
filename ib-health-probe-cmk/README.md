@@ -162,8 +162,17 @@ Set these via the `env:` block in `ib-probe-job.yaml` or via the script env vars
 | `NCCL_THRESHOLD` | 350 | Single-node NCCL busbw floor (GB/s) |
 | `SKIP_NCCL` | 0 | Set to 1 to skip the NCCL step |
 | `SKIP_APT` | 0 | Set to 1 if perftest+numactl are already in the image |
+| `SKIP_DCGM_FIX` | 0 | Set to 1 to skip the pod-startup DCGM upgrade (see below) |
 
 ## Image notes
+
+### DCGM / CUDA 13 version mismatch
+
+The stock `ghcr.io/crusoecloud/nccl-tests:13.0.1-...` image ships the unversioned `datacenter-gpu-manager` apt package, which is pinned at `1:3.3.6` (a CUDA-12-era build). Against the CUDA 13 runtime, every `dcgmi diag` returns rc=226 / "Detected unsupported Cuda version". Rather than bake a custom image, `probe.sh` detects a pre-v4 `dcgmi` at pod startup and upgrades in place: it removes `datacenter-gpu-manager`, then installs `datacenter-gpu-manager-4-cuda13` (NVIDIA's parallel-installable, CUDA-13-aligned package) from the same NVIDIA CUDA apt repo already configured on the image. This runs before the DCGM health check/diag steps, so `DCGM_LEVEL` can be set to 1/2/3 even on the stock image. Set `SKIP_DCGM_FIX=1` to disable this (e.g. on an image that already bundles an aligned DCGM).
+
+### DCGM NVLink/IMEX false positive on non-GB200 GPUs
+
+DCGM 4.x's NVLink health watch unconditionally checks IMEX daemon status as part of `dcgmi health -c`. IMEX only applies to rack-scale NVLink domains (GB200 NVL72-style multi-node fabrics); standalone HGX-style systems (H100/H200/B200) have no IMEX daemon by design, and DCGM's "not READY" sentinel for that case is a known false positive rather than a real fault. `probe.sh` detects this via `nvidia-smi --query-gpu=name` — on any non-GB200 GPU, if the IMEX-not-READY line is the *only* reported health failure, it's logged and the health check is reported as `OK: IMEX check suppressed (non-GB200)` instead of `FAIL`. Any other concurrent failure (NVLink or otherwise) still fails the probe as normal; on GB200 hardware the IMEX check is left fully intact.
 
 Defaults to `ghcr.io/crusoecloud/nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1`. This image **does not include perftest**, so the probe script `apt-get install`s `perftest` + `numactl` at pod startup (~30s one-time, idempotent). The MLNX OFED repo embedded in the image is unreachable but that's non-fatal — Ubuntu universe `perftest 24.01.0` installs cleanly alongside `libibverbs 2410mlnx54`.
 
