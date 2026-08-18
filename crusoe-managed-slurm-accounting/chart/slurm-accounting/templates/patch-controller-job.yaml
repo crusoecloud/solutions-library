@@ -1,0 +1,42 @@
+{{- if .Values.patchController.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-patch-controller
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+  annotations:
+    # Must run BEFORE the Accounting CR is created (regular template, not a
+    # hook): the slurm-operator panics with a nil-pointer dereference in
+    # RefResolver.GetControllersForAccounting when it processes an Accounting
+    # create event while any Controller.spec.accountingRef is unset. Setting
+    # accountingRef here first means the operator's ref-match against our own
+    # Controller resolves normally instead of hitting the nil case.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "slurm-accounting.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "slurm-accounting.fullname" . }}-patch
+      containers:
+        - name: patch-controller
+          image: docker.io/rancher/kubectl:v1.33.0
+          command:
+            - kubectl
+          args:
+            - patch
+            - controllers.slinky.slurm.net
+            - {{ .Values.patchController.controllerName }}
+            - -n
+            - {{ .Values.namespace }}
+            - --type=merge
+            - -p
+            - '{"spec":{"accountingRef":{"name":"{{ include "slurm-accounting.fullname" . }}","namespace":"{{ .Values.namespace }}"}}}'
+{{- end }}

@@ -1,0 +1,10 @@
+apiVersion: slurm.crusoe.ai/v1alpha1
+kind: SlurmUser
+metadata:
+  name: user
+  namespace: slurm
+spec:
+  clusterReference: test
+  fullName: "John Doe"
+  sshPublicKeys:
+    - "<your SSH public key>"

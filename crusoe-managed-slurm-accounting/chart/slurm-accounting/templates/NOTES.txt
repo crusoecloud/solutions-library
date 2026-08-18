@@ -1,0 +1,11 @@
+Slurm accounting has been deployed for cluster "{{ .Values.clusterName }}".
+
+Check status:
+  kubectl get accounting -n {{ .Values.namespace }} {{ include "slurm-accounting.fullname" . }}
+  kubectl get pods -n {{ .Values.namespace }} -l app.kubernetes.io/name=mariadb
+
+Verify slurmctld picked up accountingRef:
+  kubectl get controllers.slinky.slurm.net -n {{ .Values.namespace }} {{ .Values.patchController.controllerName }} -o jsonpath='{.spec.accountingRef}'
+
+From a login node, confirm sacctmgr can reach slurmdbd:
+  sacctmgr show cluster
