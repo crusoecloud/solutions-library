@@ -1,0 +1,130 @@
+{{- if .Values.restartPods.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-restart
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-restart
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-restart
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "slurm-accounting.fullname" . }}-restart
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "slurm-accounting.fullname" . }}-restart
+    namespace: {{ .Values.namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-restart-pods
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+  annotations:
+    # Runs AFTER the Accounting CR + patch-controller Job (see
+    # patch-controller-job.yaml) as a post-install/post-upgrade hook, so
+    # accountingRef is already set by the time this fires.
+    #
+    # sackd (login) and slurmd (worker, configless/dynamic nodes) only read
+    # slurm.conf once at process start via --conf-server; neither exposes a
+    # live-reconfigure signal. Any of these pods that were already running
+    # before accountingRef was set are stuck with a pre-accounting config
+    # and sacct/sacctmgr will report accounting as disabled on them even
+    # though slurmctld and slurmdbd are healthy. Deleting them here forces
+    # a clean re-fetch. See README "Known issues" for why this can't be
+    # avoided by install ordering alone on a cluster that already has
+    # login/worker pods running.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "slurm-accounting.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "slurm-accounting.fullname" . }}-restart
+      # docker.io/rancher/kubectl ships a single static kubectl binary with
+      # no shell, so each delete runs as its own container with plain args
+      # instead of a shell script.
+      initContainers:
+        - name: restart-controller
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - delete
+            - pod
+            - -n
+            - {{ .Values.namespace }}
+            - -l
+            - app.kubernetes.io/part-of={{ .Values.clusterName }},app.kubernetes.io/component=controller
+            - --ignore-not-found
+            - --wait=false
+        - name: restart-login
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - delete
+            - pod
+            - -n
+            - {{ .Values.namespace }}
+            - -l
+            - app.kubernetes.io/part-of={{ .Values.clusterName }},app.kubernetes.io/component=login
+            - --ignore-not-found
+            - --wait=false
+      containers:
+        - name: restart-workers
+          image: docker.io/rancher/kubectl:v1.33.0
+          {{- if .Values.restartPods.includeWorkers }}
+          args:
+            - delete
+            - pod
+            - -n
+            - {{ .Values.namespace }}
+            - -l
+            - slurm.crusoe.ai/cluster-name={{ .Values.clusterName }},app.kubernetes.io/component=worker
+            - --ignore-not-found
+            - --wait=false
+          {{- else }}
+          # restartPods.includeWorkers=false: leave worker pods untouched.
+          # If any worker pods were already running before this install,
+          # restart them manually -- see README Known issues.
+          args:
+            - version
+            - --client
+          {{- end }}
+{{- end }}

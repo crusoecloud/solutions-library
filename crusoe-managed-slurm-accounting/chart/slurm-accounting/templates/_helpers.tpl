@@ -6,6 +6,10 @@
 {{ .Values.clusterName }}-accounting-mariadb
 {{- end -}}
 
+{{- define "slurm-accounting.controllerName" -}}
+slurm-{{ .Values.clusterName }}
+{{- end -}}
+
 {{- define "slurm-accounting.labels" -}}
 app.kubernetes.io/part-of: {{ .Values.clusterName }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}

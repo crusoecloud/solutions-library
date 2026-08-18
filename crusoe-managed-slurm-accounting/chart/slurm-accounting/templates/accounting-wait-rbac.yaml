@@ -1,0 +1,37 @@
+{{- if .Values.mariadb.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-wait-mariadb
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-wait-mariadb
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}-wait-mariadb
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "slurm-accounting.fullname" . }}-wait-mariadb
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "slurm-accounting.fullname" . }}-wait-mariadb
+    namespace: {{ .Values.namespace }}
+{{- end }}

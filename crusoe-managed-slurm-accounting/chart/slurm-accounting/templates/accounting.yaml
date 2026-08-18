@@ -7,12 +7,17 @@ metadata:
     {{- include "slurm-accounting.labels" . | nindent 4 }}
 spec:
   external: false
+  # The Crusoe operator names these secrets <clusterName>-auth-slurm and
+  # <clusterName>-auth-jwths256, with fixed key names slurm.key and
+  # jwt_hs256.key, for every SlurmCluster it provisions -- reusing them
+  # here keeps slurmctld <-> slurmdbd auth in sync without minting new
+  # keys.
   slurmKeyRef:
-    name: {{ .Values.existingAuth.slurmKeySecret }}
-    key: {{ .Values.existingAuth.slurmKeyKey }}
+    name: {{ .Values.clusterName }}-auth-slurm
+    key: slurm.key
   jwtHs256KeyRef:
-    name: {{ .Values.existingAuth.jwtHs256Secret }}
-    key: {{ .Values.existingAuth.jwtHs256Key }}
+    name: {{ .Values.clusterName }}-auth-jwths256
+    key: jwt_hs256.key
   storageConfig:
     host: {{ include "slurm-accounting.mariadb.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local
     port: 3306
@@ -25,3 +30,49 @@ spec:
     image: {{ .Values.accounting.image }}
     resources:
       {{- toYaml .Values.accounting.resources | nindent 6 }}
+  {{- if .Values.mariadb.enabled }}
+  # slurmdbd's as_mysql plugin only retries connecting to MariaDB a fixed
+  # number of times at startup -- if MariaDB is still mid first-boot init
+  # (temp server -> secure-installation -> real restart) when slurmdbd
+  # starts, it can exhaust that budget and end up alive but never
+  # listening on 6819 (see README "Known issues"). These initContainers on
+  # the slurmdbd pod itself wait for the MariaDB StatefulSet to report an
+  # available replica first. spec.template.spec here is a schemaless
+  # corev1.PodSpec passthrough that the slurm-operator strategic-merges
+  # into the pod it generates from spec.slurmdbd above -- initContainers
+  # set here are appended to (not replacing) whatever the operator sets,
+  # which for Accounting is none.
+  template:
+    spec:
+      # The slurmdbd pod otherwise inherits the namespace's `default`
+      # ServiceAccount (confirmed against the equivalent slurmctld pod,
+      # which the operator builds through the same merge path), which
+      # can't get/list/watch statefulsets -- use a dedicated SA with just
+      # that permission for the wait initContainers below. The operator's
+      # base PodSpec also sets automountServiceAccountToken: false (sane
+      # default for a pod that only talks to MariaDB) -- override back to
+      # true or these initContainers have no token to auth kubectl with
+      # and kubectl falls back to trying http://localhost:8080, which
+      # fails immediately with "connection refused".
+      serviceAccountName: {{ include "slurm-accounting.fullname" . }}-wait-mariadb
+      automountServiceAccountToken: true
+      initContainers:
+        - name: wait-for-mariadb-statefulset
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - wait
+            - --for=create
+            - statefulset/{{ include "slurm-accounting.mariadb.fullname" . }}
+            - -n
+            - {{ .Values.namespace }}
+            - --timeout={{ .Values.mariadb.waitForReadyTimeoutSeconds }}s
+        - name: wait-for-mariadb-ready
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - wait
+            - --for=jsonpath={.status.availableReplicas}=1
+            - statefulset/{{ include "slurm-accounting.mariadb.fullname" . }}
+            - -n
+            - {{ .Values.namespace }}
+            - --timeout={{ .Values.mariadb.waitForReadyTimeoutSeconds }}s
+  {{- end }}

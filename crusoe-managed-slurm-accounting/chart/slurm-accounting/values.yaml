@@ -1,17 +1,20 @@
+# Must match metadata.name of your SlurmCluster CR exactly (e.g. `kubectl get
+# slurmclusters -n <namespace>`) -- not an arbitrary label. Everything below
+# that references the cluster by name (the Controller CR name, the auth
+# secret names, label selectors the chart uses to find/restart controller,
+# login, and worker pods) is derived from this value.
 clusterName: test
 namespace: slurm
 
-# Existing secrets created by the Crusoe-managed SlurmCluster/Controller.
-# The Accounting (slurmdbd) resource re-uses these so slurmctld <-> slurmdbd
-# auth stays in sync without minting new keys.
-existingAuth:
-  slurmKeySecret: test-auth-slurm
-  slurmKeyKey: slurm.key
-  jwtHs256Secret: test-auth-jwths256
-  jwtHs256Key: jwt_hs256.key
-
 mariadb:
   enabled: true
+  # slurmdbd's as_mysql plugin only retries connecting a fixed number of
+  # times at startup, so the Accounting CR's slurmdbd pod carries
+  # initContainers (see accounting.yaml) that wait for this StatefulSet to
+  # report an available replica before slurmdbd's main container starts --
+  # see "Known issues" in the README. Raise this if your storage
+  # provisioner or MariaDB's first-boot init is slow enough to exceed it.
+  waitForReadyTimeoutSeconds: 300
   image: mariadb:11.4
   # fs.csi.crusoe.ai is NFS-backed and enforces a 1Ti minimum volume size --
   # wrong fit for a MySQL/InnoDB data directory either way. Use the
@@ -44,9 +47,37 @@ accounting:
       memory: 512Mi
 
 # Whether this chart should patch the existing Crusoe-managed Controller CR
-# (slinky.slurm.net/v1beta1) to set spec.accountingRef. Disable if the
-# managed control plane reverts out-of-band edits and you'd rather patch
-# manually / re-run the patch job on a schedule.
+# (slinky.slurm.net/v1beta1) to set spec.accountingRef. The Controller CR
+# is always named slurm-<clusterName> by the Crusoe operator, so this chart
+# derives that name from clusterName above instead of taking it as a
+# separate value -- confirm with
+# `kubectl get controllers.slinky.slurm.net -n <namespace>` if you're
+# unsure. Disable if the managed control plane reverts out-of-band edits
+# and you'd rather patch manually / re-run the patch job on a schedule.
 patchController:
   enabled: true
-  controllerName: slurm-test
+  # On a fresh cluster, this Job's pre-install hook can run before the
+  # Crusoe operator has finished provisioning nodes and reconciling the
+  # SlurmCluster CR into a Controller CR -- an initContainer waits (via
+  # `kubectl wait --for=create`) for the Controller CR to exist before the
+  # patch runs, instead of failing fast and burning through the Job's
+  # backoffLimit. Raise this if node provisioning is slow enough to exceed
+  # it in your environment.
+  waitForControllerTimeoutSeconds: 900
+
+# sackd (login) and slurmd (worker, dynamic/configless nodes) only read
+# slurm.conf once at process start and have no live-reconfigure signal, so
+# any of these pods already running before accountingRef was patched onto
+# the Controller CR will keep reporting accounting as disabled even after
+# slurmctld and slurmdbd are healthy. On a brand-new cluster, install this
+# chart right after the SlurmCluster CR (before scaling up worker node
+# pools) and only the login pod will need this; on a cluster that already
+# has login/worker pods running, enable this to have the chart restart them
+# for you instead of doing it by hand.
+restartPods:
+  # Restarts the controller and login pod(s) after install/upgrade.
+  enabled: false
+  # Also restarts worker (slurmd) pods. Off by default because it deletes
+  # pods that may be running jobs -- only enable if you're OK with that
+  # disruption, e.g. on a cluster with no active workload.
+  includeWorkers: false

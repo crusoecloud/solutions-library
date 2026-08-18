@@ -4,24 +4,9 @@ This solution adds slurm accounting (slurmdbd + MariaDB) on top of a Crusoe **Ma
 
 ## Prerequisites
 
-### 1. Crusoe Managed Slurm cluster
-
-You need a Crusoe Managed Kubernetes cluster with the following:
-- Slurm CMK add-on
-- Mecessary Compute Node Pools
-- Access to the Kubernetes API
-- SlurmCluster CR already created, with SSH key configured for root 
-
-You can use `kubectl` to note the login LoadBalancer's external IP for later:
-
-```bash
-kubectl get svc -n slurm   # note the login LoadBalancer External IP
-```
-
-### 2. Tooling
-
 - `helm` v3+
 - `kubectl` matching (or close to) the cluster's Kubernetes version
+- Crusoe CLI
 - Cluster admin access — the chart creates a `StorageClass`, RBAC objects, and patches a cluster-scoped-adjacent `Controller` CR owned by the Crusoe operator.
 
 ## What the chart deploys
@@ -30,51 +15,81 @@ kubectl get svc -n slurm   # note the login LoadBalancer External IP
 |---|---|
 | `StorageClass` (`ssd.csi.crusoe.ai`) | StorageClass for MariaDB using Crusoe Persistent Disk. |
 | MariaDB `StatefulSet` + `Service` + `Secret` | The accounting database (`slurm_acct_db`). Credentials are auto-generated on first install and preserved across upgrades. |
-| `Accounting` CR (`slinky.slurm.net/v1beta1`, aka slurmdbd) | The slurmdbd daemon, pointed at the MariaDB instance and reusing the cluster's existing auth secrets. |
+| `Accounting` CR (`slinky.slurm.net/v1beta1`, aka slurmdbd) | The slurmdbd daemon, pointed at the MariaDB instance and reusing the cluster's existing auth secrets. Its pod carries `initContainers` that wait for MariaDB to be ready before slurmdbd starts (see [Known issues](#known-issues) #5). |
 | Pre-install/pre-upgrade Job + RBAC | Patches `spec.accountingRef` onto the existing `Controller` CR **before** the `Accounting` CR is created (ordering matters — see [Known issues](#known-issues) below). |
+| Post-install/post-upgrade Job + RBAC (`restartPods.enabled`, off by default) | Deletes existing controller/login (and optionally worker) pods so they re-fetch config with accounting enabled. See [Installing on an existing cluster](#installing-on-an-existing-cluster). |
 
-## Installation
+## Installations
+
+There will typically be two scenarios in which you will install this chart:
+
+### Installing on a new Crusoe Managed Slurm cluster
+
+Creating the `SlurmCluster` CR is what triggers node provisioning for the
+controller and login nodes — before that CR exists there are no nodes to
+schedule *anything* onto, including this chart's patch Job. Because of that,
+controller and login pods come up together as soon as the `SlurmCluster` CR
+is created, and there's no way to install this chart in between them.
+
+`sackd` (login) and `slurmd` (worker/compute nodes, in the configless/dynamic
+mode this cluster uses) each fetch `slurm.conf` from the controller **once,
+at process start**, and have no live-reconfigure signal — see
+[Known issues](#known-issues) #4. So a pod that's already running when
+`accountingRef` gets patched onto the `Controller` CR will keep reporting
+accounting as disabled until it's restarted, no matter how the chart install
+itself is sequenced.
+
+Given that, the sequencing that minimizes how much you need to restart is:
+
+1. Create the CMK cluster, then the `SlurmCluster` CR (provisions controller + login nodes).
+2. Install this chart **immediately** — before scaling up or adding any worker/compute node pools. Accept that the login pod will need a restart (unavoidable, see above); it's a cheap, single-replica Deployment. `clusterName` must match your `SlurmCluster` CR's `metadata.name` exactly
+(check with `kubectl get slurmclusters -n <namespace>`). `values.yaml` ships with it set to `test` as a placeholder; override it explicitly with `--set` (or edit `values.yaml`):
 
 ```bash
 cd chart/slurm-accounting
 
-# Review/edit values.yaml first -- at minimum confirm:
-#   clusterName, namespace, existingAuth.*, patchController.controllerName
-helm lint .
-helm install slurm-accounting . -n slurm --wait --timeout 5m
+# Also review namespace and the rest of values.yaml before installing.
+helm lint . --set clusterName=<your-slurmcluster-name>
+helm install slurm-accounting . -n slurm \
+  --set clusterName=<your-slurmcluster-name> \
+  --set restartPods.enabled=true \
+  --wait --timeout 30m
 ```
 
 `--wait` blocks until the MariaDB StatefulSet and the patch Job report ready/succeeded. On a clean cluster this should complete in under two minutes.
 
-The remaining steps below SSH into the login node as `root` (via the key in `rootSSHPubKeys`), since no `SlurmUser` exists yet.
+Setting `restartPods.enabled=true` will restart the controller and login pods (see [Known issue #4](#known-issues) for why).
 
-### Post-install: Make slurmctld pick up accounting
+3. Scale up / add worker node pools. Each worker's first `slurmd` fetch will already see accounting configured, so **no worker restarts are needed**.
 
-Setting `accountingRef` updates the `Controller` CR, which the Crusoe
-operator renders into the `slurm.conf` ConfigMap (`AccountingStorageType`,
-`AccountingStorageHost`, etc.) almost immediately. However, you may need to restart `slurmctld` in order for it to get picked up.
+### Installing on an existing cluster
 
-```bash
-# 1. Confirm the ConfigMap has the new setting
-kubectl get configmap -n slurm <cluster-name>-config -o yaml | grep AccountingStorageType
-
-# 2. Check whether the running slurmctld already picked it up
-ssh root@<login-ip> "scontrol show config | grep AccountingStorageType"
-# If this prints (null), slurmctld is still running on the old config.
-
-# 3. Restart the controller pod to force a clean re-read of slurm.conf
-kubectl delete pod -n slurm <cluster-name>-controller-0
-kubectl get pod -n slurm <cluster-name>-controller-0 -w   # wait for 3/3 Running
-```
-
-### Register the cluster name with accounting
-
-slurmdbd needs the cluster registered before it will store job records.
-Do this as `root`, before any `SlurmUser` exists:
+If you're installing this chart onto a cluster that **already** has controller, login, and worker pods up and running, then all of them predate `accountingRef` and are stuck on stale config — not just the controller. Doing the restarts by hand for every login and worker pod doesn't scale well once there are more than a handful, so the chart can do it for you:
 
 ```bash
-ssh root@<login-ip> "sacctmgr -i add cluster <cluster-name>"
+helm install slurm-accounting . -n slurm \
+  --set clusterName=<your-slurmcluster-name> \
+  --set restartPods.enabled=true \
+  --set restartPods.includeWorkers=true \
+  --wait --timeout 15m
 ```
+
+This adds a post-install/post-upgrade Job that runs after `accountingRef` is already set and:
+- Always deletes the controller and login pod(s) (cheap: a single StatefulSet replica and a Deployment).
+- Deletes worker (`slurmd`) pods too, **only if** `restartPods.includeWorkers=true`. Only set it if you're OK with that disruption (e.g. no active workload, or you're fine with those jobs failing/requeuing). If you'd rather restart workers in batches instead of all at once, leave `restartPods.includeWorkers=false` and drain/recreate them yourself in smaller groups.
+
+### Confirm the cluster is registered with accounting
+
+```bash
+ssh root@<login-ip> "sacctmgr show cluster"
+# Should list the cluster instead of erroring with "not running a supported
+# accounting_storage plugin".
+```
+
+If it's missing, that means slurmctld hasn't successfully talked to
+slurmdbd with accounting configured yet — re-check
+[Known issues](#known-issues) #4 and #5 rather than adding the cluster by
+hand.
 
 ## Set up accounts and users
 
@@ -90,8 +105,7 @@ first, then add users last:
    ssh root@<login-ip> "sacctmgr -i add account <account-name> Description='<description>' Organization='<org>'"
    ```
 
-   For a single-user/test cluster, the built-in `root` account is fine to
-   use directly and this step can be skipped.
+   For a single-user/test cluster, the built-in `root` account is fine to use directly and this step can be skipped.
 
 2. **Apply the `SlurmUser` CR** (see `user.yml` for an example) so the OS
    user exists and can SSH in:
@@ -107,10 +121,7 @@ first, then add users last:
    ssh root@<login-ip> "sacctmgr -i add user <username> Account=<account-name>"
    ```
 
-   Repeat steps 2–3 for each additional user. Until step 3 runs for a
-   user, their jobs still execute and still show up in `sacct` (accounting
-   isn't enforced by default — `AccountingStorageEnforce=none`), just with
-   an empty `Account` column and none of the account's limits applied.
+   Repeat steps 2–3 for each additional user. Until step 3 runs for a user, their jobs still execute and still show up in `sacct` (accounting isn't enforced by default — `AccountingStorageEnforce=none`), just with an empty `Account` column and none of the account's limits applied.
 
 Check the result:
 
@@ -173,6 +184,62 @@ Expected:
    this; watch `kubectl get pod -n slurm <cluster-name>-controller-0 -w`
    until it reaches `3/3 Running`.
 
+4. **`sacct`/`sacctmgr` say accounting is disabled even though
+   `scontrol show config` on the same node shows
+   `AccountingStorageType = accounting_storage/slurmdbd`.** This happens on
+   any login or worker pod that was already running before `accountingRef`
+   was patched onto the `Controller` CR. `scontrol` queries `slurmctld`
+   live over RPC, so it always reflects the current config — but `sacct`
+   and `sacctmgr` read the login/worker pod's own locally cached
+   `slurm.conf`, fetched once at process start by `sackd` (login) or
+   `slurmd` (worker, dynamic/configless mode) via `--conf-server`. Neither
+   daemon has a live-reconfigure signal, so that cached copy never updates
+   on its own. Fix: restart the affected pod(s) — see
+   [Installing on an existing cluster](#installing-on-an-existing-cluster) or set
+   `restartPods.enabled=true`/`restartPods.includeWorkers=true`. Prefer
+   [installing on a new cluster](#installing-on-a-new-crusoe-managed-slurm-cluster)
+   before worker node pools are scaled up, so workers never hit this in the
+   first place.
+
+5. **slurmdbd gets stuck not-Ready, and slurmctld crash-loops with
+   `error: Sending PersistInit msg: Operation not permitted` /
+   `fatal: Problem adding tres to the database`.** This is a first-boot
+   race between the `Accounting` (slurmdbd) resource and the MariaDB
+   `StatefulSet`, both created by the same `helm install`. slurmdbd's
+   `as_mysql` plugin only retries connecting to MariaDB a fixed number of
+   times at startup; if it starts while MariaDB is still doing its
+   one-time init (temp server → secure-installation → real restart — the
+   DNS name can also be briefly unresolvable during this window), it can
+   exhaust that retry budget and end up alive but never listening on 6819.
+   slurmctld then can't complete its persistent-connection handshake to
+   slurmdbd; Slurm's `auth/slurm` plugin surfaces that as
+   `Operation not permitted` (easy to mistake for a NetworkPolicy or RBAC
+   block — check `kubectl get networkpolicy` / `ciliumnetworkpolicy` to
+   rule that out first). It won't recover on its own.
+
+   **This chart prevents it automatically** when `mariadb.enabled: true`
+   (the default): the `Accounting` CR carries two `initContainers` (added
+   via its `spec.template.spec`, which the slurm-operator strategic-merges
+   into the slurmdbd pod — see `accounting.yaml`) that wait for the
+   MariaDB `StatefulSet` to exist and report an available replica before
+   slurmdbd's main container ever starts, so its first connection attempt
+   always lands on an already-usable database. Raise
+   `mariadb.waitForReadyTimeoutSeconds` (default `300`) if your storage
+   provisioner or MariaDB's first-boot init is slow enough to exceed it.
+
+   If you still hit this (e.g. `mariadb.enabled: false` with an external
+   database that wasn't ready), the manual fix is the same idea: once
+   `kubectl get pod -n slurm test-accounting-mariadb-0` (or
+   `<release>-mariadb-0`) has been `1/1 Running` for a few minutes, restart
+   the accounting pod, then the controller pod:
+
+   ```bash
+   kubectl delete pod -n slurm <release>-accounting-0
+   kubectl wait --for=condition=Ready pod -n slurm <release>-accounting-0 --timeout=60s
+   kubectl delete pod -n slurm <cluster-name>-controller-0
+   kubectl get pod -n slurm <cluster-name>-controller-0 -w   # wait for 3/3 Running
+   ```
+
 ## Uninstall
 
 ```bash
@@ -190,4 +257,4 @@ kubectl delete pod -n slurm <cluster-name>-controller-0
 
 ## Configuration reference
 
-See `chart/slurm-accounting/values.yaml` for the full set of options, including MariaDB image/resources/storage size, the slurmdbd image, and `patchController.enabled` (set to `false` if you'd rather patch `accountingRef` manually instead of via the chart's hook Job).
+See `chart/slurm-accounting/values.yaml` for the full set of options, including MariaDB image/resources/storage size, the slurmdbd image, `patchController.enabled` (set to `false` if you'd rather patch `accountingRef` manually instead of via the chart's hook Job), and `restartPods.enabled`/`restartPods.includeWorkers` (see [Installing on an existing cluster](#installing-on-an-existing-cluster)).
