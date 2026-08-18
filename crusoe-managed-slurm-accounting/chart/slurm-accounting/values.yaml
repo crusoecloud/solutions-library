@@ -1,0 +1,52 @@
+clusterName: test
+namespace: slurm
+
+# Existing secrets created by the Crusoe-managed SlurmCluster/Controller.
+# The Accounting (slurmdbd) resource re-uses these so slurmctld <-> slurmdbd
+# auth stays in sync without minting new keys.
+existingAuth:
+  slurmKeySecret: test-auth-slurm
+  slurmKeyKey: slurm.key
+  jwtHs256Secret: test-auth-jwths256
+  jwtHs256Key: jwt_hs256.key
+
+mariadb:
+  enabled: true
+  image: mariadb:11.4
+  # fs.csi.crusoe.ai is NFS-backed and enforces a 1Ti minimum volume size --
+  # wrong fit for a MySQL/InnoDB data directory either way. Use the
+  # ssd.csi.crusoe.ai block-storage driver instead; createSsdStorageClass
+  # provisions the StorageClass since this managed cluster doesn't ship one.
+  createSsdStorageClass: true
+  storageClassName: crusoe-csi-driver-ssd-sc
+  storageSize: 20Gi
+  database: slurm_acct_db
+  username: slurm
+  # rootPassword/password are auto-generated into a Secret if left empty.
+  rootPassword: ""
+  password: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+
+accounting:
+  # ghcr.io/crusoecloud/cmk/slurm-containers/slurmdbd is not published for
+  # anonymous pull (unlike slurmctld/slurmd/slurmrestd, which are public) --
+  # 403 Forbidden on token fetch. Use the upstream SlinkyProject image at the
+  # matching Slurm version instead.
+  image: ghcr.io/slinkyproject/slurmdbd:25.11.2-ubuntu24.04
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+# Whether this chart should patch the existing Crusoe-managed Controller CR
+# (slinky.slurm.net/v1beta1) to set spec.accountingRef. Disable if the
+# managed control plane reverts out-of-band edits and you'd rather patch
+# manually / re-run the patch job on a schedule.
+patchController:
+  enabled: true
+  controllerName: slurm-test
