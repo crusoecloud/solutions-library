@@ -97,6 +97,10 @@ Terraform and Ansible solution that transfers data between two Crusoe shared dis
 
 An Ansible playbook that installs Slurm binaries onto a VM (which must already have NVIDIA drivers and CUDA present) so the resulting disk can be captured as a Crusoe custom image. Use this to bake a reusable base image for standing up Slurm clusters on Crusoe Cloud.
 
+[Slurm Accounting for Crusoe Managed Slurm](./crusoe-managed-slurm-accounting/)
+
+A Helm chart that adds Slurm accounting (slurmdbd + MariaDB) on top of a Crusoe Managed Slurm cluster, which does not provision accounting by default. Deploys a block-storage-backed MariaDB instance and a Slinky `Accounting` (slurmdbd) resource wired into the existing managed cluster's `Controller`, so `sacct`/`sacctmgr` job history and usage tracking work out of the box. Includes a full walkthrough for setting up the underlying Managed Slurm cluster (compute node pools, users) and documents several upstream/image gotchas hit along the way.
+
 ### Performance
 
 [Multi-VM NCCL Test](./nccl-allreduce-test-vms/)

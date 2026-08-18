@@ -1,0 +1,11 @@
+{{- if .Values.mariadb.createSsdStorageClass }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.mariadb.storageClassName }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+provisioner: ssd.csi.crusoe.ai
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+{{- end }}

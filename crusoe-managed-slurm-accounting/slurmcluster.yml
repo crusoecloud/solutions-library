@@ -1,0 +1,18 @@
+apiVersion: slurm.crusoe.ai/v1alpha1
+kind: SlurmCluster
+metadata:
+  name: test
+  namespace: slurm
+spec:
+  clusterVersion: "25.11.2-cmk.19"
+  loginSet:
+    replicas: 1
+    instanceType: c1a.4x
+    # Optional. CIDR ranges allowed to reach the login LoadBalancer.
+    # Defaults to 0.0.0.0/0 if omitted.
+    firewallRuleSourceRanges:
+      - 0.0.0.0/0
+  rootSSHPubKeys:
+    - "<your SSH Public Key>"
+  # Shared /home volume. 
+  homeVolumeSize: "100Ti"

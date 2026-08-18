@@ -1,0 +1,27 @@
+apiVersion: slinky.slurm.net/v1beta1
+kind: Accounting
+metadata:
+  name: {{ include "slurm-accounting.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "slurm-accounting.labels" . | nindent 4 }}
+spec:
+  external: false
+  slurmKeyRef:
+    name: {{ .Values.existingAuth.slurmKeySecret }}
+    key: {{ .Values.existingAuth.slurmKeyKey }}
+  jwtHs256KeyRef:
+    name: {{ .Values.existingAuth.jwtHs256Secret }}
+    key: {{ .Values.existingAuth.jwtHs256Key }}
+  storageConfig:
+    host: {{ include "slurm-accounting.mariadb.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local
+    port: 3306
+    database: {{ .Values.mariadb.database }}
+    username: {{ .Values.mariadb.username }}
+    passwordKeyRef:
+      name: {{ include "slurm-accounting.mariadb.fullname" . }}
+      key: password
+  slurmdbd:
+    image: {{ .Values.accounting.image }}
+    resources:
+      {{- toYaml .Values.accounting.resources | nindent 6 }}
