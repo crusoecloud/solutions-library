@@ -107,11 +107,10 @@ first, then add users last:
 
    For a single-user/test cluster, the built-in `root` account is fine to use directly and this step can be skipped.
 
-2. **Apply the `SlurmUser` CR** (see `user.yml` for an example) so the OS
-   user exists and can SSH in:
+2. **Add Users via `SlurmUser` CR** as shown in [Crusoe Documentations](https://docs.crusoecloud.com/orchestration/slurm/kubernetes-setup#step-5-add-users-optional):
 
    ```bash
-   kubectl apply -f user.yml
+   kubectl apply -f user.yaml
    ```
 
 3. **Add the user to accounting under that account** (still as `root`,
