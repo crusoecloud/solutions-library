@@ -88,8 +88,12 @@ spec:
             - bfloat16
             - --mem-fraction-static
             - "0.85"
-            - --cuda-graph-max-bs
-            - "256"
+            # CUDA graph capture DISABLED (eager). The MXFP4 MoE path corrupts under graph capture on
+            # this day-0 stack — SILENT output corruption (repeated words, control-token leakage like
+            # <|close|>...<|sep|>, ASCII->CJK char substitution) in long warm-cache sessions (300k+ ctx,
+            # many turns). Refs: ROCm/aiter#3632, sglang#18002, sglang#27194. Costs decode throughput;
+            # re-enable (`--cuda-graph-max-bs 256`) only with an upstream-fixed image. See README gotchas.
+            - --disable-cuda-graph
             - --attention-backend
             - triton                    # the only workable backend on ROCm (aiter MLA illegal at 96 heads)
             - --kv-cache-dtype
@@ -108,7 +112,8 @@ spec:
           env:
             - { name: SGLANG_USE_AITER,        value: "1" }
             - { name: SGLANG_AITER_K3_OPT,     value: "1" }
-            - { name: AITER_FLYDSL_FORCE,      value: "1" }
+            # AITER_FLYDSL_FORCE intentionally NOT set: the flydsl MoE reduce reads uninitialized
+            # memory (sglang#27194), a corruption source — leave the default MoE path.
             - { name: AITER_SITUV2_A8W4,       value: "1" }
             - { name: HF_HUB_OFFLINE,          value: "1" }   # weights already on /models
             - { name: HF_XET_HIGH_PERFORMANCE, value: "1" }
