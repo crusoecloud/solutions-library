@@ -75,6 +75,14 @@ load across replicas, drive through an L7 gateway/proxy, not the ClusterIP.
 
 ## Notes & gotchas
 
+- **⚠️ Silent deep-context corruption (CUDA graph capture is OFF for this reason).** On this day-0
+  stack the MXFP4 MoE path corrupts *under CUDA graph capture* — it silently produces repeated words,
+  control-token leakage (`<|close|>…<|sep|>`), and ASCII→CJK character substitution in **long,
+  warm-cache sessions** (300k+ tokens, hundreds of turns). It does **not** show up in cold one-shot
+  probes, so a smoke test looks clean — validate with a real long multi-turn session. This recipe
+  ships `--disable-cuda-graph` (eager) + omits `AITER_FLYDSL_FORCE` to avoid it (refs: ROCm/aiter#3632,
+  sglang#18002, sglang#27194). Cost: slower decode. Re-enable graph capture (`--cuda-graph-max-bs 256`)
+  only once an upstream-fixed image is available, and re-validate under a deep-context workload.
 - **fastsafetensors is mandatory** on network storage — `--load-format auto` uses a multi-thread
   loader that reads shards ~84 s each (~2 h total) and gets killed by the startup probe.
 - **nogds patch is required** — without it SGLang's fastsafetensors loader hangs at 0/12 shards on
