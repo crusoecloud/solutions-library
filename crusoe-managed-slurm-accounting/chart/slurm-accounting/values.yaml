@@ -81,3 +81,19 @@ restartPods:
   # pods that may be running jobs -- only enable if you're OK with that
   # disruption, e.g. on a cluster with no active workload.
   includeWorkers: false
+  # With includeWorkers, the restart Job waits for the replacement controller
+  # pod to be Ready before deleting worker pods -- deleting workers while
+  # slurmctld is down strands them in the nodeset controller's error backoff
+  # (see README "Known issues"). Raise this if your controller takes longer
+  # than this to come back (e.g. slow statesave volume mounts).
+  waitForControllerReadyTimeoutSeconds: 600
+  # With includeWorkers, after deleting the worker pods the Job also waits
+  # for their replacements to be Ready and then runs `scontrol reconfigure`
+  # in the controller pod: slurmctld parsed topology.conf while the (dynamic)
+  # workers were down, so without a reconfigure they sit outside the topology
+  # tree and jobs fail with "Requested topology configuration is not
+  # available" (see README "Known issues"). Raise this on large clusters
+  # where worker pods take longer to come back. Note: only set includeWorkers
+  # on a cluster that actually has worker pods -- with zero workers the wait
+  # times out and the hook fails.
+  waitForWorkersReadyTimeoutSeconds: 900
