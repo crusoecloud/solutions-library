@@ -17,6 +17,14 @@ metadata:
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
+  # This Job commonly runs on a brand-new cluster where the SlurmCluster CR
+  # was just created: the Crusoe operator provisions nodes, then
+  # slurm-operator/topograph/cert-manager come up in the slinky namespace,
+  # and only after that does the Controller CR this Job patches actually
+  # get created. The wait-for-controller initContainer blocks for that CR
+  # to exist (instead of the main container failing fast on a 404), so
+  # backoffLimit only needs to cover transient API-server hiccups, not "the
+  # CR doesn't exist yet".
   backoffLimit: 5
   template:
     metadata:
@@ -25,15 +33,23 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ include "slurm-accounting.fullname" . }}-patch
+      initContainers:
+        - name: wait-for-controller
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - wait
+            - --for=create
+            - controllers.slinky.slurm.net/{{ include "slurm-accounting.controllerName" . }}
+            - -n
+            - {{ .Values.namespace }}
+            - --timeout={{ .Values.patchController.waitForControllerTimeoutSeconds }}s
       containers:
         - name: patch-controller
           image: docker.io/rancher/kubectl:v1.33.0
-          command:
-            - kubectl
           args:
             - patch
             - controllers.slinky.slurm.net
-            - {{ .Values.patchController.controllerName }}
+            - {{ include "slurm-accounting.controllerName" . }}
             - -n
             - {{ .Values.namespace }}
             - --type=merge
