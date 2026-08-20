@@ -76,7 +76,9 @@ helm install slurm-accounting . -n slurm \
 
 This adds a post-install/post-upgrade Job that runs after `accountingRef` is already set and:
 - Always deletes the controller and login pod(s) (cheap: a single StatefulSet replica and a Deployment).
-- Deletes worker (`slurmd`) pods too, **only if** `restartPods.includeWorkers=true`. Only set it if you're OK with that disruption (e.g. no active workload, or you're fine with those jobs failing/requeuing). If you'd rather restart workers in batches instead of all at once, leave `restartPods.includeWorkers=false` and drain/recreate them yourself in smaller groups.
+- Deletes worker (`slurmd`) pods too, **only if** `restartPods.includeWorkers=true`. Only set it if you're OK with that disruption (e.g. no active workload, or you're fine with those jobs failing/requeuing). If you'd rather restart workers in batches instead of all at once, leave `restartPods.includeWorkers=false` and drain/recreate them yourself in smaller groups. With `includeWorkers`, the Job also sequences the restarts: it waits for the replacement controller pod to be Ready before deleting workers (see [Known issues](#known-issues) #7), then waits for the replacement workers and runs `scontrol reconfigure` so they rejoin the topology tree (see [Known issues](#known-issues) #8).
+
+> **Heads up:** restarting the controller on a cluster that has been running for a while can hit a statesave volume mount failure that is unrelated to this chart — see [Known issues](#known-issues) #6. Cheap insurance before installing with `restartPods.enabled=true`: run the one-line prevention command from that entry while the controller is still up.
 
 ### Confirm the cluster is registered with accounting
 
@@ -237,6 +239,113 @@ Expected:
    kubectl wait --for=condition=Ready pod -n slurm <release>-accounting-0 --timeout=60s
    kubectl delete pod -n slurm <cluster-name>-controller-0
    kubectl get pod -n slurm <cluster-name>-controller-0 -w   # wait for 3/3 Running
+   ```
+
+6. **Controller pod stuck `Init:0/2` after a restart —
+   `MountVolume.SetUp failed ... applyFSGroup failed ... open .../hash.0:
+   permission denied` on the statesave PVC.** A Managed Slurm platform
+   issue that any controller restart can hit, chart or no chart — but
+   `restartPods.enabled=true` restarts the controller, so it can surface
+   during this chart's install. The controller pod runs with `fsGroup`,
+   which makes kubelet recursively walk the NFS-backed statesave volume at
+   mount time; slurmctld creates `hash.N` state directories with mode
+   `0700`, and the NFS export squashes root, so kubelet can't read them and
+   the mount fails forever. The first-ever mount only works because the
+   volume is empty. (`fsGroupChangePolicy: OnRootMismatch` does **not**
+   help: the volume root's group never matches the pod's `fsGroup` — the
+   server silently ignores kubelet's chown — so the full walk always runs.)
+
+   **Prevention** (controller still running — e.g. right before installing
+   this chart with `restartPods.enabled=true`): make the state directories
+   group/other-traversable from inside the controller pod itself:
+
+   ```bash
+   kubectl exec -n slurm <cluster-name>-controller-0 -c slurmctld -- \
+     sh -c 'find /var/spool/slurmctld -type d ! -perm -005 -exec chmod o+rx {} +'
+   ```
+
+   **Recovery** (controller already stuck `Init:0/2`, so `exec` is not an
+   option): same chmod, but via a helper pod that mounts the statesave PVC
+   running as the Slurm UID (401) **without** `fsGroup` (so no ownership
+   walk is triggered), then let kubelet's next mount retry (~2 min)
+   succeed:
+
+   ```yaml
+   # statesave-fix.yaml -- set nodeName to the node the controller pod is
+   # scheduled on (kubectl get pod -n slurm <cluster-name>-controller-0 -o wide)
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: statesave-fix
+     namespace: slurm
+   spec:
+     nodeName: <controller-node>
+     restartPolicy: Never
+     securityContext:
+       runAsUser: 401
+       runAsGroup: 401
+       runAsNonRoot: true
+     containers:
+       - name: shell
+         image: busybox:1.36
+         command: ["sh", "-c", "sleep 3600"]
+         volumeMounts:
+           - name: statesave
+             mountPath: /statesave
+     volumes:
+       - name: statesave
+         persistentVolumeClaim:
+           claimName: statesave-<controller-name>-0
+   ```
+
+   ```bash
+   kubectl apply -f statesave-fix.yaml
+   # The helper pod can sit in ContainerCreating for ~10 minutes, queued
+   # behind the failing controller mount's retry backoff -- be patient.
+   kubectl wait --for=condition=Ready pod/statesave-fix -n slurm --timeout=15m
+   kubectl exec -n slurm statesave-fix -- \
+     find /statesave -type d ! -perm -005 -exec chmod o+rx {} +
+   kubectl delete pod -n slurm statesave-fix
+   kubectl get pod -n slurm <cluster-name>-controller-0 -w   # wait for 3/3 Running
+   ```
+
+   This can recur: slurmctld may create new `0700` `hash.N` directories
+   later, breaking the *next* controller restart until the chmod is
+   repeated (or the platform fixes the fsGroup/root-squash interaction).
+
+7. **Worker (`slurmd`) pods deleted while the controller is down are not
+   recreated for a long time.** The slurm-operator's nodeset controller
+   needs a live slurmctld to sync its Slurm node cache; while the
+   controller is restarting it errors with `failed to wait on type V0044Node
+   cache sync: ... Unable to contact slurm controller` and goes into
+   exponential backoff — deleted worker pods stay gone and `sinfo` shows
+   the node as `idle*` (non-responding). The chart's restart Job avoids
+   this by waiting for the replacement controller pod to be Ready before
+   deleting workers (`restartPods.waitForControllerReadyTimeoutSeconds`).
+   If you hit it anyway (e.g. workers deleted by hand), force a reconcile
+   once the controller is back:
+
+   ```bash
+   kubectl annotate nodesets.slinky.slurm.net -n slurm <nodeset-name> \
+     reconcile-nudge=1 --overwrite
+   ```
+
+8. **After a controller restart, jobs fail with `srun: error: Unable to
+   allocate resources: Requested topology configuration is not available`
+   even though `sinfo` shows the node as `idle`.** Worker nodes are
+   dynamic (configless): they register with slurmctld at `slurmd` start.
+   A slurmctld that boots while workers are down parses `topology.conf`
+   with node names it doesn't know yet — those entries are dropped, the
+   nodes end up outside the topology tree (`scontrol show topology` shows
+   the leaf switch with `Nodes=` empty), and nothing re-parses topology
+   when the workers register later (if the topology ConfigMap content is
+   unchanged, the reconfigure sidecar sees no change and stays quiet).
+   The chart's restart Job handles this when `restartPods.includeWorkers=true`
+   by waiting for the replacement workers and running `scontrol
+   reconfigure`. If you hit it after restarting pods by hand:
+
+   ```bash
+   kubectl exec -n slurm <controller-pod> -c slurmctld -- scontrol reconfigure
    ```
 
 ## Uninstall

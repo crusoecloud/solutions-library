@@ -25,7 +25,15 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "delete"]
+    # watch is needed by the `kubectl wait` initContainers below.
+    verbs: ["get", "list", "watch", "delete"]
+{{- if .Values.restartPods.includeWorkers }}
+  # The reconfigure-slurm container runs `scontrol reconfigure` inside the
+  # controller pod after workers are back (see the Job below for why).
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -84,6 +92,9 @@ spec:
       # no shell, so each delete runs as its own container with plain args
       # instead of a shell script.
       initContainers:
+        # No --wait=false here: block until the old controller pod is fully
+        # gone, so the wait-for-controller-* initContainers below can't latch
+        # onto the terminating pod instead of its replacement.
         - name: restart-controller
           image: docker.io/rancher/kubectl:v1.33.0
           args:
@@ -94,7 +105,6 @@ spec:
             - -l
             - app.kubernetes.io/part-of={{ .Values.clusterName }},app.kubernetes.io/component=controller
             - --ignore-not-found
-            - --wait=false
         - name: restart-login
           image: docker.io/rancher/kubectl:v1.33.0
           args:
@@ -106,10 +116,37 @@ spec:
             - app.kubernetes.io/part-of={{ .Values.clusterName }},app.kubernetes.io/component=login
             - --ignore-not-found
             - --wait=false
-      containers:
+        {{- if .Values.restartPods.includeWorkers }}
+        # Deleting worker pods while slurmctld is still down strands them: the
+        # slurm-operator's nodeset controller needs a live controller to sync
+        # its Slurm node cache, errors into exponential backoff, and doesn't
+        # recreate the deleted slurmd pods for a long time (see README "Known
+        # issues"). Wait for the replacement controller pod to exist and be
+        # Ready before the main container touches workers.
+        - name: wait-for-controller-created
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - wait
+            - --for=create
+            - pod
+            - -n
+            - {{ .Values.namespace }}
+            - -l
+            - app.kubernetes.io/part-of={{ .Values.clusterName }},app.kubernetes.io/component=controller
+            - --timeout={{ .Values.restartPods.waitForControllerReadyTimeoutSeconds }}s
+        - name: wait-for-controller-ready
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - wait
+            - --for=condition=Ready
+            - pod
+            - -n
+            - {{ .Values.namespace }}
+            - -l
+            - app.kubernetes.io/part-of={{ .Values.clusterName }},app.kubernetes.io/component=controller
+            - --timeout={{ .Values.restartPods.waitForControllerReadyTimeoutSeconds }}s
         - name: restart-workers
           image: docker.io/rancher/kubectl:v1.33.0
-          {{- if .Values.restartPods.includeWorkers }}
           args:
             - delete
             - pod
@@ -119,12 +156,59 @@ spec:
             - slurm.crusoe.ai/cluster-name={{ .Values.clusterName }},app.kubernetes.io/component=worker
             - --ignore-not-found
             - --wait=false
-          {{- else }}
-          # restartPods.includeWorkers=false: leave worker pods untouched.
-          # If any worker pods were already running before this install,
-          # restart them manually -- see README Known issues.
+        # Dynamic (configless) slurmd nodes register with slurmctld at
+        # process start, but the slurmctld that just booted parsed
+        # topology.conf while the workers were down -- unknown node names
+        # are dropped, the nodes end up outside the topology tree, and jobs
+        # fail with "Requested topology configuration is not available"
+        # until a reconfigure forces a re-parse (see README Known issues).
+        # Wait for the replacement workers to register (pod Ready), then
+        # `scontrol reconfigure` in the main container below.
+        - name: wait-for-workers-created
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - wait
+            - --for=create
+            - pod
+            - -n
+            - {{ .Values.namespace }}
+            - -l
+            - slurm.crusoe.ai/cluster-name={{ .Values.clusterName }},app.kubernetes.io/component=worker
+            - --timeout={{ .Values.restartPods.waitForWorkersReadyTimeoutSeconds }}s
+        - name: wait-for-workers-ready
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - wait
+            - --for=condition=Ready
+            - pod
+            - -n
+            - {{ .Values.namespace }}
+            - -l
+            - slurm.crusoe.ai/cluster-name={{ .Values.clusterName }},app.kubernetes.io/component=worker
+            - --timeout={{ .Values.restartPods.waitForWorkersReadyTimeoutSeconds }}s
+        {{- end }}
+      containers:
+        {{- if .Values.restartPods.includeWorkers }}
+        - name: reconfigure-slurm
+          image: docker.io/rancher/kubectl:v1.33.0
+          args:
+            - exec
+            - -n
+            - {{ .Values.namespace }}
+            - {{ include "slurm-accounting.controllerName" . }}-controller-0
+            - -c
+            - slurmctld
+            - --
+            - scontrol
+            - reconfigure
+        {{- else }}
+        # restartPods.includeWorkers=false: leave worker pods untouched.
+        # If any worker pods were already running before this install,
+        # restart them manually -- see README Known issues.
+        - name: restart-workers
+          image: docker.io/rancher/kubectl:v1.33.0
           args:
             - version
             - --client
-          {{- end }}
+        {{- end }}
 {{- end }}
