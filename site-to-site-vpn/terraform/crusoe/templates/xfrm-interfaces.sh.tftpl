@@ -1,0 +1,14 @@
+#!/bin/bash
+set -u
+WAN_IF=$(ip -o -4 route show default | awk '{print $5}' | head -1)
+if [ -z "$WAN_IF" ]; then
+  echo "ERROR: no default route / WAN interface found" >&2
+  exit 1
+fi
+%{ for t in tunnels ~}
+if ! ip link show "ipsec${t.xfrm_if_id}" &>/dev/null; then
+  ip link add "ipsec${t.xfrm_if_id}" type xfrm dev "$WAN_IF" if_id ${t.xfrm_if_id}
+fi
+ip link set "ipsec${t.xfrm_if_id}" mtu ${tunnel_mtu} up
+ip addr replace ${t.bgp_local_ip}/${split("/", t.bgp_inside_cidr)[1]} dev "ipsec${t.xfrm_if_id}"
+%{ endfor ~}

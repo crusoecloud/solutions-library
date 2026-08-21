@@ -1,0 +1,9 @@
+apiVersion: v2
+name: cluster-egress
+description: >-
+  Node-side vxlan overlay that routes Crusoe CMK pod/node traffic through the
+  standalone site-to-site VPN gateway VM(s). Pairs with cluster_egress in
+  terraform/crusoe. See docs/crusoe-cluster-egress.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
