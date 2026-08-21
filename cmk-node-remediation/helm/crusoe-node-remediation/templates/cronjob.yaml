@@ -1,0 +1,141 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "crusoe-node-remediation.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "crusoe-node-remediation.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.schedule }}"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      template:
+        spec:
+          serviceAccountName: {{ include "crusoe-node-remediation.fullname" . }}
+          restartPolicy: OnFailure
+          {{- if .Values.imagePullSecret }}
+          imagePullSecrets:
+            - name: {{ .Values.imagePullSecret }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+          # Tolerate our own remediation taints so the job can still schedule
+          # when all nodes are cordoned/draining. Without this, the CronJob
+          # pod gets stuck in Pending when all nodes are unschedulable.
+          tolerations:
+            - key: crusoe.ai/remediation.scheduled
+              operator: Exists
+              effect: NoSchedule
+            - key: crusoe.ai/remediation.draining
+              operator: Exists
+              effect: NoSchedule
+            - key: crusoe.ai/remediation.maintenance
+              operator: Exists
+              effect: NoSchedule
+            - key: node.kubernetes.io/unschedulable
+              operator: Exists
+              effect: NoSchedule
+          # Never schedule on nodes being remediated
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: crusoe.ai/remediation.phase
+                        operator: NotIn
+                        values:
+                          - cordoned
+                          - draining
+                          - force-draining
+                          - action-running
+                          - uncordoning
+          containers:
+            - name: crusoe-node-remediation
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: CONFIG_PATH
+                  value: /etc/crusoe-node-remediation/config.yaml
+                - name: NODE_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                {{- if .Values.journaldLogging }}
+                # Enable dual logging: stdout + journald (forwarded to
+                # Crusoe Managed Logs console by the Crusoe Watch Agent).
+                - name: JOURNALD_LOGGING
+                  value: "true"
+                {{- end }}
+                {{- if .Values.useBuiltinSecret }}
+                # Built-in crusoe-secrets — must be copied to the release namespace
+                # before install (e2e/run-e2e.sh does this automatically). envFrom
+                # loads all keys as env vars.
+                {{- else }}
+                # Custom secret — keys differ from built-in, so map explicitly.
+                - name: CRUSOE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.crusoeApiSecret }}
+                      key: access-key
+                - name: CRUSOE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.crusoeApiSecret }}
+                      key: secret-key
+                - name: CRUSOE_API_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.crusoeApiSecret }}
+                      key: api-url
+                {{- end }}
+              {{- if .Values.useBuiltinSecret }}
+              envFrom:
+                - secretRef:
+                    name: crusoe-secrets
+              {{- end }}
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/crusoe-node-remediation
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+                  readOnly: false
+                {{- if .Values.journaldLogging }}
+                # Mount the host's journald socket so the binary can write
+                # directly to the systemd journal. The Crusoe Watch Agent
+                # (Vector) collects all journald entries and forwards them
+                # to the Crusoe Managed Logs console.
+                - name: journald
+                  mountPath: /run/systemd/journal
+                  readOnly: true
+                {{- end }}
+          volumes:
+            - name: config
+              configMap:
+                name: {{ include "crusoe-node-remediation.fullname" . }}
+            - name: tmp
+              emptyDir: {}
+            {{- if .Values.journaldLogging }}
+            - name: journald
+              hostPath:
+                path: /run/systemd/journal
+                type: DirectoryOrCreate
+            {{- end }}

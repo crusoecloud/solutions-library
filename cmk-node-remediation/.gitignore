@@ -1,0 +1,38 @@
+# Git worktrees (local only)
+.worktrees/
+
+# Internal docs (not for public repo)
+docs/
+
+# Go
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# VS Code sessions
+.pi/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local dev config (image repo, tags, etc.)
+.env
+e2e/local.env
+e2e/values-generated.yaml
+e2e/values.yaml
+e2e/values.yaml
+cmk-node-remediation/manager
