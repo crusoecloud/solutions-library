@@ -1,0 +1,17 @@
+apiVersion: v2
+name: crusoe-node-remediation
+description: Automatically cordons, drains, and takes configurable remediation actions on nodes approaching critical uptime thresholds
+type: application
+version: 0.0.23
+appVersion: "0.0.23"
+keywords:
+  - kubernetes
+  - node
+  - remediation
+  - drain
+  - cordon
+  - reboot
+  - b200
+  - crusoe
+maintainers:
+  - name: Crusoe Engineering

@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "crusoe-node-remediation.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "crusoe-node-remediation.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    schedule: "{{ .Values.schedule }}"
+    instanceTypeFilter: "{{ .Values.instanceTypeFilter }}"
+    cordonThreshold: "{{ .Values.cordonThreshold }}"
+    remediationThreshold: "{{ .Values.remediationThreshold }}"
+    remediationCooldown: "{{ .Values.remediationCooldown }}"
+    action:
+      {{- if .Values.action.type }}
+      type: "{{ .Values.action.type }}"
+      timeout: "{{ .Values.action.timeout }}"
+      {{- end }}
+      maxRetries: {{ .Values.action.maxRetries }}
+      {{- if .Values.action.steps }}
+      steps:
+        {{- range .Values.action.steps }}
+        - type: "{{ .type }}"
+          timeout: "{{ .timeout }}"
+          {{- if .wait }}
+          wait: "{{ .wait }}"
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    guardrails:
+      globalMaxCordoned: {{ .Values.guardrails.globalMaxCordoned }}
+      {{- if .Values.guardrails.globalMaxCordonedPercent }}
+      globalMaxCordonedPercent: {{ .Values.guardrails.globalMaxCordonedPercent }}
+      {{- end }}
+      perPoolMaxCordoned: {{ .Values.guardrails.perPoolMaxCordoned }}
+      {{- if .Values.guardrails.perPoolMaxCordonedPercent }}
+      perPoolMaxCordonedPercent: {{ .Values.guardrails.perPoolMaxCordonedPercent }}
+      {{- end }}
+    drainTimeout: "{{ .Values.drainTimeout }}"
+    forceAfterEvictionFailure: {{ .Values.forceAfterEvictionFailure }}
+    useBuiltinSecret: {{ .Values.useBuiltinSecret }}
+    {{- if not .Values.useBuiltinSecret }}
+    crusoeApiSecret: "{{ .Values.crusoeApiSecret }}"
+    {{- end }}
+    {{- if .Values.crusoeProjectId }}
+    crusoeProjectId: "{{ .Values.crusoeProjectId }}"
+    {{- end }}
+    dryRun: {{ .Values.dryRun }}
+    {{- if .Values.nodePriority }}
+    nodePriority: "{{ .Values.nodePriority }}"
+    {{- end }}
+    nodeSelector:
+      matchLabels:
+        {{- range $key, $val := .Values.nodeSelector.matchLabels }}
+        "{{ $key }}": "{{ $val }}"
+        {{- end }}

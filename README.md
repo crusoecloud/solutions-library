@@ -101,6 +101,10 @@ An Ansible playbook that installs Slurm binaries onto a VM (which must already h
 
 A Helm chart that adds Slurm accounting (slurmdbd + MariaDB) on top of a Crusoe Managed Slurm cluster, which does not provision accounting by default. Deploys a block-storage-backed MariaDB instance and a Slinky `Accounting` (slurmdbd) resource wired into the existing managed cluster's `Controller`, so `sacct`/`sacctmgr` job history and usage tracking work out of the box. Includes a full walkthrough for setting up the underlying Managed Slurm cluster (compute node pools, users) and documents several upstream/image gotchas hit along the way.
 
+[Crusoe Node Remediation](./cmk-node-remediation/)
+
+A Kubernetes CronJob that automatically cordons, drains, and remediates Crusoe Managed Kubernetes nodes approaching critical uptime thresholds. Built for B200 GPU nodes affected by the NVIDIA 60-day NVLink firmware bug, with guardrails (global/per-pool limits, cooldown, self-node exclusion), dry-run mode, and configurable remediation actions (`vm-reset`, `vm-stop`, `vm-start`, `vm-delete`, `noop`).
+
 ### Performance
 
 [Multi-VM NCCL Test](./nccl-allreduce-test-vms/)
