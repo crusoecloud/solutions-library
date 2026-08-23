@@ -1,0 +1,155 @@
+# Kimi K3 on AMD MI355X (gfx950) via AMD ATOM (vLLM plugin) — single-node TP=8, OpenAI-compatible.
+#
+# Why ATOM: Kimi K3's MXFP4 latent MoE corrupts under CUDA-graph capture on the day-0 vLLM ROCm
+# stack, and even SGLang has to run eager (graph capture off) to stay correct — which costs decode
+# throughput. AMD's ATOM engine ships an AITER MXFP4 MoE path that is correct WITH FULL_AND_PIECEWISE
+# CUDA-graph capture (AMD validates GSM8K 0.9553 on 8xMI355 TP8), restoring fast + correct decode.
+# The canonical launch below is from the image's own recipe: /app/ATOM/recipes/atom_vllm/Kimi-K3.md
+#
+# BEFORE APPLYING:
+#   1. `rocm/atom-dev:vllm-kimi-k3-20260807` is public on Docker Hub. If your nodes can't reach
+#      Docker Hub (or you hit rate limits), mirror it into your own registry and set `image:` below
+#      (2 places), plus an imagePullSecret. Mirror in-cluster with skopeo:
+#        skopeo copy --authfile <dockerconfig> \
+#          docker://docker.io/rocm/atom-dev:vllm-kimi-k3-20260807 \
+#          docker://<your-registry>/kimi-k3-atom:vllm-k3-20260807
+#   2. Ensure an `hf-secret` with key HF_TOKEN exists in this namespace (HuggingFace access to
+#      moonshotai/Kimi-K3). The repo root's `make setup-amd` creates it.
+#   3. Apply:  kubectl apply -n kserve-test -f recipe-kimi-k3-atom.yaml
+#
+# First boot downloads the ~1.5 TB MXFP4 weights to the RWX disk (init container, one time). ATOM's
+# staging loader then reads them (~30 min on network storage), online-quantizes non-MXFP4 tensors to
+# ptpc_fp8, JIT-compiles AITER kernels, and captures CUDA graphs — allow ~45-50 min to Ready on first
+# boot. Later restarts skip the download but still re-load + re-capture.
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: crusoe-fs
+provisioner: fs.csi.crusoe.ai
+volumeBindingMode: Immediate
+reclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kimi-k3-weights
+spec:
+  accessModes: [ReadWriteMany]      # RWX so a rolling update can stage the new pod on another node
+  storageClassName: crusoe-fs
+  resources:
+    requests:
+      storage: 2Ti                  # min 1 TiB for fs.csi.crusoe.ai; 2Ti fits the 1.5 TB weights
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-k3-atom
+  labels: { app: kimi-k3-atom }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }      # single 8-GPU node: kill the old pod before starting the new one
+  selector:
+    matchLabels: { app: kimi-k3-atom }
+  template:
+    metadata:
+      labels: { app: kimi-k3-atom }
+    spec:
+      nodeSelector:
+        crusoe.ai/accelerator: amd-mi355x-288gb-roce
+      securityContext:
+        fsGroup: 1000
+      # imagePullSecrets:            # uncomment + name your secret if the registry is private
+      #   - name: <your-pull-secret>
+      initContainers:
+        # One-time weight download to the RWX disk (skipped if already present). Not gated by the
+        # serving probes, so it can take as long as the 1.5 TB pull needs.
+        - name: fetch-weights
+          image: rocm/atom-dev:vllm-kimi-k3-20260807      # same image (has huggingface_hub)
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -f /models/config.json ]; then echo "weights present, skipping download"; exit 0; fi
+              python3 -c "from huggingface_hub import snapshot_download; snapshot_download('moonshotai/Kimi-K3', local_dir='/models', local_dir_use_symlinks=False)"
+          env:
+            - name: HF_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-secret, key: HF_TOKEN } }
+          volumeMounts:
+            - { name: models, mountPath: /models }
+      containers:
+        - name: main
+          image: rocm/atom-dev:vllm-kimi-k3-20260807
+          workingDir: /app           # /app/vllm shadows site-packages -> uses ATOM's cache_aware patch
+          command: ["/bin/sh", "-c"]
+          # Canonical vLLM-ATOM K3 launch (image's /app/ATOM/recipes/atom_vllm/Kimi-K3.md).
+          # --additional-config online_quant_config routes the MoE through ATOM's ptpc_fp8/AITER path
+          # (the generic vLLM Triton MXFP4 kernel isn't in this image and yields garbage without it).
+          args:
+            - |
+              set -e
+              cd /app
+              exec vllm serve /models \
+                --host 0.0.0.0 --port 8000 \
+                --served-model-name kimi-k3 \
+                --tensor-parallel-size 8 \
+                --trust-remote-code \
+                --max-model-len 131072 \
+                --enable-prefix-caching \
+                --mamba-cache-mode align \
+                --kv-cache-dtype fp8 \
+                --max-num-seqs 64 \
+                --max-num-batched-tokens 16384 \
+                --gpu-memory-utilization 0.93 \
+                --block-size 128 \
+                --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+                --enable-auto-tool-choice \
+                --tool-call-parser kimi_k3 \
+                --reasoning-parser kimi_k3 \
+                --additional-config '{"online_quant_config": {"global_quant_config": "ptpc_fp8", "exclude_layer": ["lm_head", "model.embed_tokens", "*self_attn.[qkv]_conv1d*", "*block_sparse_moe.experts*", "*block_sparse_moe.routed_expert_*", "*vision_tower*", "*mm_projector*"]}}'
+          env:
+            - name: HF_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-secret, key: HF_TOKEN } }
+            - { name: HF_HUB_OFFLINE,             value: "1" }   # weights already on /models
+            - { name: VLLM_ROCM_USE_AITER,        value: "1" }
+            - { name: AITER_SITUV2_A4W4,          value: "1" }   # K3 MoE is A4W4 (recipe); NOT A8W4
+            - { name: AITER_SITUV2_A8W4,          value: "0" }
+            - { name: VLLM_USE_BREAKABLE_CUDAGRAPH, value: "0" } # build auto-enables =1 which crashes at capture
+          ports:
+            - { containerPort: 8000, name: http }
+          resources:
+            limits:   { amd.com/gpu: "8", cpu: "64", memory: 1Ti }
+            requests: { amd.com/gpu: "8", cpu: "16", memory: 128Gi }
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 240        # ~60 min: network-disk weight read + online quant + compile + capture
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            timeoutSeconds: 8
+            failureThreshold: 3
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: dshm,   mountPath: /dev/shm }
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: kimi-k3-weights
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 128Gi }   # TP8 intra-node comms need large /dev/shm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimi-k3-atom-workload-svc
+  labels: { app: kimi-k3-atom }
+spec:
+  selector: { app: kimi-k3-atom }
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
