@@ -1,0 +1,91 @@
+# Generates one ConfigMap per dashboard directly from dashboards/**/*.json,
+# so the dashboard JSON lives in exactly one place in this repo.
+#
+#   kubectl apply -k .        # from the grafana-cmk/ directory
+#
+# The k8s-sidecar picks the ConfigMaps up by the grafana_dashboard="1" label and
+# provisions each one into the folder named by its grafana_folder annotation.
+# disableNameSuffixHash keeps ConfigMap names stable, so re-applying updates in
+# place instead of leaving orphaned, hash-suffixed copies behind.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+
+configMapGenerator:
+  - name: crusoe-dashboard-cluster-gpu-overview
+    files:
+      - dashboards/Crusoe/cluster-gpu-overview.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-cluster-gpu-power
+    files:
+      - dashboards/Crusoe/cluster-gpu-power.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-cluster-ib-overview
+    files:
+      - dashboards/Crusoe/cluster-ib-overview.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-dcgm-xid-errors
+    files:
+      - dashboards/Crusoe/dcgm-xid-errors.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-gpu-overview-vendor-neutral
+    files:
+      - dashboards/Crusoe/gpu-overview-vendor-neutral.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-network-cluster-overview
+    files:
+      - dashboards/Crusoe/network-cluster-overview.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-node-gpu-detail
+    files:
+      - dashboards/Crusoe/node-gpu-detail.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-node-ib-detail
+    files:
+      - dashboards/Crusoe/node-ib-detail.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-node-network-detail
+    files:
+      - dashboards/Crusoe/node-network-detail.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-slurm-cluster-overview
+    files:
+      - dashboards/Crusoe/slurm-cluster-overview.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-storage-cluster-overview
+    files:
+      - dashboards/Crusoe/storage-cluster-overview.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
+  - name: crusoe-dashboard-vllm-overview
+    files:
+      - dashboards/Crusoe/Inference/vllm-overview.json
+    options:
+      annotations:
+        grafana_folder: Crusoe/Inference

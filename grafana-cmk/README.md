@@ -149,12 +149,12 @@ kubectl apply -f manifests/monitoring-token-secret.yaml
 
 ## Step 3: Apply the remaining manifests and install Grafana
 
-Apply the StorageClass (if not already present), the PVC, the dashboards ConfigMap, and the datasource ConfigMap:
+Apply the StorageClass (if not already present), the PVC, the dashboards, and the datasource ConfigMap:
 
 ```bash
 kubectl apply -f manifests/ssd-storageclass.yaml
 kubectl apply -f manifests/grafana-pvc.yaml
-kubectl apply -f manifests/grafana-dashboards-configmap.yaml
+kubectl apply -k .                                    # dashboards: one ConfigMap per dashboards/**/*.json
 kubectl apply -f manifests/grafana-datasource-configmap.yaml
 ```
 
@@ -174,8 +174,23 @@ helm repo update
 
 helm install grafana grafana/grafana \
   --namespace monitoring \
+  --version 10.5.15 \
   --values manifests/grafana-values.yaml
 ```
+
+> **Two things to expect from this command.** Helm prints `this chart is deprecated` — the upstream `grafana/grafana` chart is now marked deprecated, but it still installs and is what this solution is built and tested against. The `--version 10.5.15` pin resolves to **Grafana 12.3.1**; pinning matters because Grafana's folder-provisioning behaviour (documented below) differs between 12.3.x and later releases, so an unpinned install can silently change how dashboards are foldered.
+
+### Verify locally before exposing anything
+
+Everything above is self-contained — no LoadBalancer, no TLS cert. Confirm the stack works over a port-forward first:
+
+```bash
+kubectl -n monitoring rollout status deploy/grafana
+kubectl -n monitoring get secret grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+```
+
+Open `http://localhost:3000` and log in as `admin`. You should land on a Grafana with the **Crusoe** and **Inference** folders already populated. Steps 4 and 4.5 below are only needed if you want to reach Grafana from outside the cluster.
 
 What `grafana-values.yaml` configures:
 
@@ -185,14 +200,15 @@ What `grafana-values.yaml` configures:
 | `deploymentStrategy.type` | `Recreate` | Required for `ReadWriteOnce` PVCs — rolling updates deadlock because the new pod can't attach the same volume |
 | `sidecar.datasources.enabled` | `true` | Watches ConfigMaps and Secrets labeled `grafana_datasource=1` and auto-provisions them |
 | `sidecar.dashboards.enabled` | `true` | Watches ConfigMaps labeled `grafana_dashboard=1` and loads them into Grafana |
-| `sidecar.dashboards.provider.folder` | `Crusoe` | Puts provisioned dashboards in a "Crusoe" folder in the Grafana UI |
+| `sidecar.dashboards.provider.folder` | `Crusoe` | Legacy single-folder setting. **Ignored** while `foldersFromFilesStructure` is on — the chart omits it from the rendered provisioning and folder placement comes from the annotations instead |
 | `sidecar.dashboards.folderAnnotation` | `grafana_folder` | A dashboard ConfigMap annotated `grafana_folder: <A>/<B>` is provisioned into a folder named after the LAST path segment — e.g. `Crusoe/Inference` produces a **top-level `Inference` folder, a peer of `Crusoe` (not nested inside it)**. This is a hard limit of Grafana 12.3.x, whose docs state the feature "doesn't let you create nested folder structures". Grafana's docs for ≥ 12.4 say the same tree nests (depth ≤ 4); that is **not verified in this repo** |
 | `sidecar.dashboards.provider.foldersFromFilesStructure` | `true` | Enables folder provisioning from the on-disk tree. With this on, the chart deliberately omits `provider.folder` from the rendered provisioning — folder placement comes entirely from the annotations. **On Grafana 12.3.x only the last directory segment becomes a folder title, and every provisioned folder is top-level**; nesting is claimed for ≥ 12.4 by Grafana's docs but is untested here |
 | `service.type` | `ClusterIP` | External access handled separately by `grafana-service-lb.yaml` |
 | `extraContainers.crusoe-auth-proxy` | Caddy on `:8888` | Injects `Authorization: Bearer $MONITORING_TOKEN` into outbound requests to Crusoe Metrics. Reads token + project from the `crusoe-monitoring-token` Secret as env vars. Avoids Grafana 12.3.x's `secureJsonData` regression. |
 | `resources.limits.memory` | `2Gi` | Rendering many dashboards against a multi-thousand-series cluster OOMs at the chart default (512Mi) |
+| `extraContainers.crusoe-public-tls-proxy` | Caddy on `:8443` | Terminates TLS for the LoadBalancer using the `grafana-public-tls` Secret from Step 4.5. The Secret is mounted `optional: true` and the sidecar waits for the cert, so Grafana installs and runs fine before Step 4.5 — when the Secret is created, the sidecar starts serving TLS on its own, with no pod restart |
 
-> **Upgrading an existing grafana-cmk install?** The folder-provisioning keys (`folderAnnotation`, `foldersFromFilesStructure`) were added after the initial release, and the repo's `dashboards/` directory is now a folder tree (`dashboards/Crusoe/…`, `dashboards/Crusoe/Inference/…`). Apply with `helm upgrade grafana grafana/grafana --namespace monitoring --values manifests/grafana-values.yaml`, then regenerate + apply the dashboards ConfigMap (script below), and remember to **delete any legacy-named dashboard ConfigMaps** (e.g. `crusoe-dashboard-gpu-vendor-neutral`) — two ConfigMaps whose dashboards share the same dashboard UID make the Grafana provisioner log `the same UID is used more than once` and block ALL dashboard provisioning writes. Dashboard UIDs are unchanged by this upgrade, so dashboard links keep working; the provisioned folders (`Crusoe`, `Inference`) are recreated with new UIDs and empty old folders left from the original install can be deleted from the Grafana UI afterwards.
+> **Upgrading an existing grafana-cmk install?** The folder-provisioning keys (`folderAnnotation`, `foldersFromFilesStructure`) were added after the initial release, and the repo's `dashboards/` directory is now a folder tree (`dashboards/Crusoe/…`, `dashboards/Crusoe/Inference/…`). Apply with `helm upgrade grafana grafana/grafana --namespace monitoring --version 10.5.15 --values manifests/grafana-values.yaml`, then re-apply the dashboards with `kubectl apply -k .`, and remember to **delete any legacy-named dashboard ConfigMaps** (e.g. `crusoe-dashboard-gpu-vendor-neutral`) — two ConfigMaps whose dashboards share the same dashboard UID make the Grafana provisioner log `the same UID is used more than once` and block ALL dashboard provisioning writes. Dashboard UIDs are unchanged by this upgrade, so dashboard links keep working; the provisioned folders (`Crusoe`, `Inference`) are recreated with new UIDs and empty old folders left from the original install can be deleted from the Grafana UI afterwards.
 
 Wait for the pod to be ready:
 
@@ -216,7 +232,7 @@ Wait for an external IP to be assigned (this can take 1–2 minutes on Crusoe):
 kubectl get svc grafana-lb -n monitoring -w
 ```
 
-Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<EXTERNAL-IP>` (port 443)**. The pod's `crusoe-public-tls-proxy` Caddy sidecar will start crash-looping until you complete Step 4.5 below — that's expected.
+Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<EXTERNAL-IP>` (port 443)**. Connections will be refused until you complete Step 4.5 — the `crusoe-public-tls-proxy` sidecar idles until the cert Secret exists. Grafana itself is unaffected and stays reachable over port-forward throughout.
 
 > **Crusoe firewall: open the nodePort, not 443.** On Crusoe Managed Kubernetes, the LB external IP DNATs public packets to a worker node's nodePort *before* the project firewall is evaluated. By the time the firewall sees the packet, the destination port has been rewritten from 443 to the nodePort. This manifest pins **nodePort `32042`** so the rule stays stable across redeploys — your Crusoe firewall rule should be `allow inbound TCP 32042 from <your CIDR>`. (On AWS/GCP you'd open 443; that intuition does not apply here.)
 >
@@ -237,7 +253,7 @@ Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<
 
 ## Step 4.5: Generate a self-signed cert for the LB IP
 
-The `crusoe-public-tls-proxy` sidecar mounts a Secret named `grafana-public-tls` (a standard `kubernetes.io/tls` Secret with `tls.crt` / `tls.key`). Without this Secret the sidecar will not start, and the LoadBalancer will refuse connections.
+The `crusoe-public-tls-proxy` sidecar mounts a Secret named `grafana-public-tls` (a standard `kubernetes.io/tls` Secret with `tls.crt` / `tls.key`). Until it exists the sidecar waits and the LoadBalancer refuses connections; once you create it, the sidecar picks the cert up within about a minute and starts serving — no pod restart or `helm upgrade` required.
 
 Generate a self-signed cert whose `subjectAltName` contains the LB IP, and store it as the Secret:
 
@@ -525,44 +541,29 @@ curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT_ID}/metrics/
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['metric']) for r in d.get('data',{}).get('result',[])]"
 ```
 
-If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`). After editing the JSON, regenerate `manifests/grafana-dashboards-configmap.yaml` — one ConfigMap per dashboard, all labeled `grafana_dashboard: "1"` so the k8s-sidecar picks them up. The directory tree under `dashboards/` is mirrored into the annotation: a dashboard at `dashboards/<A>/<B>/<name>.json` gets `grafana_folder: <A>/<B>` (e.g. `dashboards/Crusoe/Inference/vllm-overview.json` → `Crusoe/Inference`). On Grafana 12.3.x this provisions a **top-level** folder named after the last segment (`Inference`), not a folder nested inside `<A>`:
+If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`), then re-apply:
 
 ```bash
 cd grafana-cmk
-{
-  echo '# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.'
-  echo '#'
-  echo '# Auto-generated: one ConfigMap per dashboard, all labeled grafana_dashboard="1".'
-  echo '# The k8s-sidecar deployed alongside Grafana picks them all up by label, so splitting'
-  echo '# vs. bundling makes no application-layer difference. Splitting keeps each CM small'
-  echo '# enough that client-side `kubectl apply -f` stays under the 256 KiB per-resource'
-  echo '# annotation limit even as individual dashboards grow.'
-  echo '#'
-  echo '# The directory tree under dashboards/ is mirrored via grafana_folder annotations:'
-  echo '# dashboards/<A>/<B>/x.json → grafana_folder: <A>/<B>. With provider.foldersFromFilesStructure,'
-  echo '# Grafana 12.3.x provisions a TOP-LEVEL folder named <B>; it cannot nest <B> inside <A>.'
-  echo '#'
-  echo '# Migrating from an earlier release that shipped a single combined CM named'
-  echo '# "crusoe-dashboards"? Delete it first to avoid duplicate dashboard loads:'
-  echo '#   kubectl delete configmap crusoe-dashboards -n monitoring'
-  echo '# Then apply this file.'
-} > manifests/grafana-dashboards-configmap.yaml
-first=1
-emit() {  # $1 = dashboard JSON path (any depth under dashboards/)
-  name=$(basename "$1" .json)
-  folder=$(dirname "$1"); folder=${folder#dashboards}; folder=${folder#/}   # dashboards/Crusoe/x.json → Crusoe
-  [ $first -eq 1 ] && first=0 || echo "---" >> manifests/grafana-dashboards-configmap.yaml
-  out=$(kubectl create configmap "crusoe-dashboard-$name" --namespace=monitoring \
-        --from-file="${name}.json=$1" --dry-run=client -o yaml \
-        | kubectl label --local -f - grafana_dashboard=1 --dry-run=client -o yaml)
-  [ -n "$folder" ] && out=$(printf '%s\n' "$out" | kubectl annotate --local -f - "grafana_folder=$folder" --dry-run=client -o yaml)
-  printf '%s\n' "$out" | sed '/creationTimestamp/d' >> manifests/grafana-dashboards-configmap.yaml
-}
-for f in $(find dashboards -name '*.json' | sort); do emit "$f"; done
-kubectl apply -f manifests/grafana-dashboards-configmap.yaml
+kubectl apply -k .
 ```
 
-(`kubectl label/annotate --local` is used instead of in-place `sed` edits so the loop is portable between GNU and BSD/macOS `sed`.)
+`kustomization.yaml` turns each `dashboards/**/*.json` into its own ConfigMap labeled `grafana_dashboard: "1"` (what the k8s-sidecar watches), so **the dashboard JSON lives in exactly one place in this repo** — there is no generated copy to keep in sync. `disableNameSuffixHash` keeps the ConfigMap names stable, so re-applying updates them in place rather than leaving orphaned, hash-suffixed copies behind.
+
+To add a dashboard: drop the JSON under `dashboards/<Folder>/` and add an entry to `kustomization.yaml`:
+
+```yaml
+  - name: crusoe-dashboard-<name>
+    files:
+      - dashboards/<Folder>/<name>.json
+    options:
+      annotations:
+        grafana_folder: <Folder>
+```
+
+The `grafana_folder` annotation is the folder the dashboard is provisioned into. On Grafana 12.3.x a value of `<A>/<B>` yields a **top-level** folder named after the last segment (`<B>`), not a folder nested inside `<A>`.
+
+> **Upgrading from an earlier release?** Older versions of this solution shipped a generated `manifests/grafana-dashboards-configmap.yaml` that embedded a second copy of every dashboard. It has been removed in favour of `kubectl apply -k .`. The generated ConfigMap names are unchanged, so `apply -k` updates the existing ConfigMaps in place — nothing to clean up, and Grafana never notices the switch because the sidecar selects on the label, not the name.
 
 The `grafana_dashboard: "1"` label is what the sidecar watches — without it, the sidecar will not pick up the ConfigMap. The sidecar reloads dashboards within a minute.
 
