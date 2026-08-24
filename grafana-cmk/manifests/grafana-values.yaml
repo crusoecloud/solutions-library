@@ -44,9 +44,16 @@ sidecar:
     enabled: true
     label: grafana_dashboard
     labelValue: "1"
+    # Optional per-ConfigMap subfolder: a dashboard ConfigMap annotated
+    # `grafana_folder: <name>` is provisioned into "Crusoe/<name>" (e.g. the
+    # Inference dashboards). ConfigMaps without the annotation stay in the
+    # "Crusoe" root folder. Requires provider.foldersFromFilesStructure below
+    # (nested folders are native in Grafana ≥ 11).
+    folderAnnotation: grafana_folder
     provider:
       name: crusoe
       folder: "Crusoe"
+      foldersFromFilesStructure: true
       allowUiUpdates: false
 
 # ClusterIP service on port 3000 (matches both the pod's listening port and the
