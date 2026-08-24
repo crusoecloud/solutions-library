@@ -8,7 +8,7 @@
 #
 # The directory tree under dashboards/ is mirrored via grafana_folder annotations:
 # dashboards/<A>/<B>/x.json → grafana_folder: <A>/<B>. With provider.foldersFromFilesStructure,
-# Grafana 12.3.x provisions a flat folder named <B>; Grafana >= 12.4 nests <B> inside <A>.
+# Grafana 12.3.x provisions a TOP-LEVEL folder named <B>; it cannot nest <B> inside <A>.
 #
 # Migrating from an earlier release that shipped a single combined CM named
 # "crusoe-dashboards"? Delete it first to avoid duplicate dashboard loads:

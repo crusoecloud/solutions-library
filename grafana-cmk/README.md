@@ -186,8 +186,8 @@ What `grafana-values.yaml` configures:
 | `sidecar.datasources.enabled` | `true` | Watches ConfigMaps and Secrets labeled `grafana_datasource=1` and auto-provisions them |
 | `sidecar.dashboards.enabled` | `true` | Watches ConfigMaps labeled `grafana_dashboard=1` and loads them into Grafana |
 | `sidecar.dashboards.provider.folder` | `Crusoe` | Puts provisioned dashboards in a "Crusoe" folder in the Grafana UI |
-| `sidecar.dashboards.folderAnnotation` | `grafana_folder` | A dashboard ConfigMap annotated `grafana_folder: <A>/<B>` is provisioned into a folder using the LAST path segment (Grafana 12.3.x rule: FFFS cannot create nested folders) — e.g. `Crusoe/Inference` → flat folder `Inference` as a peer of `Crusoe`. On Grafana ≥ 12.4 the same tree nests automatically (`Crusoe` containing `Inference`) |
-| `sidecar.dashboards.provider.foldersFromFilesStructure` | `true` | Enables folder provisioning from the on-disk tree. Note: with this on, the chart deliberately omits `provider.folder` from the rendered provisioning — folder placement comes entirely from the annotations. **Grafana 12.3.x limitation:** only the last directory segment becomes a (flat) folder title; true nesting requires Grafana ≥ 12.4 |
+| `sidecar.dashboards.folderAnnotation` | `grafana_folder` | A dashboard ConfigMap annotated `grafana_folder: <A>/<B>` is provisioned into a folder named after the LAST path segment — e.g. `Crusoe/Inference` produces a **top-level `Inference` folder, a peer of `Crusoe` (not nested inside it)**. This is a hard limit of Grafana 12.3.x, whose docs state the feature "doesn't let you create nested folder structures". Grafana's docs for ≥ 12.4 say the same tree nests (depth ≤ 4); that is **not verified in this repo** |
+| `sidecar.dashboards.provider.foldersFromFilesStructure` | `true` | Enables folder provisioning from the on-disk tree. With this on, the chart deliberately omits `provider.folder` from the rendered provisioning — folder placement comes entirely from the annotations. **On Grafana 12.3.x only the last directory segment becomes a folder title, and every provisioned folder is top-level**; nesting is claimed for ≥ 12.4 by Grafana's docs but is untested here |
 | `service.type` | `ClusterIP` | External access handled separately by `grafana-service-lb.yaml` |
 | `extraContainers.crusoe-auth-proxy` | Caddy on `:8888` | Injects `Authorization: Bearer $MONITORING_TOKEN` into outbound requests to Crusoe Metrics. Reads token + project from the `crusoe-monitoring-token` Secret as env vars. Avoids Grafana 12.3.x's `secureJsonData` regression. |
 | `resources.limits.memory` | `2Gi` | Rendering many dashboards against a multi-thousand-series cluster OOMs at the chart default (512Mi) |
@@ -304,7 +304,7 @@ Verify the dashboards:
 1. Click **Dashboards** in the left sidebar.
 2. Open the **Crusoe** folder.
 3. You should see eleven dashboards in the **Crusoe** folder: Cluster GPU Overview, Cluster GPU Overview (Vendor-Neutral), Node Details, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
-4. If you applied the optional vLLM datasource (`manifests/grafana-datasource-vllm-configmap.yaml`) and run scraped vLLM pods, an **Inference** folder appears (on Grafana 12.3.x, as a peer of Crusoe; on ≥ 12.4, nested under Crusoe) with the **Inference / vLLM Overview** dashboard.
+4. If you applied the optional vLLM datasource (`manifests/grafana-datasource-vllm-configmap.yaml`) and run scraped vLLM pods, a separate top-level **Inference** folder appears — a peer of **Crusoe**, not nested inside it — holding the **Inference / vLLM Overview** dashboard.
 
 ---
 
@@ -452,7 +452,7 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 
 ### Inference dashboard (optional)
 
-**Inference / vLLM Overview (`Crusoe/Inference/vllm-overview.json`, 16 panels)** — SLO view for vLLM inference servers (e.g. recipes from the crusoe-kserve-example solution). It is the one dashboard that does **not** query Crusoe Metrics: it uses the `vLLM Local` datasource (uid `vllm-local`, applied via `manifests/grafana-datasource-vllm-configmap.yaml`), which points at the in-cluster `prometheus-vllm` Deployment from the crusoe-kserve-example repo. The ConfigMap carries a `grafana_folder: Crusoe/Inference` annotation, which lands in a flat **Inference** folder on Grafana 12.3.x (its FFFS uses the last path segment); on Grafana ≥ 12.4 the same annotation produces a real **Crusoe → Inference** nesting.
+**Inference / vLLM Overview (`Crusoe/Inference/vllm-overview.json`, 16 panels)** — SLO view for vLLM inference servers (e.g. recipes from the crusoe-kserve-example solution). It is the one dashboard that does **not** query Crusoe Metrics: it uses the `vLLM Local` datasource (uid `vllm-local`, applied via `manifests/grafana-datasource-vllm-configmap.yaml`), which points at the in-cluster `prometheus-vllm` Deployment from the crusoe-kserve-example repo. The ConfigMap carries a `grafana_folder: Crusoe/Inference` annotation, which on Grafana 12.3.x lands the dashboard in a **top-level `Inference` folder alongside `Crusoe`** — Grafana 12.3.x cannot provision folders inside other folders, so the `Crusoe/` prefix only reflects the repo layout, not the resulting folder hierarchy.
 
 - **Stat row**: servers up, requests running, requests waiting (queue), cluster generation + prompt tokens/s, prefix-cache hit rate.
 - **Latency SLAs**: TTFT and TPOT p50/p95/p99 quantiles with threshold lines (defaults: TTFT p99 = 2 s, TPOT p99 = 100 ms — retune the panel thresholds to your contract), plus end-to-end request latency quantiles.
@@ -525,7 +525,7 @@ curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT_ID}/metrics/
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['metric']) for r in d.get('data',{}).get('result',[])]"
 ```
 
-If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`). After editing the JSON, regenerate `manifests/grafana-dashboards-configmap.yaml` — one ConfigMap per dashboard, all labeled `grafana_dashboard: "1"` so the k8s-sidecar picks them up. The directory tree under `dashboards/` is mirrored into the annotation: a dashboard at `dashboards/<A>/<B>/<name>.json` gets `grafana_folder: <A>/<B>` (e.g. `dashboards/Crusoe/Inference/vllm-overview.json` → `Crusoe/Inference`). On Grafana 12.3.x this provisions a flat folder named after the last segment (`Inference`); on ≥ 12.4 it nests as `<A>` containing `<B>`:
+If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`). After editing the JSON, regenerate `manifests/grafana-dashboards-configmap.yaml` — one ConfigMap per dashboard, all labeled `grafana_dashboard: "1"` so the k8s-sidecar picks them up. The directory tree under `dashboards/` is mirrored into the annotation: a dashboard at `dashboards/<A>/<B>/<name>.json` gets `grafana_folder: <A>/<B>` (e.g. `dashboards/Crusoe/Inference/vllm-overview.json` → `Crusoe/Inference`). On Grafana 12.3.x this provisions a **top-level** folder named after the last segment (`Inference`), not a folder nested inside `<A>`:
 
 ```bash
 cd grafana-cmk
@@ -533,9 +533,19 @@ cd grafana-cmk
   echo '# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.'
   echo '#'
   echo '# Auto-generated: one ConfigMap per dashboard, all labeled grafana_dashboard="1".'
+  echo '# The k8s-sidecar deployed alongside Grafana picks them all up by label, so splitting'
+  echo '# vs. bundling makes no application-layer difference. Splitting keeps each CM small'
+  echo '# enough that client-side `kubectl apply -f` stays under the 256 KiB per-resource'
+  echo '# annotation limit even as individual dashboards grow.'
+  echo '#'
   echo '# The directory tree under dashboards/ is mirrored via grafana_folder annotations:'
   echo '# dashboards/<A>/<B>/x.json → grafana_folder: <A>/<B>. With provider.foldersFromFilesStructure,'
-  echo '# Grafana 12.3.x provisions a flat folder named <B>; Grafana >= 12.4 nests <B> inside <A>.'
+  echo '# Grafana 12.3.x provisions a TOP-LEVEL folder named <B>; it cannot nest <B> inside <A>.'
+  echo '#'
+  echo '# Migrating from an earlier release that shipped a single combined CM named'
+  echo '# "crusoe-dashboards"? Delete it first to avoid duplicate dashboard loads:'
+  echo '#   kubectl delete configmap crusoe-dashboards -n monitoring'
+  echo '# Then apply this file.'
 } > manifests/grafana-dashboards-configmap.yaml
 first=1
 emit() {  # $1 = dashboard JSON path (any depth under dashboards/)
