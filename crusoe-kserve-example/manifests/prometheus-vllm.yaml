@@ -1,7 +1,21 @@
 # Lightweight in-cluster Prometheus that scrapes the vLLM workload pods' :8000/metrics.
-# Needed because CMK's vmagent only remote-writes to an external endpoint (no queryable local API),
-# and KEDA needs a Prometheus it can query for vllm:num_requests_waiting (the autoscaling signal).
-# Applied by `make install-vllm-hpa`.
+# Needed because CMK's vmagent only remote-writes to an external endpoint (no queryable local API).
+#
+# Consumers:
+#   - KEDA (vllm:num_requests_waiting autoscaling signal — applied by `make install-vllm-hpa`)
+#   - The grafana-cmk "Inference" dashboards (datasource points at svc prometheus-vllm:9090)
+#
+# Target detection (no namespace pinning — works cluster-wide):
+#   1. KServe-managed pods: label kserve.io/component=workload (automatic on
+#      LLMInferenceService workloads).
+#   2. Any other vLLM pod: annotate it with BOTH prometheus.io/scrape: "true"
+#      and prometheus.io/port: "8000" — e.g. the hand-rolled kimi-k3-atom
+#      Deployment. Pod annotations are picked up live (a pod-restart is not
+#      required), though the annotations belong in the pod template so new
+#      pods carry them from birth.
+#      The port match is deliberate: many infra images ship the generic
+#      prometheus.io/scrape annotation; without the port filter they would
+#      drown this job in permanently-down :8000 targets.
 ---
 apiVersion: v1
 kind: Namespace
@@ -35,12 +49,13 @@ data:
       scrape_interval: 5s
       evaluation_interval: 5s
     scrape_configs:
+      # Job 1 — KServe-managed vLLM pods (LLMInferenceService workloads in ANY
+      # namespace): they carry kserve.io/component=workload automatically.
+      # Excludes router-scheduler/EPP pods, which don't serve :8000/metrics.
       - job_name: vllm
         kubernetes_sd_configs:
           - role: pod
-            namespaces: { names: [kserve-test] }
         relabel_configs:
-          # keep only the KServe vLLM workload pods (exclude router/EPP)
           - source_labels: [__meta_kubernetes_pod_label_kserve_io_component]
             regex: workload
             action: keep
@@ -49,6 +64,36 @@ data:
             regex: (.+)
             replacement: $1:8000
             target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+      # Job 2 — opt-in for non-KServe vLLM deployments (e.g. hand-rolled
+      # Deployments): annotate the pod with BOTH:
+      #   prometheus.io/scrape: "true"
+      #   prometheus.io/port: "8000"
+      # The port match is required to keep infra pods (cilium, cert-manager,
+      # envoy gateway, ...) that carry the generic prometheus.io/scrape
+      # annotation out of this vLLM-scoped job — they serve metrics on other
+      # ports and would appear as permanently-down targets.
+      - job_name: vllm-annotated
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            regex: "8000"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_ip]
+            regex: (.+)
+            replacement: $1:8000
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
           - source_labels: [__meta_kubernetes_pod_node_name]
@@ -69,7 +114,7 @@ spec:
           image: prom/prometheus:v3.1.0
           args:
             - --config.file=/etc/prometheus/prometheus.yml
-            - --storage.tsdb.retention.time=2h
+            - --storage.tsdb.retention.time=7d
             - --web.enable-lifecycle
           ports: [{ containerPort: 9090 }]
           volumeMounts:
