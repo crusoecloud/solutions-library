@@ -1,22 +1,30 @@
 ---
 # Remote Gateway
 #
-# For Azure/GCP/AWS: set vpn_use_gre=false
-# For Crusoe-to-Crusoe: set vpn_use_gre=true and vpn_client_cidr
+# This is the VPN gateway on the remote side (datacenter, another Crusoe
+# region, or a public cloud). It terminates IPsec from the source gateway.
+#
+# For non-Crusoe (Azure/GCP/AWS/datacenter): set vpn_use_gre=false
+#   Traffic is forwarded directly onto the local network (IP forwarding).
+# For Crusoe-to-Crusoe: set vpn_use_gre=true + vpn_client_cidr
+#   GRE-over-FOU overlay to deliver traffic to local VMs.
 
+# IKE identity for this gateway (local) and the remote peer
 vpn_local_id: "gw-rmt@crusoe.vpn"
 vpn_remote_id: "gw-src@crusoe.vpn"
 
-# IPsec peers use public IPs (NAT-T handles the rest)
+# Public IP of the source gateway (IPsec peer)
 vpn_remote_gw_ip: "<gw-src-public-ip>"
 
-# Traffic selectors use private subnets
-vpn_local_subnet: "<remote-private-subnet-cidr>"
+# IPsec traffic selectors — must mirror the source gateway.
+# local = CIDRs on this side (0.0.0.0/0 = accept all traffic for full tunnel)
+# remote = CIDRs on the source side (Crusoe subnets)
+vpn_local_subnet: "0.0.0.0/0"
 vpn_remote_subnet: "<source-private-subnet-cidr>"
 
-# --- Option A: Remote side is Azure / GCP / AWS ---
+# GRE-over-FOU overlay — set to true when this gateway is also on Crusoe.
+# vpn_client_cidr: subnet of VMs behind this gateway
+# For non-Crusoe: set vpn_use_gre=false (no vpn_client_cidr needed)
 vpn_use_gre: false
-
-# --- Option B: Remote side is also Crusoe (uncomment, comment out Option A) ---
 # vpn_use_gre: true
 # vpn_client_cidr: "<remote-private-subnet-cidr>"

@@ -48,7 +48,8 @@
 # ---------- Routing ----------
 
 - name: Route remote subnet through FOU tunnel
-  ansible.builtin.command: ip route replace {{ vpn_remote_subnet }} dev gre-vpn
+  ansible.builtin.command: ip route replace {{ item }} dev gre-vpn
+  loop: "{{ vpn_remote_subnets | default([vpn_remote_subnet]) }}"
   changed_when: true
   tags: [setup]
 
@@ -92,7 +93,7 @@
     msg: >-
       Client {{ inventory_hostname }} ({{ vpn_local_ip }}) ready:
       FOU tunnel to gateway {{ vpn_gateway_ip }},
-      remote subnet {{ vpn_remote_subnet }} via gre-vpn
+      remote subnets {{ vpn_remote_subnets | default([vpn_remote_subnet]) | join(', ') }} via gre-vpn
   tags: [setup, verify]
 
 # ---------- Teardown ----------

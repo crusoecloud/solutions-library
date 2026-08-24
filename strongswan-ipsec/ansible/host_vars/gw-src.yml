@@ -1,16 +1,27 @@
 ---
 # Source Gateway — Crusoe Cloud
+#
+# This is the VPN gateway on the Crusoe side. It terminates IPsec to the
+# remote gateway and runs a GRE-over-FOU overlay to deliver traffic to
+# local VMs and K8s nodes.
 
+# IKE identity for this gateway (local) and the remote peer
 vpn_local_id: "gw-src@crusoe.vpn"
 vpn_remote_id: "gw-rmt@crusoe.vpn"
 
-# IPsec peers use public IPs (NAT-T handles the rest)
+# Public IP of the remote gateway (IPsec peer)
 vpn_remote_gw_ip: "<gw-rmt-public-ip>"
 
-# Traffic selectors use private subnets
+# IPsec traffic selectors — define what traffic enters the tunnel.
+# local = CIDRs on this side (Crusoe subnets)
+# remote = CIDRs on the other side (0.0.0.0/0 = full tunnel, all traffic)
 vpn_local_subnet: "<source-private-subnet-cidr>"
-vpn_remote_subnet: "<remote-private-subnet-cidr>"
+vpn_remote_subnet: "0.0.0.0/0"
 
-# GRE mode: target local client VMs by private CIDR
+# GRE-over-FOU overlay — needed on Crusoe because port_security blocks
+# direct forwarding of packets with non-matching source IPs.
+# vpn_use_gre: enables the multipoint GRE tunnel on this gateway
+# vpn_client_cidr: subnet of VMs/K8s nodes behind this gateway
+#   (used to pre-populate the GRE neighbor table)
 vpn_use_gre: true
 vpn_client_cidr: "<source-private-subnet-cidr>"
