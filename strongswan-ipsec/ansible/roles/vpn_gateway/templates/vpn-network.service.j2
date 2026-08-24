@@ -15,7 +15,9 @@ ExecStart=/bin/bash -c '\
     ip link add {{ vpn_xfrm_iface }} type xfrm dev {{ vpn_primary_iface }} if_id {{ vpn_xfrm_if_id }}; \
     ip link set {{ vpn_xfrm_iface }} mtu {{ vpn_xfrm_mtu }}; \
     ip link set {{ vpn_xfrm_iface }} up; \
+{% if vpn_remote_subnet != "0.0.0.0/0" %}
     ip route replace {{ vpn_remote_subnet }} dev {{ vpn_xfrm_iface }}; \
+{% endif %}
 {% if vpn_use_gre | default(false) %}
     modprobe fou; \
     ip link del gre-vpn 2>/dev/null || true; \
@@ -26,14 +28,15 @@ ExecStart=/bin/bash -c '\
         encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}; \
     ip link set gre-vpn mtu {{ vpn_gre_mtu }}; \
     ip link set gre-vpn up; \
-    python3 -c "\
-import ipaddress, subprocess; \
-gw = \"{{ vpn_local_gw_ip }}\"; \
-[subprocess.run([\"ip\",\"neigh\",\"replace\",str(ip),\"lladdr\",str(ip),\"dev\",\"gre-vpn\",\"nud\",\"permanent\"], check=True) \
- for ip in ipaddress.ip_network(\"{{ vpn_client_cidr }}\", strict=False).hosts() if str(ip) != gw]"; \
+    python3 -c "import ipaddress, subprocess; gw=\"{{ vpn_local_gw_ip }}\"; [subprocess.run([\"ip\",\"neigh\",\"replace\",str(ip),\"lladdr\",str(ip),\"dev\",\"gre-vpn\",\"nud\",\"permanent\"], check=True) for ip in ipaddress.ip_network(\"{{ vpn_client_cidr }}\", strict=False).hosts() if str(ip) != gw]"; \
     ip rule del iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }} 2>/dev/null || true; \
     ip rule add iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }}; \
     ip route replace {{ vpn_client_cidr }} dev gre-vpn table {{ vpn_rt_table }}; \
+    iptables -t mangle -D PREROUTING -i gre-vpn -j MARK --set-mark 0x64 2>/dev/null || true; \
+    iptables -t mangle -A PREROUTING -i gre-vpn -j MARK --set-mark 0x64; \
+    ip rule del fwmark 0x64 lookup 200 2>/dev/null || true; \
+    ip rule add fwmark 0x64 lookup 200; \
+    ip route replace default dev {{ vpn_xfrm_iface }} table 200; \
 {% endif %}
     echo "VPN network ready"'
 

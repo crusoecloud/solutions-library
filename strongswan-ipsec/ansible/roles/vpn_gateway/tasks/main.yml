@@ -39,6 +39,16 @@
   when: ansible_os_family == "RedHat"
   tags: [setup]
 
+# Stop strongswan-starter immediately after install — it auto-starts
+# charon on package install and conflicts with charon-systemd.
+- name: Disable strongswan-starter (conflicts with charon-systemd)
+  ansible.builtin.systemd:
+    name: strongswan-starter
+    state: stopped
+    enabled: false
+  failed_when: false
+  tags: [setup]
+
 # ---------- Kernel parameters ----------
 
 - name: Configure sysctl (ip_forward, no redirects)
@@ -73,6 +83,7 @@
 - name: Route remote subnet through XFRM
   ansible.builtin.command: ip route replace {{ vpn_remote_subnet }} dev {{ vpn_xfrm_iface }}
   changed_when: true
+  when: vpn_remote_subnet != "0.0.0.0/0"
   tags: [setup]
 
 # ==========================================================================
@@ -87,24 +98,13 @@
   when: vpn_use_gre | default(false)
   tags: [setup]
 
-- name: Remove stale GRE tunnel and FOU port
+- name: Create GRE-over-FOU tunnel
   ansible.builtin.shell: |
     ip link del gre-vpn 2>/dev/null || true
     ip tunnel del gre-vpn 2>/dev/null || true
     ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
-  changed_when: true
-  failed_when: false
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Create FOU receive endpoint (UDP {{ vpn_fou_port }})
-  ansible.builtin.command: ip fou add port {{ vpn_fou_port }} ipproto 47
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Create multipoint GRE tunnel with FOU encapsulation
-  ansible.builtin.shell: |
+    sleep 1
+    ip fou add port {{ vpn_fou_port }} ipproto 47
     ip link add name gre-vpn type gre local {{ vpn_local_gw_ip }} key {{ vpn_gre_key }} ttl 255 \
         encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}
     ip link set gre-vpn mtu {{ vpn_gre_mtu }}
@@ -148,6 +148,35 @@
   when: vpn_use_gre | default(false)
   tags: [setup]
 
+# --- Mark-based routing: GRE traffic → xfrm0 ---
+# For full tunnel (vpn_remote_subnet = 0.0.0.0/0), traffic arriving on
+# gre-vpn may be destined for any IP (not just the datacenter CIDR).
+# We mark it and route via a separate table through xfrm0, so the
+# gateway's own default route is unaffected.
+
+- name: Mark GRE-inbound traffic for IPsec
+  ansible.builtin.shell: |
+    iptables -t mangle -D PREROUTING -i gre-vpn -j MARK --set-mark 0x64 2>/dev/null || true
+    iptables -t mangle -A PREROUTING -i gre-vpn -j MARK --set-mark 0x64
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Add ip rule for marked traffic → xfrm0
+  ansible.builtin.shell: |
+    ip rule del fwmark 0x64 lookup 200 2>/dev/null || true
+    ip rule add fwmark 0x64 lookup 200
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
+- name: Route all traffic through xfrm0 in mark table
+  ansible.builtin.command: >
+    ip route replace default dev {{ vpn_xfrm_iface }} table 200
+  changed_when: true
+  when: vpn_use_gre | default(false)
+  tags: [setup]
+
 # ==========================================================================
 # Firewall
 # ==========================================================================
@@ -183,6 +212,39 @@
     jump: ACCEPT
     comment: "VPN: IPsec -> client GRE"
   when: vpn_use_gre | default(false)
+  tags: [setup]
+
+# --- Internet egress: forward decrypted traffic to LAN/internet ---
+- name: "Allow forwarding: XFRM → LAN (internet egress)"
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "{{ vpn_xfrm_iface }}"
+    out_interface: "{{ vpn_primary_iface }}"
+    jump: ACCEPT
+    comment: "VPN: IPsec -> internet"
+  tags: [setup]
+
+- name: "Allow forwarding: LAN → XFRM (internet return)"
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "{{ vpn_primary_iface }}"
+    out_interface: "{{ vpn_xfrm_iface }}"
+    jump: ACCEPT
+    comment: "VPN: internet -> IPsec"
+  tags: [setup]
+
+# --- SNAT for internet-bound traffic from VPN clients ---
+# MASQUERADE doesn't work here because XFRM bypasses conntrack for
+# forwarded packets. Explicit SNAT with source match is reliable.
+- name: "SNAT decrypted VPN traffic going to internet"
+  ansible.builtin.iptables:
+    table: nat
+    chain: POSTROUTING
+    out_interface: "{{ vpn_primary_iface }}"
+    source: "{{ vpn_remote_subnet }}"
+    jump: SNAT
+    to_source: "{{ vpn_local_gw_ip }}"
+    comment: "VPN: SNAT for internet egress"
   tags: [setup]
 
 # --- Direct mode (Azure/GCP/AWS): forward between LAN and XFRM ---
