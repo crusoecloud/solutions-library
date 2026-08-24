@@ -93,6 +93,11 @@ spec:
           # Canonical vLLM-ATOM K3 launch (image's /app/ATOM/recipes/atom_vllm/Kimi-K3.md).
           # --additional-config online_quant_config routes the MoE through ATOM's ptpc_fp8/AITER path
           # (the generic vLLM Triton MXFP4 kernel isn't in this image and yields garbage without it).
+          # --max-model-len 1048576 = K3's native 1M window (config max_position_embeddings, no rope-scaling).
+          # It fits easily: MLA (24 full-attn layers) + KDA (69 constant-state layers) + fp8 KV yield
+          # ~4.7M tokens of KV cache (~4.5x concurrency at a full 1M-token request). Trade-off: a single
+          # ~1M-token prompt prefills in minutes, so raise client timeouts for very large prompts. Lower
+          # it (e.g. 131072) only if you want a smaller per-request ceiling.
           args:
             - |
               set -e
@@ -102,7 +107,7 @@ spec:
                 --served-model-name kimi-k3 \
                 --tensor-parallel-size 8 \
                 --trust-remote-code \
-                --max-model-len 131072 \
+                --max-model-len 1048576 \
                 --enable-prefix-caching \
                 --mamba-cache-mode align \
                 --kv-cache-dtype fp8 \
