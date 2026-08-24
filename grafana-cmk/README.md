@@ -149,12 +149,12 @@ kubectl apply -f manifests/monitoring-token-secret.yaml
 
 ## Step 3: Apply the remaining manifests and install Grafana
 
-Apply the StorageClass (if not already present), the PVC, the dashboards ConfigMap, and the datasource ConfigMap:
+Apply the StorageClass (if not already present), the PVC, the dashboards, and the datasource ConfigMap:
 
 ```bash
 kubectl apply -f manifests/ssd-storageclass.yaml
 kubectl apply -f manifests/grafana-pvc.yaml
-kubectl apply -f manifests/grafana-dashboards-configmap.yaml
+kubectl apply -k .                                    # dashboards: one ConfigMap per dashboards/**/*.json
 kubectl apply -f manifests/grafana-datasource-configmap.yaml
 ```
 
@@ -525,44 +525,29 @@ curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT_ID}/metrics/
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['metric']) for r in d.get('data',{}).get('result',[])]"
 ```
 
-If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`). After editing the JSON, regenerate `manifests/grafana-dashboards-configmap.yaml` — one ConfigMap per dashboard, all labeled `grafana_dashboard: "1"` so the k8s-sidecar picks them up. The directory tree under `dashboards/` is mirrored into the annotation: a dashboard at `dashboards/<A>/<B>/<name>.json` gets `grafana_folder: <A>/<B>` (e.g. `dashboards/Crusoe/Inference/vllm-overview.json` → `Crusoe/Inference`). On Grafana 12.3.x this provisions a **top-level** folder named after the last segment (`Inference`), not a folder nested inside `<A>`:
+If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`), then re-apply:
 
 ```bash
 cd grafana-cmk
-{
-  echo '# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.'
-  echo '#'
-  echo '# Auto-generated: one ConfigMap per dashboard, all labeled grafana_dashboard="1".'
-  echo '# The k8s-sidecar deployed alongside Grafana picks them all up by label, so splitting'
-  echo '# vs. bundling makes no application-layer difference. Splitting keeps each CM small'
-  echo '# enough that client-side `kubectl apply -f` stays under the 256 KiB per-resource'
-  echo '# annotation limit even as individual dashboards grow.'
-  echo '#'
-  echo '# The directory tree under dashboards/ is mirrored via grafana_folder annotations:'
-  echo '# dashboards/<A>/<B>/x.json → grafana_folder: <A>/<B>. With provider.foldersFromFilesStructure,'
-  echo '# Grafana 12.3.x provisions a TOP-LEVEL folder named <B>; it cannot nest <B> inside <A>.'
-  echo '#'
-  echo '# Migrating from an earlier release that shipped a single combined CM named'
-  echo '# "crusoe-dashboards"? Delete it first to avoid duplicate dashboard loads:'
-  echo '#   kubectl delete configmap crusoe-dashboards -n monitoring'
-  echo '# Then apply this file.'
-} > manifests/grafana-dashboards-configmap.yaml
-first=1
-emit() {  # $1 = dashboard JSON path (any depth under dashboards/)
-  name=$(basename "$1" .json)
-  folder=$(dirname "$1"); folder=${folder#dashboards}; folder=${folder#/}   # dashboards/Crusoe/x.json → Crusoe
-  [ $first -eq 1 ] && first=0 || echo "---" >> manifests/grafana-dashboards-configmap.yaml
-  out=$(kubectl create configmap "crusoe-dashboard-$name" --namespace=monitoring \
-        --from-file="${name}.json=$1" --dry-run=client -o yaml \
-        | kubectl label --local -f - grafana_dashboard=1 --dry-run=client -o yaml)
-  [ -n "$folder" ] && out=$(printf '%s\n' "$out" | kubectl annotate --local -f - "grafana_folder=$folder" --dry-run=client -o yaml)
-  printf '%s\n' "$out" | sed '/creationTimestamp/d' >> manifests/grafana-dashboards-configmap.yaml
-}
-for f in $(find dashboards -name '*.json' | sort); do emit "$f"; done
-kubectl apply -f manifests/grafana-dashboards-configmap.yaml
+kubectl apply -k .
 ```
 
-(`kubectl label/annotate --local` is used instead of in-place `sed` edits so the loop is portable between GNU and BSD/macOS `sed`.)
+`kustomization.yaml` turns each `dashboards/**/*.json` into its own ConfigMap labeled `grafana_dashboard: "1"` (what the k8s-sidecar watches), so **the dashboard JSON lives in exactly one place in this repo** — there is no generated copy to keep in sync. `disableNameSuffixHash` keeps the ConfigMap names stable, so re-applying updates them in place rather than leaving orphaned, hash-suffixed copies behind.
+
+To add a dashboard: drop the JSON under `dashboards/<Folder>/` and add an entry to `kustomization.yaml`:
+
+```yaml
+  - name: crusoe-dashboard-<name>
+    files:
+      - dashboards/<Folder>/<name>.json
+    options:
+      annotations:
+        grafana_folder: <Folder>
+```
+
+The `grafana_folder` annotation is the folder the dashboard is provisioned into. On Grafana 12.3.x a value of `<A>/<B>` yields a **top-level** folder named after the last segment (`<B>`), not a folder nested inside `<A>`.
+
+> **Upgrading from an earlier release?** Older versions of this solution shipped a generated `manifests/grafana-dashboards-configmap.yaml` that embedded a second copy of every dashboard. It has been removed in favour of `kubectl apply -k .`. The generated ConfigMap names are unchanged, so `apply -k` updates the existing ConfigMaps in place — nothing to clean up, and Grafana never notices the switch because the sidecar selects on the label, not the name.
 
 The `grafana_dashboard: "1"` label is what the sidecar watches — without it, the sidecar will not pick up the ConfigMap. The sidecar reloads dashboards within a minute.
 

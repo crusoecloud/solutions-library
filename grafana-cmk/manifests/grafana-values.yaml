@@ -34,7 +34,8 @@ deploymentStrategy:
 # Datasource: apply manifests/grafana-datasource-configmap.yaml (no secrets in it;
 # the token lives in the crusoe-monitoring-token Secret and is consumed by the
 # crusoe-auth-proxy sidecar declared in extraContainers below).
-# Dashboards: apply manifests/grafana-dashboards-configmap.yaml.
+# Dashboards: run `kubectl apply -k .` from the grafana-cmk/ directory (kustomization.yaml
+# generates one ConfigMap per dashboards/**/*.json).
 sidecar:
   datasources:
     enabled: true
