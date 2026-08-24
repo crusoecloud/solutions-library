@@ -17,6 +17,10 @@
 #      moonshotai/Kimi-K3). The repo root's `make setup-amd` creates it.
 #   3. Apply:  kubectl apply -n kserve-test -f recipe-kimi-k3-atom.yaml
 #
+# METRICS: the pod carries prometheus.io/scrape + prometheus.io/port=8000 annotations, so the
+# "vllm-annotated" job of manifests/prometheus-vllm.yaml picks it up in any namespace (no pod
+# restart needed even if annotated later — pod annotations are watched live).
+#
 # First boot downloads the ~1.5 TB MXFP4 weights to the RWX disk (init container, one time). ATOM's
 # staging loader then reads them (~30 min on network storage), online-quantizes non-MXFP4 tensors to
 # ptpc_fp8, JIT-compiles AITER kernels, and captures CUDA graphs — allow ~45-50 min to Ready on first
@@ -54,6 +58,11 @@ spec:
   template:
     metadata:
       labels: { app: kimi-k3-atom }
+      annotations:
+        # Opt-in for the prometheus-vllm "vllm-annotated" scrape job (manifests/prometheus-vllm.yaml) —
+        # picked up cluster-wide, in any namespace. Both annotations are required.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
     spec:
       nodeSelector:
         crusoe.ai/accelerator: amd-mi355x-288gb-roce
