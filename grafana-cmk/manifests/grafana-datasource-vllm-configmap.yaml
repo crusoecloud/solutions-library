@@ -1,0 +1,29 @@
+# Provided AS IS without warranty of any kind — see grafana-cmk/README.md → Disclaimer.
+#
+# OPTIONAL second Grafana datasource for locally-scraped vLLM inference metrics.
+# Only apply this if you run the crusoe-kserve-example `prometheus-vllm`
+# Deployment (manifests/prometheus-vllm.yaml in that repo, namespace
+# vllm-metrics). Applying it without that Deployment leaves a permanently-down
+# datasource in Grafana — harmless but noisy. No secrets in this file either;
+# same k8s-sidecar provisioning pattern as grafana-datasource-configmap.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-local-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  vllm-local.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: vLLM Local
+        type: prometheus
+        uid: vllm-local
+        access: proxy
+        url: http://prometheus-vllm.vllm-metrics.svc.cluster.local:9090
+        isDefault: false
+        jsonData:
+          httpMethod: GET
+          timeInterval: "5s"
+        editable: false
