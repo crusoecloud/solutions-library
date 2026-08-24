@@ -3,6 +3,7 @@ kind: MPIJob
 metadata:
   name: nccl-test-h200
 spec:
+  launcherCreationPolicy: WaitForWorkersReady
   slotsPerWorker: 8
   runPolicy:
     cleanPodPolicy: Running
@@ -12,11 +13,6 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
-          initContainers:
-          - image: ghcr.io/crusoecloud/nccl-tests:12.8.1-ubuntu24.04-nccl-2.26.5-1
-            imagePullPolicy: IfNotPresent
-            name: init
-            command: ["sh", "-c", "sleep 5"]
           volumes:
           - name: nccl-topo
             hostPath:
