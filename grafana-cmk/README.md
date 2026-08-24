@@ -149,13 +149,19 @@ kubectl apply -f manifests/monitoring-token-secret.yaml
 
 ## Step 3: Apply the remaining manifests and install Grafana
 
-Apply the StorageClass (if not already present), the PVC, the dashboards ConfigMap, and the datasource ConfigMap:
+Apply the StorageClass (if not already present), the PVC, the dashboards, and the datasource ConfigMap:
 
 ```bash
 kubectl apply -f manifests/ssd-storageclass.yaml
 kubectl apply -f manifests/grafana-pvc.yaml
-kubectl apply -f manifests/grafana-dashboards-configmap.yaml
+kubectl apply -k .                                    # dashboards: one ConfigMap per dashboards/**/*.json
 kubectl apply -f manifests/grafana-datasource-configmap.yaml
+```
+
+If you also run the crusoe-kserve-example inference stack — its `prometheus-vllm` Deployment scrapes vLLM `/metrics` inside the cluster — optionally add the second datasource that points Grafana at it, and the Inference dashboard will populate. Skip this if you don't run that stack; the ConfigMap would just provision a permanently-down datasource:
+
+```bash
+kubectl apply -f manifests/grafana-datasource-vllm-configmap.yaml
 ```
 
 > The datasource ConfigMap contains no secrets — it points Grafana at `http://localhost:8888`, which is the in-pod auth-injecting sidecar (`crusoe-auth-proxy`) defined in `grafana-values.yaml`. The sidecar reads `MONITORING_TOKEN` and `PROJECT_ID` from the Secret you applied in Step 2 and rewrites every outbound request to the Crusoe Metrics endpoint with the right `Authorization: Bearer …` header. 
@@ -168,8 +174,23 @@ helm repo update
 
 helm install grafana grafana/grafana \
   --namespace monitoring \
+  --version 10.5.15 \
   --values manifests/grafana-values.yaml
 ```
+
+> **Two things to expect from this command.** Helm prints `this chart is deprecated` — the upstream `grafana/grafana` chart is now marked deprecated, but it still installs and is what this solution is built and tested against. The `--version 10.5.15` pin resolves to **Grafana 12.3.1**; pinning matters because Grafana's folder-provisioning behaviour (documented below) differs between 12.3.x and later releases, so an unpinned install can silently change how dashboards are foldered.
+
+### Verify locally before exposing anything
+
+Everything above is self-contained — no LoadBalancer, no TLS cert. Confirm the stack works over a port-forward first:
+
+```bash
+kubectl -n monitoring rollout status deploy/grafana
+kubectl -n monitoring get secret grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+```
+
+Open `http://localhost:3000` and log in as `admin`. You should land on a Grafana with the **Crusoe** and **Inference** folders already populated. Steps 4 and 4.5 below are only needed if you want to reach Grafana from outside the cluster.
 
 What `grafana-values.yaml` configures:
 
@@ -179,10 +200,15 @@ What `grafana-values.yaml` configures:
 | `deploymentStrategy.type` | `Recreate` | Required for `ReadWriteOnce` PVCs — rolling updates deadlock because the new pod can't attach the same volume |
 | `sidecar.datasources.enabled` | `true` | Watches ConfigMaps and Secrets labeled `grafana_datasource=1` and auto-provisions them |
 | `sidecar.dashboards.enabled` | `true` | Watches ConfigMaps labeled `grafana_dashboard=1` and loads them into Grafana |
-| `sidecar.dashboards.provider.folder` | `Crusoe` | Puts provisioned dashboards in a "Crusoe" folder in the Grafana UI |
+| `sidecar.dashboards.provider.folder` | `Crusoe` | Legacy single-folder setting. **Ignored** while `foldersFromFilesStructure` is on — the chart omits it from the rendered provisioning and folder placement comes from the annotations instead |
+| `sidecar.dashboards.folderAnnotation` | `grafana_folder` | A dashboard ConfigMap annotated `grafana_folder: <A>/<B>` is provisioned into a folder named after the LAST path segment — e.g. `Crusoe/Inference` produces a **top-level `Inference` folder, a peer of `Crusoe` (not nested inside it)**. This is a hard limit of Grafana 12.3.x, whose docs state the feature "doesn't let you create nested folder structures". Grafana's docs for ≥ 12.4 say the same tree nests (depth ≤ 4); that is **not verified in this repo** |
+| `sidecar.dashboards.provider.foldersFromFilesStructure` | `true` | Enables folder provisioning from the on-disk tree. With this on, the chart deliberately omits `provider.folder` from the rendered provisioning — folder placement comes entirely from the annotations. **On Grafana 12.3.x only the last directory segment becomes a folder title, and every provisioned folder is top-level**; nesting is claimed for ≥ 12.4 by Grafana's docs but is untested here |
 | `service.type` | `ClusterIP` | External access handled separately by `grafana-service-lb.yaml` |
 | `extraContainers.crusoe-auth-proxy` | Caddy on `:8888` | Injects `Authorization: Bearer $MONITORING_TOKEN` into outbound requests to Crusoe Metrics. Reads token + project from the `crusoe-monitoring-token` Secret as env vars. Avoids Grafana 12.3.x's `secureJsonData` regression. |
 | `resources.limits.memory` | `2Gi` | Rendering many dashboards against a multi-thousand-series cluster OOMs at the chart default (512Mi) |
+| `extraContainers.crusoe-public-tls-proxy` | Caddy on `:8443` | Terminates TLS for the LoadBalancer using the `grafana-public-tls` Secret from Step 4.5. The Secret is mounted `optional: true` and the sidecar waits for the cert, so Grafana installs and runs fine before Step 4.5 — when the Secret is created, the sidecar starts serving TLS on its own, with no pod restart |
+
+> **Upgrading an existing grafana-cmk install?** The folder-provisioning keys (`folderAnnotation`, `foldersFromFilesStructure`) were added after the initial release, and the repo's `dashboards/` directory is now a folder tree (`dashboards/Crusoe/…`, `dashboards/Crusoe/Inference/…`). Apply with `helm upgrade grafana grafana/grafana --namespace monitoring --version 10.5.15 --values manifests/grafana-values.yaml`, then re-apply the dashboards with `kubectl apply -k .`, and remember to **delete any legacy-named dashboard ConfigMaps** (e.g. `crusoe-dashboard-gpu-vendor-neutral`) — two ConfigMaps whose dashboards share the same dashboard UID make the Grafana provisioner log `the same UID is used more than once` and block ALL dashboard provisioning writes. Dashboard UIDs are unchanged by this upgrade, so dashboard links keep working; the provisioned folders (`Crusoe`, `Inference`) are recreated with new UIDs and empty old folders left from the original install can be deleted from the Grafana UI afterwards.
 
 Wait for the pod to be ready:
 
@@ -206,7 +232,7 @@ Wait for an external IP to be assigned (this can take 1–2 minutes on Crusoe):
 kubectl get svc grafana-lb -n monitoring -w
 ```
 
-Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<EXTERNAL-IP>` (port 443)**. The pod's `crusoe-public-tls-proxy` Caddy sidecar will start crash-looping until you complete Step 4.5 below — that's expected.
+Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<EXTERNAL-IP>` (port 443)**. Connections will be refused until you complete Step 4.5 — the `crusoe-public-tls-proxy` sidecar idles until the cert Secret exists. Grafana itself is unaffected and stays reachable over port-forward throughout.
 
 > **Crusoe firewall: open the nodePort, not 443.** On Crusoe Managed Kubernetes, the LB external IP DNATs public packets to a worker node's nodePort *before* the project firewall is evaluated. By the time the firewall sees the packet, the destination port has been rewritten from 443 to the nodePort. This manifest pins **nodePort `32042`** so the rule stays stable across redeploys — your Crusoe firewall rule should be `allow inbound TCP 32042 from <your CIDR>`. (On AWS/GCP you'd open 443; that intuition does not apply here.)
 >
@@ -227,7 +253,7 @@ Once `EXTERNAL-IP` shows an IP address, the Service is listening on **`https://<
 
 ## Step 4.5: Generate a self-signed cert for the LB IP
 
-The `crusoe-public-tls-proxy` sidecar mounts a Secret named `grafana-public-tls` (a standard `kubernetes.io/tls` Secret with `tls.crt` / `tls.key`). Without this Secret the sidecar will not start, and the LoadBalancer will refuse connections.
+The `crusoe-public-tls-proxy` sidecar mounts a Secret named `grafana-public-tls` (a standard `kubernetes.io/tls` Secret with `tls.crt` / `tls.key`). Until it exists the sidecar waits and the LoadBalancer refuses connections; once you create it, the sidecar picks the cert up within about a minute and starts serving — no pod restart or `helm upgrade` required.
 
 Generate a self-signed cert whose `subjectAltName` contains the LB IP, and store it as the Secret:
 
@@ -293,7 +319,8 @@ Verify the dashboards:
 
 1. Click **Dashboards** in the left sidebar.
 2. Open the **Crusoe** folder.
-3. You should see ten dashboards: Cluster GPU Overview, Node Details, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
+3. You should see eleven dashboards in the **Crusoe** folder: Cluster GPU Overview, Cluster GPU Overview (Vendor-Neutral), Node Details, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
+4. If you applied the optional vLLM datasource (`manifests/grafana-datasource-vllm-configmap.yaml`) and run scraped vLLM pods, a separate top-level **Inference** folder appears — a peer of **Crusoe**, not nested inside it — holding the **Inference / vLLM Overview** dashboard.
 
 ---
 
@@ -303,12 +330,12 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 ### GPU dashboards
 
-**Cluster GPU Overview (`cluster-gpu-overview.json`, 13 panels)** — cluster-wide GPU health, utilization, and thermals.
+**Cluster GPU Overview (`Crusoe/cluster-gpu-overview.json`, 13 panels)** — cluster-wide GPU health, utilization, and thermals.
 
 - **Utilization + capacity**: Total GPUs / nodes, average utilization gauge (70%/90% thresholds), per-node utilization time series, memory used vs total, power draw by node, top-10 nodes by utilization.
 - **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs ≥80°C, GPUs ≥85°C slowdown threshold) sourced from `DCGM_FI_DEV_GPU_TEMP`, a compact **Top 3 Hottest Nodes** card row (node-name + temp), and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node Details dashboard.
 
-**Node Details (`node-gpu-detail.json`, 14 panels)** — per-node drill-in for both GPU and host system metrics. Pick a node from the `$node` dropdown; panels populate after selection. UID is preserved as `crusoe-node-gpu-detail` so existing URLs and bookmarks resolve.
+**Node Details (`Crusoe/node-gpu-detail.json`, 14 panels)** — per-node drill-in for both GPU and host system metrics. Pick a node from the `$node` dropdown; panels populate after selection. UID is preserved as `crusoe-node-gpu-detail` so existing URLs and bookmarks resolve.
 
 - **GPU section** (top): per-GPU utilization, memory used, temperature with 75 °C / 85 °C thresholds, power draw, and SM/memory clocks (useful for spotting thermal throttling).
 - **Node System section** (bottom): four headline stats (CPU Used %, Memory Used %, Memory Used bytes, Uptime) plus CPU utilization broken down by mode (`user`, `system`, `io_wait`, `nice`), memory used vs total, and per-device disk bandwidth + IOPS (read and write).
@@ -319,9 +346,13 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 > 2. **Disk devices.** Per-device disk I/O includes `vda*` (root + ephemeral) and `loop*` (squashfs / snap mounts). **Crusoe SDisks are NOT visible here** — those use Crusoe-side counters (`crusoe_sdisk_*`) and appear on the Shared Storage View.
 > 3. **Uptime via `crusoe_vm_boot_time`.** Grafana auto-formats the `time() - boot_time` value as days/hours.
 
-**Cluster GPU Power (`cluster-gpu-power.json`)** — aggregate and per-node power draw across the cluster, plus per-GPU power distribution histogram.
+**Cluster GPU Power (`Crusoe/cluster-gpu-power.json`)** — aggregate and per-node power draw across the cluster, plus per-GPU power distribution histogram.
 
-**DCGM & Xid Errors (`dcgm-xid-errors.json`, 20 panels)** — Xid + ECC tracking, plus a GPU Health section designed for slow-node detection during training runs.
+**Cluster GPU Overview (Vendor-Neutral) (`Crusoe/gpu-overview-vendor-neutral.json`, 7 panels)** — node count, avg GPU utilization / temperature / memory, and per-node utilization / memory / power / temperature time series built on Crusoe's `crusoe_node:*` recording rules. These rules cover **both NVIDIA and AMD Instinct** nodes, unlike the DCGM-based dashboards (NVIDIA-only), so this is the go-to overview on mixed or AMD fleets. Filters: **Cluster** (`cluster_id` values — note that Crusoe Metrics does not publish a human-readable `cluster_name` label anywhere today, so the dropdown shows cluster UUIDs; same limitation applies to the DCGM dashboards' cluster filter) and **Instance Type** (e.g. `b200-standard.1`, `mi355x-standard.1`) — select both to isolate one cluster's GPU fleet of one SKU.
+
+> **Caveats:** (1) The power-draw panel is NVIDIA-only — Crusoe Metrics does not publish GPU power for AMD nodes today, so it renders empty when only AMD instance types are selected. (2) The `p95` recording rules aggregate each node's GPUs, so per-node-per-GPU breakouts aren't available here (use the DCGM dashboards for NVIDIA per-GPU detail).
+
+**DCGM & Xid Errors (`Crusoe/dcgm-xid-errors.json`, 20 panels)** — Xid + ECC tracking, plus a GPU Health section designed for slow-node detection during training runs.
 
 - **Top section: Xid + DBE.** Stat cards that turn red on any non-zero value, Xid rate by node over time, breakdown table by node / GPU / Xid code, and a Health Failures table that lists any GPU with a new ECC DBE volatile increase or an uncorrectable HBM row remapping in the last 24h. Xid code meanings: [NVIDIA's Xid error reference](https://docs.nvidia.com/deploy/xid-errors/).
 - **GPU Health Indicators — Slow Node Detection.** Six headline stats (active SBE GPUs, GPUs with remapped rows, uncorrectable rows, 24 h PCIe replay delta, 24 h SBE volatile delta, cluster lifetime SBE) plus six leaderboard tables for drill-in:
@@ -343,7 +374,7 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 ### InfiniBand dashboards
 
-**InfiniBand Cluster View (`cluster-ib-overview.json`, 20 panels)** — fabric activity and health for the whole cluster.
+**InfiniBand Cluster View (`Crusoe/cluster-ib-overview.json`, 20 panels)** — fabric activity and health for the whole cluster.
 
 - **Activity stat row:** Active IB Nodes, Total HCA Ports, Cluster RX BW, Cluster TX BW, Cluster RX pps, Cluster TX pps.
 - **IB Health stat row:** Total RX Errors, Total TX Discards, Link Downed events, Link Recovery events, Remote Physical Errors, Local Link Integrity Errors. All zero on a healthy fabric, red on any non-zero — single-glance "is anything wrong?".
@@ -352,7 +383,7 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 - **RX Utilization %** per node + per-node RX errors rate.
 - **TX Wait (back-pressure)** per node + **Top 10 Nodes by combined RX+TX** bar gauge.
 
-**InfiniBand Node View (`node-ib-detail.json`, 14 panels)** — per-HCA detail for selected nodes (multi-select dropdown).
+**InfiniBand Node View (`Crusoe/node-ib-detail.json`, 14 panels)** — per-HCA detail for selected nodes (multi-select dropdown).
 
 - **Stat row:** Selected Nodes RX, TX, RX errors, link-integrity errors.
 - **Aggregate per node** RX / TX time series.
@@ -373,7 +404,7 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 ### Storage dashboard
 
-**Shared Storage View (`storage-cluster-overview.json`)** — per-disk view of Crusoe-provisioned block storage (`crusoe_sdisk_*` metric family). Project-scoped: the dashboard lists every Crusoe SDisk in the project and you drill into one at a time using the **Crusoe SDisk (by Crusoe ID)** dropdown.
+**Shared Storage View (`Crusoe/storage-cluster-overview.json`)** — per-disk view of Crusoe-provisioned block storage (`crusoe_sdisk_*` metric family). Project-scoped: the dashboard lists every Crusoe SDisk in the project and you drill into one at a time using the **Crusoe SDisk (by Crusoe ID)** dropdown.
 
 Panels:
 
@@ -392,7 +423,7 @@ The dropdown is sourced from `label_values(crusoe_sdisk_disk_capacity_used_bytes
 
 ### Slurm dashboard
 
-**Slurm Cluster View (`slurm-cluster-overview.json`)** — control-plane view of a Crusoe Managed Slurm or Slurm-on-CMK cluster. Surfaces:
+**Slurm Cluster View (`Crusoe/slurm-cluster-overview.json`)** — control-plane view of a Crusoe Managed Slurm or Slurm-on-CMK cluster. Surfaces:
 
 - **Node states** as stat cards (Total / Allocated / Idle / Mixed / Down-Drained-Fail / Drain-Draining) plus a 12-state stacked time series (`alloc`, `mixed`, `idle`, `drain`, `draining`, `drained`, `down`, `fail`, `maint`, `planned`, `resv`, `unknown`).
 - **Job states** as stat cards (Running, Pending, sdiag Failed, OOM, Cancelled, Timeout, Node-Failed) plus a 9-state stacked time series.
@@ -412,7 +443,7 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 
 ### Network dashboards
 
-**Network Cluster View (`network-cluster-overview.json`)** — frontend ethernet RX/TX across the cluster plus Elastic Load Balancer (ELB) stats.
+**Network Cluster View (`Crusoe/network-cluster-overview.json`)** — frontend ethernet RX/TX across the cluster plus Elastic Load Balancer (ELB) stats.
 
 - **Header stats**: cluster-wide RX / TX rate, count of VMs with active traffic, count of frontend NICs reporting.
 - **Cluster bandwidth over time**: RX and TX time series, side by side.
@@ -421,7 +452,7 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 - **Per-rail-pod breakdown**: stacked time series grouped by `pod_id` (Crusoe rail pod — the set of nodes connected to a single InfiniBand switch). One pod spiking on the frontend usually means storage activity concentrated on those nodes; collectives stay on IB.
 - **ELB section**: aggregate in/out bandwidth and active-flow counts plus per-LB time series of bytes (in/out), packets (in/out), active flows, and new-flows rate. A `Top ELBs by Total Bandwidth (In+Out)` bar gauge labels each row with `{elb_name} :{vip_port}/{proto}` so it's easy to tell e.g. SSH (`22/tcp`) from a Grafana LB (`3000/tcp`).
 
-**Node Network Detail (`node-network-detail.json`)** — drill-in for one or many nodes via a multi-select `$node` dropdown.
+**Node Network Detail (`Crusoe/node-network-detail.json`)** — drill-in for one or many nodes via a multi-select `$node` dropdown.
 
 - Stat header: current RX, current TX, lifetime RX (counter total), lifetime TX (counter total) for the current selection.
 - Side-by-side per-node RX and TX time series, plus a stacked combined RX+TX view.
@@ -434,6 +465,21 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 > 2. **No packet / error / drop counters on the frontend NIC.** Crusoe Metrics only exposes RX and TX byte counters per VM-device. If you need per-packet rate, retransmits, TCP-level stats, or interface errors, those need a node-exporter sidecar that this solution does not deploy.
 > 3. **ELB metrics are project-scoped, not cluster-scoped.** `crusoe_elb_*` series carry `project_id` but no `cluster_id` label, so the `$cluster` dropdown does not filter the ELB section — every ELB in the project shows up. If you run multiple clusters in one project they share this view.
 > 4. **No node-to-node flow map.** RX/TX are aggregate counters, not per-peer. You can see "node A is moving a lot of data" but not "node A is talking to node B" — for that you would need flow data the Crusoe relay doesn't currently expose.
+
+### Inference dashboard (optional)
+
+**Inference / vLLM Overview (`Crusoe/Inference/vllm-overview.json`, 16 panels)** — SLO view for vLLM inference servers (e.g. recipes from the crusoe-kserve-example solution). It is the one dashboard that does **not** query Crusoe Metrics: it uses the `vLLM Local` datasource (uid `vllm-local`, applied via `manifests/grafana-datasource-vllm-configmap.yaml`), which points at the in-cluster `prometheus-vllm` Deployment from the crusoe-kserve-example repo. The ConfigMap carries a `grafana_folder: Crusoe/Inference` annotation, which on Grafana 12.3.x lands the dashboard in a **top-level `Inference` folder alongside `Crusoe`** — Grafana 12.3.x cannot provision folders inside other folders, so the `Crusoe/` prefix only reflects the repo layout, not the resulting folder hierarchy.
+
+- **Stat row**: servers up, requests running, requests waiting (queue), cluster generation + prompt tokens/s, prefix-cache hit rate.
+- **Latency SLAs**: TTFT and TPOT p50/p95/p99 quantiles with threshold lines (defaults: TTFT p99 = 2 s, TPOT p99 = 100 ms — retune the panel thresholds to your contract), plus end-to-end request latency quantiles.
+- **Cache and throughput**: prefix-cache hit rate by model, tokens/s by node (generation and prompt), KV-cache utilization per pod.
+- **Queue and usage**: running vs waiting per pod, finished-reason mix, preemption rate, and a requests-by-API-endpoint table built from vLLM's own `http_requests_total`.
+
+> **Inference dashboard caveats:**
+>
+> 1. **No per-user identity.** vLLM `/metrics` carries no user or API-key label — the endpoint table is the closest available "who is using the server" proxy. True per-user accounting needs an API gateway in front of vLLM (e.g. KServe/llm-d with auth), not this dashboard.
+> 2. **Pods must opt in to scraping.** A vLLM pod shows up only if it carries the label `kserve.io/component=workload` (automatic on KServe LLMInferenceService workloads) or BOTH pod annotations `prometheus.io/scrape: "true"` and `prometheus.io/port: "8000"` (the hand-rolled recipes in crusoe-kserve-example carry them). Scaled-to-zero replicas simply disappear from the panels.
+> 3. **Local retention only.** `prometheus-vllm` is single-replica with 7-day retention and no remote-write — good for SLO watching, not for capacity planning. Export long-term data elsewhere if you need it.
 
 ---
 
@@ -495,29 +541,29 @@ curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT_ID}/metrics/
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['metric']) for r in d.get('data',{}).get('result',[])]"
 ```
 
-If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`). After editing the JSON, regenerate `manifests/grafana-dashboards-configmap.yaml` — one ConfigMap per dashboard, all labeled `grafana_dashboard: "1"` so the k8s-sidecar picks them up:
+If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`), then re-apply:
 
 ```bash
 cd grafana-cmk
-{
-  echo "# Auto-generated: one ConfigMap per dashboard, all labeled grafana_dashboard=\"1\"."
-  echo "# Splitting keeps each CM small enough that client-side \`kubectl apply -f\` stays"
-  echo "# under the 256 KiB per-resource annotation limit."
-} > manifests/grafana-dashboards-configmap.yaml
-first=1
-for f in dashboards/*.json; do
-  name=$(basename "$f" .json)
-  [ $first -eq 1 ] && first=0 || echo "---" >> manifests/grafana-dashboards-configmap.yaml
-  kubectl create configmap "crusoe-dashboard-$name" \
-    --namespace=monitoring \
-    --from-file="${name}.json=$f" \
-    --dry-run=client -o yaml \
-    | sed '/creationTimestamp/d' \
-    | sed 's/^metadata:$/metadata:\n  labels:\n    grafana_dashboard: "1"/' \
-    >> manifests/grafana-dashboards-configmap.yaml
-done
-kubectl apply -f manifests/grafana-dashboards-configmap.yaml
+kubectl apply -k .
 ```
+
+`kustomization.yaml` turns each `dashboards/**/*.json` into its own ConfigMap labeled `grafana_dashboard: "1"` (what the k8s-sidecar watches), so **the dashboard JSON lives in exactly one place in this repo** — there is no generated copy to keep in sync. `disableNameSuffixHash` keeps the ConfigMap names stable, so re-applying updates them in place rather than leaving orphaned, hash-suffixed copies behind.
+
+To add a dashboard: drop the JSON under `dashboards/<Folder>/` and add an entry to `kustomization.yaml`:
+
+```yaml
+  - name: crusoe-dashboard-<name>
+    files:
+      - dashboards/<Folder>/<name>.json
+    options:
+      annotations:
+        grafana_folder: <Folder>
+```
+
+The `grafana_folder` annotation is the folder the dashboard is provisioned into. On Grafana 12.3.x a value of `<A>/<B>` yields a **top-level** folder named after the last segment (`<B>`), not a folder nested inside `<A>`.
+
+> **Upgrading from an earlier release?** Older versions of this solution shipped a generated `manifests/grafana-dashboards-configmap.yaml` that embedded a second copy of every dashboard. It has been removed in favour of `kubectl apply -k .`. The generated ConfigMap names are unchanged, so `apply -k` updates the existing ConfigMaps in place — nothing to clean up, and Grafana never notices the switch because the sidecar selects on the label, not the name.
 
 The `grafana_dashboard: "1"` label is what the sidecar watches — without it, the sidecar will not pick up the ConfigMap. The sidecar reloads dashboards within a minute.
 

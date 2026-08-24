@@ -1,4 +1,16 @@
 ---
-# Source-side Crusoe client VMs → source gateway
+# Source-side Crusoe client VMs
+#
+# These VMs sit behind gw-src. The vpn_client role creates a GRE-over-FOU
+# tunnel from each VM to the gateway specified by vpn_gateway_host.
+
+# Which gateway to connect to (must match a host in [vpn_gateways])
 vpn_gateway_host: "gw-src"
-vpn_remote_subnet: "<remote-private-subnet-cidr>"
+
+# CIDRs to route through the GRE tunnel to the gateway.
+# For split tunnel (datacenter only):
+#   vpn_remote_subnet: "<remote-private-subnet-cidr>"
+# For full tunnel (all internet via remote gateway):
+vpn_remote_subnets:
+  - "0.0.0.0/1"
+  - "128.0.0.0/1"

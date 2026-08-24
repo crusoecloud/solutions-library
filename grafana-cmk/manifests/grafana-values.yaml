@@ -34,7 +34,8 @@ deploymentStrategy:
 # Datasource: apply manifests/grafana-datasource-configmap.yaml (no secrets in it;
 # the token lives in the crusoe-monitoring-token Secret and is consumed by the
 # crusoe-auth-proxy sidecar declared in extraContainers below).
-# Dashboards: apply manifests/grafana-dashboards-configmap.yaml.
+# Dashboards: run `kubectl apply -k .` from the grafana-cmk/ directory (kustomization.yaml
+# generates one ConfigMap per dashboards/**/*.json).
 sidecar:
   datasources:
     enabled: true
@@ -44,9 +45,16 @@ sidecar:
     enabled: true
     label: grafana_dashboard
     labelValue: "1"
+    # Optional per-ConfigMap subfolder: a dashboard ConfigMap annotated
+    # `grafana_folder: <name>` is provisioned into "Crusoe/<name>" (e.g. the
+    # Inference dashboards). ConfigMaps without the annotation stay in the
+    # "Crusoe" root folder. Requires provider.foldersFromFilesStructure below
+    # (nested folders are native in Grafana ≥ 11).
+    folderAnnotation: grafana_folder
     provider:
       name: crusoe
       folder: "Crusoe"
+      foldersFromFilesStructure: true
       allowUiUpdates: false
 
 # ClusterIP service on port 3000 (matches both the pod's listening port and the
@@ -160,6 +168,12 @@ extraContainers: |
   # :8443. The cert is self-signed and generated against the LB's public IP —
   # see README Step 4.5 for the openssl bootstrap. auto_https is OFF because
   # there is no public DNS and public CAs do not issue certs for bare IPs.
+  #
+  # The Secret does not exist until Step 4.5, so this sidecar waits for the cert
+  # instead of failing. That keeps Step 3 self-contained: Grafana comes up and is
+  # reachable over `kubectl port-forward` with no cert in play. Once Step 4.5
+  # creates the Secret, kubelet populates the (optional) volume and Caddy starts
+  # serving TLS on its own — no reinstall or restart needed.
   - name: crusoe-public-tls-proxy
     image: caddy:2-alpine
     command: ["/bin/sh", "-c"]
@@ -176,6 +190,11 @@ extraContainers: |
           reverse_proxy localhost:3000
         }
         EOF
+        if [ ! -f /etc/caddy/tls/tls.crt ]; then
+          echo "waiting for grafana-public-tls Secret (README Step 4.5); Grafana is still reachable via kubectl port-forward"
+          while [ ! -f /etc/caddy/tls/tls.crt ]; do sleep 5; done
+          echo "cert appeared; starting TLS terminator"
+        fi
         exec caddy run --config /tmp/Caddyfile --adapter caddyfile
     ports:
       - name: public-tls
@@ -195,10 +214,12 @@ extraContainers: |
     # speak TLS without extra config. Process health is sufficient here.
 
 # Mount the TLS secret as a volume that the crusoe-public-tls-proxy sidecar
-# above consumes. The Secret is created by README Step 4.5 — Grafana will
-# crash-loop on first install until the Secret exists, which is the intended
-# fail-fast.
+# above consumes. `optional: true` means the pod starts before the Secret
+# exists — it is created later by README Step 4.5. Without it, kubelet blocks
+# the pod in Init/ContainerCreating with a FailedMount error and Grafana never
+# becomes reachable, even over port-forward.
 extraContainerVolumes:
   - name: public-tls-cert
     secret:
       secretName: grafana-public-tls
+      optional: true

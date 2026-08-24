@@ -1,0 +1,195 @@
+# ── Container Image ───────────────────────────────────────────────
+# Set repository to your Crusoe Container Registry URL.
+# Example: registry.your-location.ccr.crusoecloudcompute.com/crusoe-node-remediation.your-project-id
+image:
+  repository: ""
+  # tag: set in e2e/values.yaml or via --set
+  pullPolicy: IfNotPresent
+
+# ── Schedule ──────────────────────────────────────────────────────
+# Cron schedule for the remediation job. Default: daily at midnight.
+# For faster testing: "*/5 * * * *" (every 5 minutes)
+schedule: "0 0 * * *"
+
+# ── Node Discovery ────────────────────────────────────────────────
+# Select which nodes to manage. Leave empty to target all nodes.
+#
+# nodeSelector filters by K8s labels (project, nodepool).
+# instanceTypeFilter filters by VM instance type (regex).
+# Both are ANDed together.
+#
+# Available labels on CMK nodes:
+#   crusoe.ai/project.id          — e.g. "your-project-id"
+#   crusoe.ai/nodepool.id         — e.g. "your-nodepool-id"
+#   beta.kubernetes.io/instance-type — e.g. "b200-180gb-sxm-ib.8x"
+#
+# Example — target a specific nodepool:
+#   nodeSelector:
+#     matchLabels:
+#       crusoe.ai/project.id: "your-project-id"
+#       crusoe.ai/nodepool.id: "your-nodepool-id"
+#   instanceTypeFilter: "b200.*"
+nodeSelector:
+  matchLabels:
+    # crusoe.ai/project.id: "your-project-id"
+    # crusoe.ai/nodepool.id: "your-nodepool-id"
+
+# Filter by VM instance type. Use regex.
+# B200 GPU nodes: "b200.*"
+# All nodes: ".*"
+# CPU only: "c1a.*"
+instanceTypeFilter: "b200.*"
+
+# ── Thresholds ───────────────────────────────────────────────────
+# When to cordon and when to take action. Supports: w (weeks),
+# d (days), h (hours), m (minutes), s (seconds). Mixed: "1d12h".
+#
+# Defaults target the NVIDIA Blackwell NVLink bug that causes GPU hangs
+# after ~60 days of continuous uptime. Scheduled preventative reboots
+# before the threshold avoid production hangs.
+# See: https://docs.nvidia.com/dgx/dgxb300-fw-update-guide/version-26-03-1.html#gpu-tray-fixes
+#
+# By default, cordonThreshold == remediationThreshold (55d) so cordon and
+# drain happen back-to-back in the same run. Set a lower cordonThreshold
+# to create a buffer window where nodes are cordoned but not yet drained,
+# allowing workloads to naturally rotate off.
+#
+#   Equal (default):          Buffer window (optional):
+#   Day 0 ──────── Day 55     Day 0 ──── Day 55 ──── Day 60
+#   (normal)       (cordon+   (normal)   (cordon)    (remediate)
+#                  remediate)            │           │
+#                                        │ mark       │ drain →
+#                                        │ unsched.   │ vm-reset →
+#                                        │ (pods run) │ uncordon
+#
+# cordonThreshold: 55d
+#   Marks the node unschedulable — blocks new pods from scheduling.
+#   Does NOT drain — existing pods keep running.
+#
+# remediationThreshold: 55d
+#   Triggers the full remediation cycle on the already-cordoned node:
+#   drain (evict all pods) → vm-reset (reboot) → uncordon.
+#   Cordon is idempotent — skips if already done.
+#
+#   When cordonThreshold == remediationThreshold, the cordon-only phase
+#   is skipped — nodes go straight to cordon and drain → vm-reset → uncordon.
+#
+# remediationCooldown: 7d
+#   After remediation, skip this node for 7 days to avoid
+#   re-remediating a freshly rebooted node.
+#
+# For fast testing:
+#   cordonThreshold: 30m
+#   remediationThreshold: 1h
+#   remediationCooldown: 15m
+cordonThreshold: 55d
+remediationThreshold: 55d
+remediationCooldown: 7d
+
+# ── Remediation Action ───────────────────────────────────────────
+# Single step (type) or multi-step sequence (steps). Not both.
+#
+# Single step:
+#   action:
+#     type: vm-reset
+#     timeout: 10m
+#     maxRetries: 3
+#
+# Multi-step sequence:
+#   action:
+#     maxRetries: 3
+#     steps:
+#       - type: vm-stop
+#         timeout: 5m
+#       - type: vm-delete
+#         timeout: 30m
+#         wait: 2m
+#
+# Available step types:
+#   vm-reset   — Crusoe API VM RESET + poll node Ready (default)
+#   noop       — No action (for dry-run / testing)
+action:
+  type: noop
+  timeout: 10m
+  maxRetries: 5
+
+# ── Guardrails ───────────────────────────────────────────────────
+# Limit how many nodes can be cordoned/draining/rebooting at once.
+# Use absolute count OR percentage (percentage of total nodes).
+# The more restrictive applies.
+guardrails:
+  globalMaxCordoned: 1
+  globalMaxCordonedPercent: null
+  # globalMaxCordonedPercent: 20  # OR 20% of cluster
+  perPoolMaxCordoned: 1
+  perPoolMaxCordonedPercent: null
+  # perPoolMaxCordonedPercent: 25  # OR 25% of pool
+
+# ── Drain Settings ───────────────────────────────────────────────
+# drainTimeout: how long to wait for graceful drain (evict pods, respect PDBs).
+drainTimeout: 120m
+# forceAfterEvictionFailure: if true, force-drain (ignore PDBs) after drainTimeout.
+forceAfterEvictionFailure: false
+
+# ── Node Priority ─────────────────────────────────────────────
+# When guardrails limit how many nodes can be processed, which nodes go first?
+#   highest-uptime — process nodes with most uptime first (default)
+nodePriority: highest-uptime
+
+# ── Crusoe API ───────────────────────────────────────────────────
+# Credential source — two modes:
+#
+# 1. Built-in secret (default, recommended for CMK clusters):
+#    Set useBuiltinSecret: true. Uses the crusoe-secrets secret provisioned
+#    by Crusoe in the crusoe-system namespace. Copy it to the release
+#    namespace before install:
+#      kubectl get secret crusoe-secrets -n crusoe-system -o yaml \
+#        | sed 's/namespace: crusoe-system/namespace: crusoe-node-remediation/' \
+#        | grep -v '^\s*resourceVersion:\|^\s*uid:\|^\s*creationTimestamp:' \
+#        | kubectl apply -f -
+#
+# 2. Custom secret (for custom setups):
+#    Set useBuiltinSecret: false. Create a secret with keys:
+#      access-key, secret-key, api-url
+#    kubectl create secret generic crusoe-api-credentials \
+#      --namespace crusoe-node-remediation \
+#      --from-literal=access-key=YOUR_ACCESS_KEY \
+#      --from-literal=secret-key=YOUR_SECRET_KEY \
+#      --from-literal=api-url=https://api.cloud.crusoe.ai/v1alpha5
+useBuiltinSecret: true
+builtinSecretNamespace: crusoe-system
+# crusoeApiSecret: crusoe-api-credentials  # Only set when useBuiltinSecret: false
+
+# Crusoe project ID. Required when useBuiltinSecret: false.
+# When useBuiltinSecret: true, CRUSOE_PROJECT_ID from the secret is used
+# and this value is only a fallback if the secret doesn't have it.
+crusoeProjectId: ""
+
+# ── Dry Run ──────────────────────────────────────────────────────
+# When true: logs all actions without executing cordon/drain/reboot.
+# Start with true to verify node discovery, then set to false.
+dryRun: true
+
+# ── Journald Logging ─────────────────────────────────────────────
+# When true: logs are written to both stdout (kubectl logs) AND the
+# host's systemd journal. The Crusoe Watch Agent (Vector) collects all
+# journald entries and forwards them to the Crusoe Managed Logs console
+# (https://console.crusoecloud.com/command-center/managed-logs).
+#
+# In the console, filter by log_source=journald and search for
+# "crusoe-node-remediation" to find remediation logs.
+#
+# Requires the journald socket to be mounted from the host (done
+# automatically by the Helm chart when this is enabled).
+journaldLogging: true
+
+# ── Remediation Report CRD ───────────────────────────────────────
+# When true: deploys a RemediationReport CRD and the CronJob writes
+# status CRs after each run. Query with:
+#   kubectl get remediationreport -n <namespace>
+remediationReport: true
+
+# ── CronJob Settings ─────────────────────────────────────────────
+activeDeadlineSeconds: 7200
+failedJobsHistoryLimit: 3
+successfulJobsHistoryLimit: 1

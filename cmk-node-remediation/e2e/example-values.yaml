@@ -1,0 +1,71 @@
+# E2E Test Values — Template
+#
+# Copy this file to e2e/values.yaml and fill in your cluster details:
+#   cp e2e/example-values.yaml e2e/values.yaml
+#
+# Then run: bash e2e/run-e2e.sh all --values e2e/values.yaml
+
+image:
+  repository: ""  # Set: registry.your-location.ccr.crusoecloudcompute.com/crusoe-node-remediation.your-project-id
+  tag: v0.0.23
+  pullPolicy: IfNotPresent
+
+# Every 5 minutes for fast testing
+schedule: "*/5 * * * *"
+
+# Target nodes in your project
+nodeSelector:
+  matchLabels:
+    # crusoe.ai/project.id: "your-project-id"
+
+# Test cluster VM type filter
+instanceTypeFilter: "c1a.*"
+
+# Fast thresholds for testing (minutes, not days)
+# Equal thresholds = cordon + drain back-to-back.
+# Set a lower cordonThreshold for a buffer window.
+cordonThreshold: 30m
+remediationThreshold: 1h
+remediationCooldown: 15m
+
+# Action type — two ways to switch from noop to vm-reset:
+#
+# Option 1: Edit this file directly
+#   Set action.type: vm-reset and dryRun: false below, then:
+#   bash e2e/run-e2e.sh vm-reset
+#
+# Option 2: Use --set overrides (no file edit needed)
+#   bash e2e/run-e2e.sh vm-reset \
+#     --set action.type=vm-reset \
+#     --set dryRun=false
+#
+# Start with noop — no real VM actions
+action:
+  type: noop
+  timeout: 5m
+  maxRetries: 2
+
+# Conservative guardrails for testing
+guardrails:
+  globalMaxCordoned: 2
+  perPoolMaxCordoned: 1
+
+drainTimeout: 2m
+forceAfterEvictionFailure: true
+
+# Use built-in crusoe-secrets from crusoe-system (default, recommended for CMK)
+useBuiltinSecret: true
+builtinSecretNamespace: crusoe-system
+# Custom secret name (only used when useBuiltinSecret: false)
+crusoeApiSecret: crusoe-api-credentials
+# Project ID (required when useBuiltinSecret: false; optional when true —
+# falls back to CRUSOE_PROJECT_ID from the built-in secret)
+#crusoeProjectId: ""  # Set: your-project-id
+
+# Start with dry-run — no changes to nodes
+# Set to false when ready for real actions (see vm-reset above)
+dryRun: true
+
+activeDeadlineSeconds: 600
+failedJobsHistoryLimit: 5
+successfulJobsHistoryLimit: 3

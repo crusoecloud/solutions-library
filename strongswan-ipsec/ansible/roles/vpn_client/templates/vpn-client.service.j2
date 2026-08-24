@@ -21,7 +21,9 @@ ExecStart=/bin/bash -c '\
         encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}; \
     ip link set gre-vpn mtu {{ vpn_gre_mtu }}; \
     ip link set gre-vpn up; \
-    ip route replace {{ vpn_remote_subnet }} dev gre-vpn; \
+{% for subnet in vpn_remote_subnets | default([vpn_remote_subnet]) %}
+    ip route replace {{ subnet }} dev gre-vpn; \
+{% endfor %}
     echo "VPN client tunnel ready ($LOCAL_IP -> {{ vpn_gateway_ip }})"'
 ExecStop=/bin/bash -c '\
     ip link del gre-vpn 2>/dev/null || true; \
