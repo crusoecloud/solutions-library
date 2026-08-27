@@ -1,0 +1,228 @@
+#!/bin/bash
+# Crusoe site-to-site VPN bootstrap. Idempotent: safe to re-run.
+set -uo pipefail
+exec > >(tee -a /var/log/vpn-bootstrap.log) 2>&1
+echo "=== vpn bootstrap $(date -Is) ==="
+
+export DEBIAN_FRONTEND=noninteractive
+# Retry: first boot commonly races apt timers holding the dpkg lock.
+for i in 1 2 3 4 5; do
+  if apt-get update -y && apt-get install -y strongswan strongswan-swanctl charon-systemd frr nftables \
+    iperf3 tcpdump traceroute nmap unattended-upgrades; then
+    break
+  fi
+  if [ "$i" = 5 ]; then echo "ERROR: apt install failed after 5 attempts" >&2; exit 1; fi
+  sleep 15
+done
+
+# --- sysctls ---
+cat > /etc/sysctl.d/99-vpn.conf <<'EOF'
+net.ipv4.ip_forward = 1
+# loose rp_filter: tolerate asymmetric return paths across two tunnels
+net.ipv4.conf.all.rp_filter = 2
+net.ipv4.conf.default.rp_filter = 2
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv6.conf.all.forwarding = 0
+EOF
+sysctl --system
+
+# --- SSH hardening ---
+cat > /etc/ssh/sshd_config.d/99-vpn-hardening.conf <<'EOF'
+PasswordAuthentication no
+PermitRootLogin no
+KbdInteractiveAuthentication no
+EOF
+systemctl reload ssh || systemctl reload sshd || true
+
+# --- strongSwan (swanctl) ---
+mkdir -p /etc/swanctl/conf.d
+cat > /etc/swanctl/conf.d/tunnels.conf <<'SWANCTL_EOF'
+${swanctl_conf}
+SWANCTL_EOF
+install -m 0600 /dev/null /etc/swanctl/conf.d/tunnels.secrets.conf
+cat > /etc/swanctl/conf.d/tunnels.secrets.conf <<'SECRETS_EOF'
+${swanctl_secrets}
+SECRETS_EOF
+chmod 0600 /etc/swanctl/conf.d/tunnels.secrets.conf
+
+# Ubuntu ships both legacy "strongswan-starter" and "strongswan" (charon-systemd).
+systemctl disable --now strongswan-starter 2>/dev/null || true
+
+# --- XFRM interfaces (persist via oneshot unit) ---
+cat > /usr/local/sbin/vpn-xfrm-up.sh <<'XFRM_EOF'
+${xfrm_script}
+XFRM_EOF
+chmod 0755 /usr/local/sbin/vpn-xfrm-up.sh
+cat > /etc/systemd/system/vpn-xfrm.service <<'EOF'
+[Unit]
+Description=Create XFRM interfaces for IPsec route-based tunnels
+After=network-online.target
+Wants=network-online.target
+Before=strongswan.service frr.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/vpn-xfrm-up.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# --- FRR ---
+cat > /etc/frr/daemons <<'FRR_EOF'
+${frr_daemons}
+FRR_EOF
+cat > /etc/frr/frr.conf <<'BGPD_EOF'
+${frr_bgpd_conf}
+BGPD_EOF
+chown frr:frr /etc/frr/frr.conf
+chmod 0640 /etc/frr/frr.conf
+
+# --- nftables ---
+cat > /etc/nftables.conf <<'NFT_EOF'
+${nftables_conf}
+NFT_EOF
+
+# --- unattended security upgrades ---
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+
+# --- healthcheck ---
+cat > /usr/local/sbin/vpn-healthcheck.sh <<'HEALTHCHECK_EOF'
+#!/usr/bin/env bash
+# Monitoring-pollable health check. Run ON the VPN VM (or via: ssh vm sudo healthcheck.sh).
+set -uo pipefail
+rc=0
+sas=$(swanctl --list-sas 2>/dev/null)
+conns=$(swanctl --list-conns 2>/dev/null | grep -cE '^[a-z0-9-]+:' || true)
+est=$(grep -c ESTABLISHED <<<"$sas" || true)
+inst=$(grep -c INSTALLED <<<"$sas" || true)
+[ "$est" -ge "$conns" ] && [ "$conns" -gt 0 ] || { echo "CRIT: IKE SAs $est/$conns established"; rc=1; }
+[ "$inst" -ge "$conns" ] || { echo "CRIT: CHILD_SAs $inst/$conns installed"; rc=1; }
+vtysh -c 'show bgp summary json' 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+peers=d.get("ipv4Unicast",{}).get("peers",{})
+bad=[ip for ip,p in peers.items() if p["state"]!="Established"]
+if not peers: print("CRIT: no BGP peers configured"); sys.exit(1)
+if bad: print("CRIT: BGP not Established:", ",".join(bad)); sys.exit(1)' || rc=1
+for ifc in $(ip -o link show type xfrm | awk -F': ' '{print $2}' | cut -d@ -f1); do
+  ip link show "$ifc" | grep -qE 'state (UP|UNKNOWN)' || { echo "CRIT: $ifc down"; rc=1; }
+done
+[ $rc -eq 0 ] && echo "OK: all tunnels, SAs, BGP sessions healthy"
+exit $rc
+HEALTHCHECK_EOF
+chmod 0755 /usr/local/sbin/vpn-healthcheck.sh
+
+# --- journald retention ---
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/vpn.conf <<'EOF'
+[Journal]
+SystemMaxUse=500M
+EOF
+
+systemctl daemon-reload
+systemctl enable --now vpn-xfrm.service
+systemctl enable --now nftables
+# Restart (not enable --now): apt starts strongswan/frr with stock config
+# before ours lands, and the legacy starter can leave a stale vici socket.
+# A restart forces both to pick up the rendered configs (frr only launches
+# bgpd if the daemons file said so at start time).
+systemctl enable strongswan frr
+systemctl restart strongswan
+systemctl restart frr
+# vici socket comes up asynchronously after charon starts; retry the load.
+for i in $(seq 1 10); do
+  if swanctl --load-all; then
+    break
+  fi
+  if [ "$i" = 10 ]; then echo "ERROR: swanctl --load-all failed after 10 attempts" >&2; exit 1; fi
+  sleep 3
+done
+
+%{ if cluster_egress.enabled ~}
+# --- cluster egress overlay (vxlan hub) ---
+# Lets other Crusoe hosts route through this gateway. Needs this VM's own LAN
+# IP (unknown at plan time), so it is set up at runtime and persisted as a unit.
+cat > /usr/local/sbin/vpn-cluster-egress.sh <<'CEG_EOF'
+#!/bin/bash
+set -uo pipefail
+WAN_IF=$(ip -o -4 route show default | awk '{print $5}' | head -1)
+PRIV=$(ip -o -4 addr show "$WAN_IF" | awk '{print $4}' | cut -d/ -f1)
+if [ -z "$WAN_IF" ] || [ -z "$PRIV" ]; then
+  echo "ERROR: cannot resolve WAN interface / LAN IP for cluster egress" >&2; exit 1
+fi
+GW_OVERLAY_IP="${gw_overlay_ip}"
+OVERLAY_PREFIX="${overlay_prefix}"
+# Hub vxlan: no static remote; learning populates node underlay from traffic.
+# Fixed gateway MAC (02:00:a9:fe:00:01) so nodes reach it without ARP.
+if ! ip link show vxlan-ceg &>/dev/null; then
+  ip link add vxlan-ceg address 02:00:a9:fe:00:01 type vxlan id ${cluster_egress.vxlan_id} local "$PRIV" dstport ${cluster_egress.vxlan_port} dev "$WAN_IF"
+fi
+ip addr replace "$GW_OVERLAY_IP/$OVERLAY_PREFIX" dev vxlan-ceg
+ip link set vxlan-ceg address 02:00:a9:fe:00:01
+ip link set vxlan-ceg mtu 1450 up
+%{ if cluster_egress.snat_mode == "gateway" ~}
+# snat_mode=gateway: SNAT overlay traffic to this gateway's LAN IP so the peer
+# accepts it (LAN IP is inside the advertised crusoe_vpc_cidrs) and returns it
+# via the tunnel. Peer sees a single source (this gateway).
+nft add table inet cluster_egress_nat 2>/dev/null || true
+nft flush table inet cluster_egress_nat 2>/dev/null || true
+nft add chain inet cluster_egress_nat postrouting '{ type nat hook postrouting priority srcnat ; policy accept ; }'
+%{ for id in tunnel_ifids ~}
+nft add rule inet cluster_egress_nat postrouting oifname "ipsec${id}" ip saddr ${cluster_egress.overlay_cidr} snat to "$PRIV"
+%{ endfor ~}
+echo "cluster egress up (snat_mode=gateway): vxlan-ceg $GW_OVERLAY_IP/$OVERLAY_PREFIX via $WAN_IF ($PRIV), SNAT ${cluster_egress.overlay_cidr} -> $PRIV"
+%{ else ~}
+# snat_mode=node: no SNAT; the overlay CIDR is advertised via BGP so the peer
+# returns per-node traffic through the tunnel. Peer sees the node overlay IP.
+nft delete table inet cluster_egress_nat 2>/dev/null || true
+echo "cluster egress up (snat_mode=node): vxlan-ceg $GW_OVERLAY_IP/$OVERLAY_PREFIX via $WAN_IF ($PRIV), overlay advertised via BGP (no SNAT)"
+%{ endif ~}
+
+# Neighbor reconcile loop: nodes use a deterministic MAC 02:00:a9:fe:<O3>:<O4>
+# encoding their overlay IP (169.254.<O3>.<O4>). Learning fills the FDB
+# (MAC->node underlay) from inbound traffic; here we turn each learned node MAC
+# into a permanent neigh entry so return traffic resolves with no ARP flood.
+# This is what makes multi-node + node-IP-churn work with zero per-node config.
+while true; do
+  bridge fdb show dev vxlan-ceg 2>/dev/null | awk '/dst/{mac=$1; for(i=1;i<=NF;i++) if($i=="dst"){print mac, $(i+1)}}' | \
+  while read -r mac dst; do
+    case "$mac" in
+      02:00:a9:fe:*)
+        o3=$((16#$(echo "$mac" | cut -d: -f5)))
+        o4=$((16#$(echo "$mac" | cut -d: -f6)))
+        ip neigh replace "169.254.$o3.$o4" lladdr "$mac" dev vxlan-ceg nud permanent 2>/dev/null || true
+        ;;
+    esac
+  done
+  sleep 10
+done
+CEG_EOF
+chmod 0755 /usr/local/sbin/vpn-cluster-egress.sh
+cat > /etc/systemd/system/vpn-cluster-egress.service <<'EOF'
+[Unit]
+Description=Cluster-egress vxlan hub + neighbor reconcile for the VPN gateway
+After=network-online.target nftables.service vpn-xfrm.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStart=/usr/local/sbin/vpn-cluster-egress.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now vpn-cluster-egress.service
+%{ endif ~}
+
+echo "=== vpn bootstrap complete $(date -Is) ==="

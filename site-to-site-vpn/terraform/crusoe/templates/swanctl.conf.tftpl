@@ -1,0 +1,38 @@
+# Rendered by Terraform — do not edit on host.
+connections {
+%{ for t in tunnels ~}
+  ${t.name} {
+    version = 2
+    mobike = no
+    local_addrs = %any
+    remote_addrs = ${t.peer_public_ip}
+    proposals = ${join(",", crypto.ike_proposals)}
+    rekey_time = ${crypto.ike_lifetime}
+    over_time = ${crypto.rekey_margin}
+    dpd_delay = ${crypto.dpd_delay}
+    encap = yes
+    if_id_in = ${t.xfrm_if_id}
+    if_id_out = ${t.xfrm_if_id}
+    local {
+      auth = psk
+      id = %any
+    }
+    remote {
+      auth = psk
+      id = ${t.peer_public_ip}
+    }
+    children {
+      ${t.name} {
+        local_ts = 0.0.0.0/0
+        remote_ts = 0.0.0.0/0
+        esp_proposals = ${join(",", crypto.esp_proposals)}
+        rekey_time = ${crypto.esp_lifetime}
+        rand_time = ${crypto.rekey_margin}
+        start_action = trap
+        dpd_action = restart
+        close_action = trap
+      }
+    }
+  }
+%{ endfor ~}
+}

@@ -1,0 +1,58 @@
+#!/usr/sbin/nft -f
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    iif "lo" accept
+    ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
+    # IKE / NAT-T from peers only
+%{ for t in tunnels ~}
+    ip saddr ${t.peer_public_ip} udp dport { 500, 4500 } accept
+%{ endfor ~}
+    # SSH from management allow-list
+%{ for c in ssh_allowed_cidrs ~}
+    ip saddr ${c} tcp dport 22 accept
+%{ endfor ~}
+    # BGP only over tunnel interfaces
+%{ for t in tunnels ~}
+    iifname "ipsec${t.xfrm_if_id}" ip saddr ${t.bgp_remote_ip} tcp dport 179 accept
+    iifname "ipsec${t.xfrm_if_id}" icmp type echo-request accept
+%{ endfor ~}
+%{ if cluster_egress.enabled ~}
+    # Cluster-egress overlay transport (vxlan) from Crusoe VPC hosts only
+%{ for c in crusoe_vpc_cidrs ~}
+    ip saddr ${c} udp dport ${cluster_egress.vxlan_port} accept
+%{ endfor ~}
+%{ endif ~}
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    # MSS clamp on tunnel path (both directions) — must be before established,related accept so SYN-ACKs are also clamped
+%{ for t in tunnels ~}
+    iifname "ipsec${t.xfrm_if_id}" tcp flags syn tcp option maxseg size set ${mss_clamp}
+    oifname "ipsec${t.xfrm_if_id}" tcp flags syn tcp option maxseg size set ${mss_clamp}
+%{ endfor ~}
+%{ if cluster_egress.enabled ~}
+    # Clamp on the overlay leg too (pod MTU is large; the vxlan+ESP stack is small)
+    iifname "vxlan-ceg" tcp flags syn tcp option maxseg size set ${mss_clamp}
+    oifname "vxlan-ceg" tcp flags syn tcp option maxseg size set ${mss_clamp}
+%{ endif ~}
+    ct state established,related accept
+%{ for t in tunnels ~}
+    iifname "ipsec${t.xfrm_if_id}" accept
+    oifname "ipsec${t.xfrm_if_id}" accept
+%{ endfor ~}
+%{ if cluster_egress.enabled ~}
+    iifname "vxlan-ceg" accept
+    oifname "vxlan-ceg" accept
+%{ endif ~}
+  }
+  chain output {
+    type filter hook output priority 0; policy accept;
+  }
+}
+# NOTE: when cluster_egress is enabled, the bootstrap script adds a separate
+# NAT table at runtime (it needs this VM's own LAN IP, unknown at plan time)
+# that SNATs ${cluster_egress.overlay_cidr} to the gateway LAN IP out the tunnel.

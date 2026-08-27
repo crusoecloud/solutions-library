@@ -1,0 +1,57 @@
+# ci.yml — assumes this directory IS the repo root (site-to-site-vpn/).
+#
+# Static (Phase 0) checks only. Live test phases run against a real deployment
+# and are not run in CI.
+
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive terraform
+
+      - name: terraform validate (all modules)
+        run: |
+          for d in terraform/crusoe terraform/gcp terraform/aws; do
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+          done
+
+      - name: tflint setup
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: tflint
+        run: tflint --init && tflint --recursive
+
+      - name: trivy config scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+
+      - name: template render dry-run
+        run: bash tests/render/check.sh
+
+      - name: secret-leak scan
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks detect --source . --no-banner --redact
+
+      - name: no real tfvars or state tracked
+        run: |
+          bad=$(git ls-files | grep -E '\.(tfstate|tfvars)$' | grep -v 'params\.example\.tfvars' || true)
+          if [ -n "$bad" ]; then echo "Tracked secret-bearing files: $bad"; exit 1; fi
