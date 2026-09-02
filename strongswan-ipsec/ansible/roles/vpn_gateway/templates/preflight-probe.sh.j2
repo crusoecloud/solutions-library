@@ -1,0 +1,147 @@
+#!/bin/bash
+# Managed by Ansible - {{ inventory_hostname }}
+#
+# UDP reachability probe for the IKE ports, driven by the preflight play.
+#
+# Why this exists: IPsec needs UDP 500 and 4500 to pass in BOTH directions,
+# and a one-way block presents as "IKE timeout" with nothing useful in the
+# strongSwan log. This turns that into a named failure before anything is
+# configured.
+#
+# Modes:
+#   listen          bind each port (only if free) and record the first datagram
+#   send <ip> <tag> send a tagged datagram to <ip> on each port
+#   check <tag>     report, per port, whether that tag arrived
+#   ports           report which ports are already in use
+#
+# The listener is a background python3 process with a timeout, so it cannot
+# outlive the play even if a probe never arrives.
+#
+# State lives under /run, root-only (0700), and result files are opened with
+# O_NOFOLLOW|O_CREAT|O_TRUNC at 0600. /tmp would let any local user pre-plant
+# a symlink and turn "root writes a result file" into "root writes wherever
+# I point it".
+set -u
+
+PORTS="500 4500"
+STATE=/run/vpn-preflight
+LISTEN_SECS={{ vpn_preflight_listen_secs }}
+
+state_dir() {
+    mkdir -m 0700 -p "$STATE" 2>/dev/null || true
+    if [ "$(stat -c %u "$STATE" 2>/dev/null)" != "0" ]; then
+        echo "refusing to use $STATE: not owned by root" >&2
+        exit 3
+    fi
+    chmod 0700 "$STATE" 2>/dev/null || true
+}
+
+port_busy() {
+    # "ss -lun" prints State Recv-Q Send-Q Local:Port Peer:Port [Process] -
+    # no Netid column when a single protocol is selected - so the local
+    # socket is column 4. -H drops the header.
+    ss -lunH 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$"
+}
+
+case "${1:-}" in
+
+ports)
+    for p in $PORTS; do
+        if port_busy "$p"; then echo "$p busy"; else echo "$p free"; fi
+    done
+    ;;
+
+listen)
+    state_dir
+    for p in $PORTS; do
+        rm -f "$STATE/$p"
+        if port_busy "$p"; then
+            # Almost always charon from a previous run. Not a problem: if the
+            # tunnel is already up, UDP has already proven it works, and the
+            # play skips the probe on that basis.
+            echo "BUSY:$p" > "$STATE/$p"
+            continue
+        fi
+        nohup python3 - "$p" "$STATE/$p" "$LISTEN_SECS" >/dev/null 2>&1 <<'PYEOF' &
+import os, socket, sys
+port, out, secs = int(sys.argv[1]), sys.argv[2], float(sys.argv[3])
+
+def write(text):
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    try:
+        os.write(fd, text.encode("utf-8", "replace"))
+    finally:
+        os.close(fd)
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("0.0.0.0", port))
+except OSError as e:
+    write("BINDFAIL:%s" % e)
+    raise SystemExit(0)
+s.settimeout(secs)
+try:
+    data, addr = s.recvfrom(256)
+    write("GOT:%s:%s" % (data.decode("utf-8", "replace"), addr[0]))
+except Exception:
+    write("TIMEOUT")
+PYEOF
+    done
+    sleep 1
+    for p in $PORTS; do
+        if [ -s "$STATE/$p" ] && grep -q '^BUSY' "$STATE/$p"; then
+            echo "$p busy-skipped"
+        elif port_busy "$p"; then
+            echo "$p listening"
+        else
+            echo "$p bind-failed"
+        fi
+    done
+    ;;
+
+send)
+    DEST="${2:?send needs a destination IP}"
+    TAG="${3:?send needs a tag}"
+    for p in $PORTS; do
+        python3 - "$DEST" "$p" "$TAG" <<'PYEOF'
+import socket, sys
+dest, port, tag = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(3)
+try:
+    # Sent three times: a single UDP datagram has no retransmit of its own,
+    # and one drop would read as a firewall block.
+    for _ in range(3):
+        s.sendto(tag.encode(), (dest, port))
+    print("%s sent" % port)
+except Exception as e:
+    print("%s send-failed %s" % (port, e))
+PYEOF
+    done
+    ;;
+
+check)
+    TAG="${2:?check needs a tag}"
+    for p in $PORTS; do
+        f="$STATE/$p"
+        if [ ! -f "$f" ]; then
+            echo "$p no-result"
+        elif grep -q '^BUSY' "$f"; then
+            echo "$p busy-skipped"
+        elif grep -q "GOT:$TAG" "$f"; then
+            echo "$p PASS"
+        elif grep -q '^BINDFAIL' "$f"; then
+            echo "$p bind-failed"
+        else
+            echo "$p BLOCKED"
+        fi
+    done
+    ;;
+
+*)
+    echo "usage: $0 {ports|listen|send <ip> <tag>|check <tag>}" >&2
+    exit 2
+    ;;
+esac
+exit 0

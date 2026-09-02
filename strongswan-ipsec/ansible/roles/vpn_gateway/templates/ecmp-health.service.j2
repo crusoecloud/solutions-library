@@ -1,0 +1,8 @@
+# Managed by Ansible - {{ inventory_hostname }}
+[Unit]
+Description=VPN ECMP health (prune dead tunnels, signal health to clients)
+After=strongswan.service vpn-network.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vpn-ecmp-health.sh

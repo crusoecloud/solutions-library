@@ -1,32 +1,58 @@
-# Managed by Ansible — {{ inventory_hostname }}
+# Managed by Ansible - {{ inventory_hostname }}
+{% if vpn_tunnels | length > 1 %}
+#
+# {{ vpn_tunnels | length }} parallel IPsec SAs to the same remote site.
+# All children negotiate IDENTICAL traffic selectors on purpose - the if_id is
+# what keeps the kernel policies distinct, and a cloud peer only ECMPs back
+# when every connection advertises the same address space.
+{% endif %}
 connections {
-    site-vpn {
+{% for t in vpn_tunnels %}
+    {{ t.name }} {
         version = 2
-        local_addrs = %any
-        remote_addrs = {{ vpn_remote_gw_ip }}
+        local_addrs = {{ t.local_addr }}
+        remote_addrs = {{ t.remote_addr }}
+{% if vpn_force_encap | bool %}
+        encap = yes
+{% endif %}
+{% if vpn_tunnels | length > 1 %}
+        # Several SAs legitimately share these identities; without this charon
+        # may treat them as duplicates and tear down all but one.
+        unique = never
+{% else %}
+        # One tunnel per identity pair, so a reconnect should REPLACE the old
+        # SA rather than sit alongside it. NOTE, measured: this helps but does
+        # not fully prevent duplicates, because "unique" is a RESPONDER-side
+        # rule and a redeploy can initiate the duplicate locally. Cosmetic -
+        # traffic uses one set of kernel states either way.
+        unique = replace
+{% endif %}
 
         local {
             auth = psk
-            id = {{ vpn_local_id }}
+            id = {{ t.local_id }}
         }
         remote {
             auth = psk
-            id = {{ vpn_remote_id }}
+            id = {{ t.remote_id }}
         }
 
         children {
-            site-tunnel {
-                local_ts  = {{ vpn_local_subnet }}
-                remote_ts = {{ vpn_remote_subnet }}
-                start_action = trap
+            {{ t.child }} {
+                local_ts  = {{ vpn_child_local_ts }}
+                remote_ts = {{ vpn_child_remote_ts }}
+                start_action = {{ vpn_start_action_effective }}
                 close_action = start
                 dpd_action   = restart
                 esp_proposals = {{ vpn_esp_proposals }}
                 mode   = tunnel
-                reqid  = {{ vpn_xfrm_if_id }}
-                if_id_in  = {{ vpn_xfrm_if_id }}
-                if_id_out = {{ vpn_xfrm_if_id }}
+                reqid  = {{ t.if_id }}
+                if_id_in  = {{ t.if_id }}
+                if_id_out = {{ t.if_id }}
                 rekey_time = {{ vpn_child_rekey_time }}
+                # Multi-queue receive reorders packets; the default window
+                # drops reordered-but-valid packets at high pps.
+                replay_window = {{ vpn_replay_window }}
             }
         }
 
@@ -34,12 +60,17 @@ connections {
         dpd_delay = {{ vpn_dpd_delay }}
         rekey_time = {{ vpn_ike_rekey_time }}
     }
+{% endfor %}
 }
 
 secrets {
     ike-site {
-        id-a = {{ vpn_local_id }}
-        id-b = {{ vpn_remote_id }}
+{% for id in vpn_tunnels | map(attribute='local_id') | unique %}
+        id-local-{{ loop.index }} = {{ id }}
+{% endfor %}
+{% for id in vpn_tunnels | map(attribute='remote_id') | unique %}
+        id-remote-{{ loop.index }} = {{ id }}
+{% endfor %}
         secret = "{{ vpn_psk }}"
     }
 }

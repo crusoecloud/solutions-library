@@ -1,0 +1,48 @@
+{#-
+  Build the flow list: one entry per source -> destination pair, each with its
+  own TCP/UDP port so every flow gets its own one-shot iperf3 server and its
+  own result file.
+
+  Derived once on the controller and reused by both plays, so the source and
+  the destination always agree on ports.
+-#}
+{%- set srcs  = groups[bw_source_group] | default([]) -%}
+{%- set dests = groups[bw_dest_group]  | default([]) -%}
+{%- set pairs = [] -%}
+{%- if bw_mode == 'paired' -%}
+  {%- for i in range([srcs | length, dests | length] | min) -%}
+    {%- set _ = pairs.append((srcs[i], dests[i])) -%}
+  {%- endfor -%}
+{%- elif bw_mode == 'many_to_one' -%}
+  {%- for s in srcs -%}
+    {%- set _ = pairs.append((s, dests[0])) -%}
+  {%- endfor -%}
+{%- else -%}
+  {%- for s in srcs -%}
+    {%- for d in dests -%}
+      {%- set _ = pairs.append((s, d)) -%}
+    {%- endfor -%}
+  {%- endfor -%}
+{%- endif -%}
+{%- set flows = [] -%}
+{%- for p in pairs -%}
+  {%- set src = p[0] -%}
+  {%- set dst = p[1] -%}
+  {%- set hv = hostvars[dst] -%}
+  {#- explicit override, else the requested address family -#}
+  {%- if hv.bw_dest_ip is defined and hv.bw_dest_ip -%}
+    {%- set ip = hv.bw_dest_ip -%}
+  {%- elif bw_dest_address == 'public' -%}
+    {%- set ip = hv.ansible_host | default(hv.ansible_default_ipv4.address) -%}
+  {%- else -%}
+    {%- set ip = hv.bw_private_ip | default(hv.ansible_default_ipv4.address) -%}
+  {%- endif -%}
+  {%- set _ = flows.append({
+        'index':  loop.index0,
+        'source': src,
+        'dest':   dst,
+        'dest_ip': ip,
+        'port':   (bw_port_base | int) + loop.index0,
+        'file':   'flow-%03d-%s-to-%s.json' | format(loop.index0, src, dst) }) -%}
+{%- endfor -%}
+{{ flows | to_json }}

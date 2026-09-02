@@ -157,6 +157,10 @@ Lets pods on Crusoe Managed Kubernetes assume AWS IAM roles directly via IRSA, u
 
 ### Networking
 
+[Bandwidth Test](./bandwidth-test/)
+
+An Ansible-driven iperf3 harness that generates traffic from one-or-many source hosts to one-or-many destination hosts and collects the results from the receivers, so it measures correctly even when the path in between is a managed appliance you don't control — an Azure VPN Gateway, a GCP HA VPN, a customer firewall. Supports paired, many-to-one and full-mesh topologies, TCP or UDP, and a public-IP baseline mode for comparing a tunnel against the raw path.
+
 [/etc/hosts Pin](./etchosts-pin/README.md)
 
 A daemon that resolves a hostname on a fixed interval and keeps the resulting A/AAAA records in `/etc/hosts`. Works around undesirable TTL cache values from intermediate DNS resolvers
@@ -165,9 +169,13 @@ A daemon that resolves a hostname on a fixed interval and keeps the resulting A/
 
 A Helm chart that establishes a highly-available IPSec VPN between a remote site and a CMK cluster using paired StrongSwan deployments with BGP-based dynamic route sharing, so that pod, node, and service IPs on both sides are mutually reachable. Includes an example Terraform module for standing up a matching Google Cloud VPN endpoint.
 
+[Crusoe Site-to-Site VPN (AWS / GCP)](./site-to-site-vpn/)
+
+A hardened, redundant route-based IPsec (IKEv2) VPN terminating on one or two Ubuntu VMs running strongSwan and FRR, with BGP dynamic routing and automatic tunnel failover, provisioned entirely by Terraform from a single params file. Pairs with AWS Site-to-Site VPN or GCP HA VPN; the GCP path and dual-VM HA mode are validated end to end.
+
 [StrongSwan Site-to-Site VPN for Crusoe Cloud](./strongswan-ipsec/)
 
-An Ansible-managed, encrypted IPsec site-to-site VPN between a Crusoe Cloud region and a remote site — another Crusoe region, or Azure/GCP/AWS — with VMs on both sides communicating via their real (non-NAT'd) IP addresses. Uses GRE-over-FOU on the Crusoe side to work around SDN port-security source-IP checks, while the remote cloud side relies on native IP-forwarding; supports adding VMs incrementally via inventory changes.
+An Ansible-managed, encrypted IPsec site-to-site VPN between a Crusoe Cloud region and a remote site — another Crusoe region, or Azure/GCP/AWS — with VMs on both sides communicating via their real (non-NAT'd) IP addresses over a GRE-over-FOU overlay or plain routes. You fill in an inventory and five values, and one command preflights connectivity, installs a VAES-capable kernel where it pays, and configures gateways and clients with defaults tuned for a managed cloud peer. Measured at 2.4 Gbps with one gateway per side rising to 20.7 Gbps with five, and 8.5 Gbps through a single VM holding two tunnels; also configures managed Kubernetes nodes via a DaemonSet.
 
 ## Contributing
 

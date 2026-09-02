@@ -1,0 +1,58 @@
+# =============================================================================
+# OPTIONAL - and inert. Ansible ignores ".example" files.
+#
+# You need nothing in host_vars for the normal case: one Crusoe gateway
+# talking to a managed cloud peer. group_vars/all.yml covers it.
+#
+# This file exists for the two cases where per-gateway values differ.
+# Copy it to host_vars/<inventory-hostname>.yml to use it.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# CASE 1: Crusoe to Crusoe (you own both sides)
+# ---------------------------------------------------------------------------
+# Both sides run this role, so the subnets must MIRROR each other and cannot
+# come from a single shared file. Put the site-local values here, per gateway.
+#
+# On the site-A gateway:
+#   vpn_local_subnet:  "10.0.0.0/20"      # A
+#   vpn_remote_subnet: "10.1.0.0/20"      # B
+#   vpn_client_cidr:   "10.0.0.0/20"      # A
+#   vpn_remote_gw_ip:  "<site-b-gw-public-ip>"
+#
+# On the site-B gateway, swap local and remote.
+#
+# Pair the gateways 1:1 by index (site-a-gw-N <-> site-b-gw-N) and let the
+# clients ECMP across them. No BGP needed between sites you own - that was
+# validated live with five gateways per side.
+#
+# IMPORTANT for two-site deployments: the clients' vpn_gateway_hosts defaults
+# to EVERY host in the vpn_gateways group, which is right when all your
+# gateways face the same peer, and wrong here - site-A clients must not route
+# through site-B's gateways. Split the inventory into per-site groups and set
+# the list explicitly, e.g. in group_vars/site_a_clients.yml:
+#
+#   vpn_gateway_hosts: ["site-a-gw-1", "site-a-gw-2"]
+#   vpn_remote_subnets: ["10.1.0.0/20"]     # site B
+
+# ---------------------------------------------------------------------------
+# CASE 2: several gateway VMs against Azure, which requires BGP
+# ---------------------------------------------------------------------------
+# Azure wants one Local Network Gateway per on-premises device, each with a
+# unique ASN and BGP peer address. Those two values are the only things that
+# differ per gateway - vpn_bgp_advertise and vpn_bgp_accept stay identical
+# everywhere and live in group_vars/all.yml.
+#
+#   vpn_bgp_local_asn: 65012              # 65011 on gw-1, 65012 on gw-2, ...
+#   vpn_bgp_peer_addrs:                   # one per tunnel, from the gateway's
+#     - "<azure-bgp-peer-0>"              # bgpSettings.bgpPeeringAddresses
+#     - "<azure-bgp-peer-1>"
+#
+# NOT VALIDATED against a real Azure peer. See the README's limitations.
+
+# ---------------------------------------------------------------------------
+# Also per-gateway, rarely needed
+# ---------------------------------------------------------------------------
+# Lets you configure clients on their own with "--limit vpn_clients". Normally
+# the gateway play discovers this and the client play reads it from facts.
+#   vpn_local_gw_ip: "<this-gateway-private-ip>"

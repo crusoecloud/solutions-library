@@ -1,0 +1,195 @@
+---
+# =============================================================================
+# bandwidth_test role
+#
+# Two passes, driven by bw_phase:
+#   servers  start a one-shot iperf3 server per flow on the destination hosts
+#   clients  run the matching iperf3 clients on the source hosts
+#   collect  fetch each server's JSON - the authoritative measurement
+#
+# site.yml drives all three in order.
+# =============================================================================
+
+- name: Install iperf3
+  ansible.builtin.package:
+    name: iperf3
+    state: present
+  become: true
+  when: bw_install | bool
+  tags: [always]
+
+- name: Build the flow list
+  ansible.builtin.set_fact:
+    bw_flows: "{{ lookup('template', 'flows.json.j2') | from_json }}"
+  run_once: true
+  delegate_to: localhost
+  become: false
+  tags: [always]
+
+- name: Share the flow list with every host
+  ansible.builtin.set_fact:
+    bw_flows: "{{ hostvars[groups['all'][0]].bw_flows | default(bw_flows) }}"
+  tags: [always]
+
+- name: Fail if no flows were produced
+  ansible.builtin.assert:
+    that: bw_flows | length > 0
+    fail_msg: >-
+      No flows. Check that {{ bw_source_group }} and {{ bw_dest_group }} both
+      exist in the inventory and are non-empty. In "paired" mode they must have
+      the same number of hosts.
+  run_once: true
+  tags: [always]
+
+# ---------------------------------------------------------------------------
+# Servers - one one-shot iperf3 per flow, each writing its own JSON
+# ---------------------------------------------------------------------------
+
+- name: Prepare the results directory
+  ansible.builtin.file:
+    path: "{{ bw_remote_dir }}"
+    state: directory
+    mode: "0755"
+  become: true
+  when: bw_phase == 'servers'
+  tags: [servers]
+
+# A server left over from an interrupted run would hold its port, and because
+# iperf3 --logfile appends, its eventual JSON would land in the new file.
+- name: Stop iperf3 servers left over from an interrupted run
+  ansible.builtin.shell: "pkill -x iperf3 || true"
+  changed_when: false
+  become: true
+  when: bw_phase == 'servers'
+  tags: [servers]
+
+- name: Clear previous results
+  ansible.builtin.shell: "rm -f {{ bw_remote_dir }}/*.json"
+  changed_when: true
+  become: true
+  when: bw_phase == 'servers'
+  tags: [servers]
+
+# "-1" makes the server handle exactly one test and exit, so the JSON it
+# writes is a complete single result rather than an appended stream.
+# No "disown" here: Ansible's shell module runs /bin/sh, which on Debian and
+# Ubuntu is dash, and dash has no disown builtin. nohup plus a full set of
+# redirections is enough to detach.
+- name: Start a one-shot iperf3 server per inbound flow
+  ansible.builtin.shell: |
+    nohup iperf3 --server --one-off --port {{ item.port }} --json \
+      --logfile {{ bw_remote_dir }}/{{ item.file }} \
+      </dev/null >/dev/null 2>&1 &
+  loop: "{{ bw_flows | selectattr('dest', 'equalto', inventory_hostname) | list }}"
+  loop_control:
+    label: "port {{ item.port }} for {{ item.source }}"
+  changed_when: true
+  when: bw_phase == 'servers'
+  tags: [servers]
+
+- name: Wait for the servers to listen
+  ansible.builtin.shell: |
+    for i in $(seq 1 20); do
+      ss -ltn 2>/dev/null | grep -q ':{{ item.port }} ' && exit 0
+      sleep 0.5
+    done
+    exit 1
+  loop: "{{ bw_flows | selectattr('dest', 'equalto', inventory_hostname) | list }}"
+  loop_control:
+    label: "port {{ item.port }}"
+  changed_when: false
+  when: bw_phase == 'servers'
+  tags: [servers]
+
+# ---------------------------------------------------------------------------
+# Clients
+# ---------------------------------------------------------------------------
+
+- name: Prepare the client results directory
+  ansible.builtin.file:
+    path: "{{ bw_remote_dir }}"
+    state: directory
+    mode: "0755"
+  become: true
+  when: bw_phase == 'clients'
+  tags: [clients]
+
+# iperf3 --logfile APPENDS. A second run would leave two JSON documents in one
+# file and the retransmit column would silently go missing.
+- name: Clear previous client results
+  ansible.builtin.shell: "rm -f {{ bw_remote_dir }}/client-*.json"
+  changed_when: true
+  become: true
+  when: bw_phase == 'clients'
+  tags: [clients]
+
+# The client writes its own JSON too. The SERVER remains the authoritative
+# throughput measurement, but retransmits are a sender-side counter that the
+# receiver cannot see, so the client file supplies that half.
+- name: Run iperf3
+  ansible.builtin.shell: >-
+    iperf3 --client {{ item.dest_ip }} --port {{ item.port }}
+    --time {{ bw_duration }} --omit {{ bw_omit }}
+    {% if bw_protocol == 'udp' %}--udp --bitrate {{ bw_udp_bitrate }}{% else %}--parallel {{ bw_streams }}{% endif %}
+    {% if bw_reverse | bool %}--reverse{% endif %}
+    --connect-timeout 10000
+    --json --logfile {{ bw_remote_dir }}/client-{{ item.file }}
+  loop: "{{ bw_flows | selectattr('source', 'equalto', inventory_hostname) | list }}"
+  loop_control:
+    label: "{{ item.source }} -> {{ item.dest }} ({{ item.dest_ip }}:{{ item.port }})"
+  register: bw_client_runs
+  changed_when: true
+  failed_when: false
+  async: "{{ (bw_duration | int) + (bw_grace | int) }}"
+  poll: 0
+  when: bw_phase == 'clients'
+  tags: [clients]
+
+- name: Wait for the clients to finish
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: bw_wait
+  until: bw_wait.finished
+  retries: "{{ ((bw_duration | int) + (bw_grace | int)) // 5 }}"
+  delay: 5
+  loop: "{{ bw_client_runs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.source | default('?') }} -> {{ item.item.dest | default('?') }}"
+  when: bw_phase == 'clients'
+  failed_when: false
+  tags: [clients]
+
+# ---------------------------------------------------------------------------
+# Collect - the server's own JSON is the measurement
+# ---------------------------------------------------------------------------
+
+- name: Fetch the server-side results (authoritative)
+  ansible.builtin.fetch:
+    src: "{{ bw_remote_dir }}/{{ item.file }}"
+    dest: "{{ bw_results_dir }}/{{ item.file }}"
+    flat: true
+    fail_on_missing: false
+  loop: "{{ bw_flows | selectattr('dest', 'equalto', inventory_hostname) | list }}"
+  loop_control:
+    label: "{{ item.file }}"
+  when: bw_phase == 'collect'
+  tags: [collect]
+
+- name: Fetch the client-side results (for retransmits)
+  ansible.builtin.fetch:
+    src: "{{ bw_remote_dir }}/client-{{ item.file }}"
+    dest: "{{ bw_results_dir }}/client-{{ item.file }}"
+    flat: true
+    fail_on_missing: false
+  loop: "{{ bw_flows | selectattr('source', 'equalto', inventory_hostname) | list }}"
+  loop_control:
+    label: "client-{{ item.file }}"
+  when: bw_phase == 'collect_clients'
+  tags: [collect]
+
+- name: "Teardown: stop any iperf3 left running"
+  ansible.builtin.shell: "pkill -x iperf3 || true"
+  changed_when: false
+  become: true
+  when: bw_phase == 'collect'
+  tags: [collect]

@@ -1,0 +1,10 @@
+# Managed by Ansible - vpn_gateway role
+#
+# This role owns the routing table by hand (see vpn-network.sh), and when BGP
+# is enabled FRR owns the learned prefixes. Letting charon install its own
+# per-SA routes would fight the ECMP entry.
+charon {
+    install_routes     = no
+    install_virtual_ip = no
+    threads            = {{ vpn_charon_threads | default(32) }}
+}

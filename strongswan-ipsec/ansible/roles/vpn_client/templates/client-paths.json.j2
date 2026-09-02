@@ -1,0 +1,39 @@
+{#-
+  One entry per client -> gateway path. With N gateways and M FOU ports there
+  are N*M paths, and every one becomes a nexthop of a single ECMP route.
+
+  Gateway addresses are resolved straight from inventory here, so there is one
+  place that knows how to find them.
+
+  Backward compatibility: a single path in gre_fou mode keeps the device name
+  "gre-vpn" exactly as this role has always used.
+-#}
+{%- set gws = [] -%}
+{%- for h in vpn_gateway_host_list -%}
+{%- set hv = hostvars[h] -%}
+{#- vpn_local_gw_ip is the fact the vpn_gateway role sets; ansible_default_ipv4
+    is the fallback for a gateway the gateway play has not visited yet. -#}
+{%- if hv.vpn_local_gw_ip is defined and hv.vpn_local_gw_ip -%}
+{%- set ip = hv.vpn_local_gw_ip -%}
+{%- elif hv.ansible_default_ipv4 is defined -%}
+{%- set ip = hv.ansible_default_ipv4.address -%}
+{%- else -%}
+{%- set ip = '' -%}
+{%- endif -%}
+{%- set _ = gws.append({'host': h, 'ip': ip}) -%}
+{%- endfor -%}
+{%- set paths = [] -%}
+{%- set total = (gws | length) * (vpn_fou_port_count | int) -%}
+{%- for gw in gws -%}
+{%- for p in range(vpn_fou_port_count | int) -%}
+{%- set n = paths | length -%}
+{%- set _ = paths.append({
+      'index':        n,
+      'gateway_host': gw.host,
+      'gateway_ip':   gw.ip,
+      'dev':          'gre-vpn' if total == 1 else 'gre-vpn' ~ n,
+      'fou_port':     (vpn_fou_port | int) + p,
+      'gre_key':      (vpn_gre_key  | int) + p }) -%}
+{%- endfor -%}
+{%- endfor -%}
+{{ paths | to_json }}

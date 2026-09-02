@@ -1,0 +1,10 @@
+# Fetched iperf3 results land here (bw_results_dir, relative to ansible/).
+# They are per-run measurements, not part of the solution.
+ansible/results/
+results/
+
+# Ansible
+*.retry
+
+# Editor/OS
+.DS_Store

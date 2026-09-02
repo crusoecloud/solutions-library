@@ -1,0 +1,8 @@
+# Managed by Ansible - {{ inventory_hostname }}
+[Unit]
+Description=VPN client gateway health (rebuild ECMP from reachable gateways)
+After=vpn-client.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vpn-client-health.sh

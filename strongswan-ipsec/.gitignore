@@ -1,1 +1,7 @@
 CLAUDE.md
+
+# Ansible
+*.retry
+
+# Editor/OS
+.DS_Store

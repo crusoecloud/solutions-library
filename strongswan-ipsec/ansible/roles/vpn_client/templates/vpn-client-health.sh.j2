@@ -1,0 +1,50 @@
+#!/bin/bash
+# Managed by Ansible - {{ inventory_hostname }}
+#
+# Clients do not run BGP, so this is how they learn that a gateway is gone.
+# Probe each gateway and rebuild the ECMP route from the ones that answer.
+#
+# The probe covers BOTH failure modes, because the gateway's own health timer
+# stops answering ICMP when it has no established SA. So a live VM with a dead
+# tunnel drops out too, not just a dead VM.
+#
+# Re-hashing is safe here: nothing in this datapath is stateful, so a flow that
+# moves to a different gateway keeps working. That is the property NAT would
+# have destroyed.
+set -u
+
+REMOTE_CIDRS="{{ vpn_client_remote_cidrs | join(' ') }}"
+STATE_FILE=/run/vpn-client-health.state
+TIMEOUT={{ vpn_client_probe_timeout }}
+
+alive=()
+alive_count=0
+
+{% for p in vpn_client_paths %}
+if ping -c 1 -W "$TIMEOUT" -n -q {{ p.gateway_ip }} >/dev/null 2>&1; then
+{% if vpn_transport == 'route' %}
+    alive+=(nexthop via {{ p.gateway_ip }} weight 1)
+{% else %}
+    alive+=(nexthop dev {{ p.dev }} weight 1)
+{% endif %}
+    alive_count=$(( alive_count + 1 ))
+fi
+{% endfor %}
+
+if [ "$alive_count" -eq 0 ]; then
+    # Every gateway is unreachable. Leave the route as it is: a stale route has
+    # a chance of recovering, a deleted one is a guaranteed outage.
+    echo "vpn-client-health: no gateway answered - leaving routes alone" >&2
+    exit 0
+fi
+
+desired="${alive[*]}"
+previous=$(cat "$STATE_FILE" 2>/dev/null || true)
+[ "$desired" = "$previous" ] && exit 0
+
+for cidr in $REMOTE_CIDRS; do
+    # shellcheck disable=SC2086
+    ip route replace "$cidr" "${alive[@]}" {{ 'mtu ' ~ vpn_client_route_mtu if (vpn_transport == 'route' and vpn_client_route_mtu) else '' }}
+done
+printf '%s' "$desired" > "$STATE_FILE"
+echo "vpn-client-health: $alive_count/{{ vpn_client_paths | length }} gateway(s) up; routes rebuilt"

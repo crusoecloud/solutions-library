@@ -1,0 +1,65 @@
+---
+# ===========================================================================
+# bandwidth_test role
+#
+# Generates iperf3 traffic from one-or-many source hosts to one-or-many
+# destination hosts and collects the results FROM THE SERVERS.
+#
+# Server-side collection is the point. The receiving end is the authoritative
+# measurement, and it is the only end that still reports usefully when the
+# path in between is a managed appliance you do not control - an Azure VPN
+# Gateway, a GCP HA VPN, a customer firewall. A client's own summary can be
+# lost or truncated when the path degrades; the server's is not.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# What talks to what
+# ---------------------------------------------------------------------------
+#   paired       source[i] -> dest[i]        (equal-length groups; the default)
+#   many_to_one  every source -> dest[0]
+#   mesh         every source -> every dest  (sources x dests flows)
+bw_mode: "paired"
+
+# Which address on each destination the sources connect to.
+#   private  the destination's private IP  (through the tunnel / VPN)
+#   public   the destination's public IP   (direct, for a baseline)
+# Set bw_dest_ip on a host to override it explicitly.
+bw_dest_address: "private"
+
+# ---------------------------------------------------------------------------
+# Test parameters
+# ---------------------------------------------------------------------------
+bw_duration: 30
+bw_streams: 8
+bw_omit: 5                  # seconds of slow start to discard
+bw_protocol: "tcp"          # tcp | udp
+bw_udp_bitrate: "1G"        # per flow, udp only
+bw_reverse: false           # measure destination -> source instead
+bw_port_base: 5201          # each flow gets its own port: base + index
+
+# ---------------------------------------------------------------------------
+# Inventory groups
+# ---------------------------------------------------------------------------
+# The role enumerates sources and destinations from these two groups. They are
+# NOT free to rename: site.yml targets its plays with the literal group names
+# [source_hosts] and [dest_hosts], because Ansible resolves play targets before
+# any variable is loaded. Change all three together or not at all.
+bw_source_group: "source_hosts"
+bw_dest_group: "dest_hosts"
+
+# ---------------------------------------------------------------------------
+# Collection
+# ---------------------------------------------------------------------------
+# Each server runs one-shot ("iperf3 -s -1") and writes its own JSON, so the
+# file ON THE SERVER is the measurement. Results are fetched to bw_results_dir.
+bw_remote_dir: "/tmp/bandwidth-test"
+# Absolute on purpose: fetch resolves a relative dest against the playbook
+# directory, but the Summarise play runs a command from wherever you are.
+bw_results_dir: "{{ playbook_dir }}/results"
+
+# Extra seconds to wait past bw_duration before giving up on a server.
+bw_grace: 45
+
+# Install iperf3 if missing. Set false if the image already has it, or if you
+# have no package access on these hosts.
+bw_install: true

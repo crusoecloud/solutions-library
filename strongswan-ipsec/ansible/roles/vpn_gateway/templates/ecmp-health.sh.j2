@@ -1,0 +1,75 @@
+#!/bin/bash
+# Managed by Ansible - {{ inventory_hostname }}
+#
+# Two jobs, both needed because an XFRM interface stays UP whether or not its
+# SA is established:
+#
+#   1. Rebuild the local ECMP route from the tunnels the kernel actually has
+#      an SA for, so a dead tunnel stops attracting its share of traffic.
+#      Secondary when BGP is enabled, since BGP withdraws routes itself.
+#
+#   2. Signal this gateway's health to CLIENTS. Clients do not run BGP, so an
+#      ICMP probe to this gateway's own address is how they learn. Echo-request
+#      is dropped while no tunnel is up, which turns "VM alive but tunnel dead"
+#      into something a client can see and route around.
+set -u
+
+LOCAL_IP="{{ vpn_local_gw_ip }}"
+STATE_FILE=/run/vpn-ecmp-health.state
+
+alive=()
+alive_count=0
+xfrm_state=$(ip -o xfrm state 2>/dev/null || true)
+
+{% for t in vpn_tunnels %}
+# tunnel {{ t.index }} -> {{ t.xfrm_iface }} (if_id {{ t.if_id }})
+if printf '%s' "$xfrm_state" | grep -qE 'if_id ({{ "0x%x" | format(t.if_id) }}|{{ t.if_id }})([^0-9a-fA-F]|$)'; then
+    alive+=("{{ t.xfrm_iface }}")
+    alive_count=$(( alive_count + 1 ))
+fi
+{% endfor %}
+
+# ---------------------------------------------------------------------------
+# 1. Rebuild the ECMP route when the live set of tunnels changes
+# ---------------------------------------------------------------------------
+{% if not (vpn_bgp_enabled | bool) and vpn_remote_subnet != "0.0.0.0/0" %}
+REMOTE_SUBNET="{{ vpn_remote_subnet }}"
+
+if [ "$alive_count" -eq 0 ]; then
+    echo "ecmp-health: no established SAs - leaving the route alone rather than blackholing it" >&2
+else
+    desired="${alive[*]}"
+    previous=$(cat "$STATE_FILE" 2>/dev/null || true)
+    if [ "$desired" != "$previous" ]; then
+        args=()
+        for dev in "${alive[@]}"; do
+            args+=(nexthop dev "$dev" weight 1)
+        done
+        if ip route replace "$REMOTE_SUBNET" "${args[@]}"; then
+            printf '%s' "$desired" > "$STATE_FILE"
+            echo "ecmp-health: $REMOTE_SUBNET now via $desired"
+        fi
+    fi
+fi
+{% else %}
+# BGP owns the data prefixes here, or this is a full-tunnel deployment where
+# the mark table carries the default. Nothing to rebuild.
+:
+{% endif %}
+
+# ---------------------------------------------------------------------------
+# 2. Client-visible health
+# ---------------------------------------------------------------------------
+RULE=(INPUT -p icmp --icmp-type echo-request -d "$LOCAL_IP" -j DROP)
+
+if [ "$alive_count" -gt 0 ]; then
+    # Healthy: make sure we answer probes.
+    while iptables -C "${RULE[@]}" 2>/dev/null; do
+        iptables -D "${RULE[@]}" || break
+    done
+else
+    # Unhealthy: go quiet so clients drop us from their nexthop list.
+    iptables -C "${RULE[@]}" 2>/dev/null || iptables -I "${RULE[@]}"
+fi
+
+exit 0

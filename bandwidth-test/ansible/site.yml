@@ -1,0 +1,67 @@
+---
+# Bandwidth test: start one-shot iperf3 servers, run the clients, then collect
+# each SERVER's own JSON. Three ordered plays because the servers must be
+# listening before any client connects.
+#
+# The inventory MUST define the groups [source_hosts] and [dest_hosts] -
+# Ansible resolves play targets before group_vars are loaded, so these cannot
+# be variables.
+#
+#   ansible-playbook -i inventory.ini site.yml
+#   ansible-playbook -i inventory.ini site.yml -e bw_protocol=udp -e bw_udp_bitrate=2G
+#   ansible-playbook -i inventory.ini site.yml -e bw_mode=many_to_one
+#   ansible-playbook -i inventory.ini site.yml -e bw_dest_address=public   # baseline
+
+- name: Start iperf3 servers on the destinations
+  hosts: dest_hosts
+  gather_facts: true
+  roles:
+    - role: bandwidth_test
+      vars:
+        bw_phase: servers
+
+- name: Generate traffic from the sources
+  hosts: source_hosts
+  gather_facts: true
+  roles:
+    - role: bandwidth_test
+      vars:
+        bw_phase: clients
+
+- name: Collect results from the destinations
+  hosts: dest_hosts
+  gather_facts: false
+  roles:
+    - role: bandwidth_test
+      vars:
+        bw_phase: collect
+
+- name: Collect client-side results from the sources
+  hosts: source_hosts
+  gather_facts: false
+  roles:
+    - role: bandwidth_test
+      vars:
+        bw_phase: collect_clients
+
+- name: Summarise
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  # The inventory's [all:vars] usually sets ansible_become for the remote
+  # hosts. That is a host variable, which beats the play-level "become"
+  # keyword, so it has to be overridden as a variable here.
+  vars:
+    ansible_become: false
+    # Implicit localhost is in no group and includes no role, so it sees
+    # neither group_vars nor the role default. Same value as the role's, so
+    # the fetch destination and the aggregate input are one directory.
+    bw_results_dir: "{{ playbook_dir }}/results"
+  tasks:
+    - name: Aggregate the server-side results
+      ansible.builtin.command: "python3 {{ playbook_dir }}/../scripts/aggregate.py {{ bw_results_dir }}"
+      register: bw_summary
+      changed_when: false
+    - name: Report
+      ansible.builtin.debug:
+        msg: "{{ bw_summary.stdout_lines }}"

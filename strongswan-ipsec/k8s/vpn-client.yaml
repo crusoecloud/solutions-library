@@ -1,14 +1,19 @@
 ---
-# VPN Client DaemonSet — GRE-over-FOU tunnel from K8s nodes to the
-# Crusoe VPN gateway. Same setup as the vpn_client Ansible role, but
-# runs as a DaemonSet for managed K8s nodes where Ansible can't reach.
+# VPN Client DaemonSet - configures K8s nodes to reach the remote site through
+# one or more VPN gateways. Same job as the vpn_client Ansible role, for
+# managed clusters where Ansible cannot reach the nodes.
 #
-# The gateway's multipoint GRE tunnel already covers the entire node
-# CIDR, so new nodes are handled automatically.
+# Two transports, matching the Ansible role:
+#   gre_fou  GRE-over-FOU overlay (default)
+#   route    plain static routes via the gateway private IPs. Requires Crusoe
+#            port security to be DISABLED on every GATEWAY's vNIC.
 #
-# IMPORTANT: Use a public image (like nicolaka/netshoot) so nodes can
-# pull it before the VPN tunnel is up. Once the tunnel is established,
-# nodes can pull private images from the datacenter registry.
+# Traffic is ECMP'd across all gateways, hashed per flow. Nothing here is
+# stateful, so a reply may come back through a different gateway - which is
+# exactly what Azure does. See the README's "Rules that come with ECMP".
+#
+# IMPORTANT: use a public image (like nicolaka/netshoot) so nodes can pull it
+# before the VPN is up. Once traffic flows, nodes can pull private images.
 #
 # Apply with:
 #   kubectl apply -f vpn-client.yaml
@@ -19,23 +24,70 @@ metadata:
   name: vpn-client-config
   namespace: kube-system
 data:
-  # VPN gateway private IP
-  GATEWAY_IP: "<gateway-private-ip>"
-  # GRE-over-FOU settings — must match the gateway's config
+  # Space-separated private IPs of the VPN gateways. One entry = today's
+  # behaviour. Several entries = ECMP across them.
+  GATEWAY_IPS: "<gateway-private-ip>"
+
+  # gre_fou | route  - must match the gateways
+  TRANSPORT: "gre_fou"
+
+  # GRE-over-FOU settings - must match the gateways (vpn_gre_key,
+  # vpn_fou_port, vpn_gre_mtu in the vpn_gateway role). The gateway strips the
+  # GRE wrapper before encrypting, so the GRE MTU equals the 1400-byte tunnel
+  # MTU; it must never exceed it, nor the uplink MTU minus 36.
   GRE_KEY: "100"
   FOU_PORT: "9473"
-  GRE_MTU: "1360"
-  # Remote CIDRs to route through the VPN (space-separated)
-  # Split tunnel (datacenter only):
+  GRE_MTU: "1400"
+  # "true" makes the kernel hash the outer FOU source port per inner flow, so
+  # one node<->gateway pair stops being a single RSS flow.
+  FOU_SPORT_AUTO: "false"
+  # Extra FOU ports per gateway, for kernels without "encap-sport auto".
+  FOU_PORT_COUNT: "1"
+
+  # route transport: MTU on the ECMP route. Azure's documented tunnel MTU.
+  ROUTE_MTU: "1400"
+
+  # GRO MUST be off on the node's uplink when using gre_fou. Generic Receive
+  # Offload coalesces inbound FOU/UDP packets; the coalesced packet cannot be
+  # re-encapsulated and is dropped. UDP and ICMP are unaffected, so the tunnel
+  # looks perfectly healthy while TCP collapses. Measured on 8 vCPU VMs:
+  # 3.65 Mbps with GRO on, 4590 Mbps with it off.
+  DISABLE_GRO: "true"
+
+  # Remote CIDRs to route through the VPN (space-separated).
+  # Split tunnel (remote site only):
   #   REMOTE_CIDRS: "<remote-private-subnet-cidr>"
-  # Full tunnel (all internet via datacenter firewall):
+  # Full tunnel (all internet via the remote firewall):
   REMOTE_CIDRS: "0.0.0.0/1 128.0.0.0/1"
   #   Intra-cluster traffic (node subnet, pod CIDR) is unaffected because
   #   those routes are more specific (/20, /24) than /1.
-  #   The datacenter gateway needs vpn_remote_subnet: 0.0.0.0/0 and a
-  #   default route through the firewall for internet egress.
-  # Sync interval in seconds
-  SYNC_INTERVAL: "30"
+
+  # --- node tuning ---
+  # THE most important one. 0 (kernel default) hashes src/dst IP only, so
+  # every flow takes ONE gateway and the others sit idle. The cluster looks
+  # healthy and performs like a single gateway.
+  MULTIPATH_HASH_POLICY: "1"
+  # route transport: skip nexthops whose ARP entry has gone unreachable.
+  MULTIPATH_USE_NEIGH: "1"
+  RP_FILTER: "2"
+
+  # Long-fat-pipe TCP. At 50 ms RTT, 10 Gbps needs ~62 MB in flight, but the
+  # 6 MB default caps a single flow near 1 Gbps no matter how many tunnels
+  # exist underneath. Set TCP_TUNING to "false" to leave node TCP alone.
+  TCP_TUNING: "true"
+  TCP_RMEM: "4096 131072 134217728"
+  TCP_WMEM: "4096 65536 134217728"
+  RMEM_MAX: "268435456"
+  WMEM_MAX: "268435456"
+  # CUBIC collapses on a lossy internet path and does not recover. BBR needs fq.
+  CONGESTION_CONTROL: "bbr"
+  DEFAULT_QDISC: "fq"
+
+  # Probe interval. Gateways that stop answering are dropped from the ECMP
+  # route; the gateway's own health timer stops answering ICMP when it has no
+  # established SA, so a live node with a dead tunnel drops out too.
+  SYNC_INTERVAL: "15"
+  PROBE_TIMEOUT: "1"
 
 ---
 apiVersion: apps/v1
@@ -85,71 +137,153 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              set -euo pipefail
+              set -uo pipefail
 
-              setup_tunnel() {
-                local LOCAL_IP
-                LOCAL_IP=$(ip -4 route get 1.1.1.1 | awk '/src/{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
+              read -r -a GATEWAYS <<< "$GATEWAY_IPS"
+              NGW=${#GATEWAYS[@]}
+              NPORT="${FOU_PORT_COUNT:-1}"
 
-                # Skip if tunnel is already up
-                if ip link show gre-vpn 2>/dev/null | grep -q UP; then
-                  return 0
-                fi
-
-                # Clean stale state
-                ip link del gre-vpn 2>/dev/null || true
-                ip tunnel del gre-vpn 2>/dev/null || true
-                ip fou del port "$FOU_PORT" 2>/dev/null || true
-
-                echo "Creating GRE-over-FOU tunnel: $LOCAL_IP -> $GATEWAY_IP"
-
-                modprobe fou
-                ip fou add port "$FOU_PORT" ipproto 47
-                ip link add name gre-vpn type gre \
-                    local "$LOCAL_IP" remote "$GATEWAY_IP" key "$GRE_KEY" ttl 255 \
-                    encap fou encap-sport "$FOU_PORT" encap-dport "$FOU_PORT"
-                ip link set gre-vpn mtu "$GRE_MTU"
-                ip link set gre-vpn up
-
-                # Allow FOU from gateway
-                iptables -C INPUT -p udp --dport "$FOU_PORT" -s "$GATEWAY_IP" -j ACCEPT 2>/dev/null || \
-                  iptables -I INPUT 1 -p udp --dport "$FOU_PORT" -s "$GATEWAY_IP" -j ACCEPT
-
-                echo "GRE-over-FOU tunnel up"
+              # Flat path list: one entry per gateway x FOU port.
+              PATH_DEV=(); PATH_GW=(); PATH_PORT=(); PATH_KEY=()
+              build_paths() {
+                local total=$(( NGW * NPORT )) n=0 g p
+                for g in "${GATEWAYS[@]}"; do
+                  for (( p=0; p<NPORT; p++ )); do
+                    if [ "$total" -eq 1 ]; then
+                      PATH_DEV+=("gre-vpn")
+                    else
+                      PATH_DEV+=("gre-vpn${n}")
+                    fi
+                    PATH_GW+=("$g")
+                    PATH_PORT+=( "$(( FOU_PORT + p ))" )
+                    PATH_KEY+=( "$(( GRE_KEY + p ))" )
+                    n=$(( n + 1 ))
+                  done
+                done
               }
 
+              apply_sysctls() {
+                sysctl -qw "net.ipv4.fib_multipath_hash_policy=${MULTIPATH_HASH_POLICY}" 2>/dev/null || true
+                sysctl -qw "net.ipv4.conf.all.rp_filter=${RP_FILTER}" 2>/dev/null || true
+                sysctl -qw "net.ipv4.conf.default.rp_filter=${RP_FILTER}" 2>/dev/null || true
+                if [ "$TRANSPORT" = "route" ]; then
+                  sysctl -qw "net.ipv4.fib_multipath_use_neigh=${MULTIPATH_USE_NEIGH}" 2>/dev/null || true
+                fi
+                if [ "${TCP_TUNING:-true}" = "true" ]; then
+                  modprobe tcp_bbr 2>/dev/null || true
+                  sysctl -qw "net.core.rmem_max=${RMEM_MAX}" 2>/dev/null || true
+                  sysctl -qw "net.core.wmem_max=${WMEM_MAX}" 2>/dev/null || true
+                  sysctl -qw "net.ipv4.tcp_rmem=${TCP_RMEM}" 2>/dev/null || true
+                  sysctl -qw "net.ipv4.tcp_wmem=${TCP_WMEM}" 2>/dev/null || true
+                  sysctl -qw "net.core.default_qdisc=${DEFAULT_QDISC}" 2>/dev/null || true
+                  sysctl -qw "net.ipv4.tcp_congestion_control=${CONGESTION_CONTROL}" 2>/dev/null \
+                    || echo "note: ${CONGESTION_CONTROL} unavailable on this kernel"
+                fi
+              }
+
+              setup_tunnels() {
+                [ "$TRANSPORT" = "gre_fou" ] || return 0
+                local LOCAL_IP i sport UPLINK
+                LOCAL_IP=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
+                modprobe fou 2>/dev/null || true
+
+                # See DISABLE_GRO above. This is correctness, not tuning:
+                # with GRO on, TCP through the overlay collapses by ~1250x.
+                if [ "${DISABLE_GRO:-true}" = "true" ]; then
+                  UPLINK=$(ip -o -4 route show default | awk '{print $5; exit}')
+                  if [ -n "${UPLINK:-}" ]; then
+                    ethtool -K "$UPLINK" gro off 2>/dev/null || \
+                      echo "WARNING: could not disable GRO on $UPLINK - TCP through the overlay will be very slow"
+                  fi
+                fi
+
+                for (( i=0; i<${#PATH_DEV[@]}; i++ )); do
+                  ip link show "${PATH_DEV[$i]}" 2>/dev/null | grep -q UP && continue
+                  ip link del "${PATH_DEV[$i]}" 2>/dev/null || true
+                  ip tunnel del "${PATH_DEV[$i]}" 2>/dev/null || true
+                  ip fou del port "${PATH_PORT[$i]}" 2>/dev/null || true
+
+                  ip fou add port "${PATH_PORT[$i]}" ipproto 47 2>/dev/null || true
+                  sport="${PATH_PORT[$i]}"
+                  [ "${FOU_SPORT_AUTO:-false}" = "true" ] && sport="auto"
+                  echo "creating ${PATH_DEV[$i]}: $LOCAL_IP -> ${PATH_GW[$i]} (UDP ${PATH_PORT[$i]}, sport $sport)"
+                  ip link add name "${PATH_DEV[$i]}" type gre \
+                      local "$LOCAL_IP" remote "${PATH_GW[$i]}" key "${PATH_KEY[$i]}" ttl 255 \
+                      encap fou encap-sport "$sport" encap-dport "${PATH_PORT[$i]}"
+                  ip link set "${PATH_DEV[$i]}" mtu "$GRE_MTU"
+                  ip link set "${PATH_DEV[$i]}" up
+
+                  iptables -C INPUT -p udp --dport "${PATH_PORT[$i]}" -s "${PATH_GW[$i]}" -j ACCEPT 2>/dev/null || \
+                    iptables -I INPUT 1 -p udp --dport "${PATH_PORT[$i]}" -s "${PATH_GW[$i]}" -j ACCEPT
+                done
+              }
+
+              # Rebuild the ECMP route from the gateways that answer. Safe to
+              # re-hash: nothing here is stateful, so a flow that moves to
+              # another gateway keeps working.
               sync_routes() {
+                local i nh=() up=0 mtu=()
+                for (( i=0; i<${#PATH_DEV[@]}; i++ )); do
+                  ping -c 1 -W "${PROBE_TIMEOUT:-1}" -n -q "${PATH_GW[$i]}" >/dev/null 2>&1 || continue
+                  if [ "$TRANSPORT" = "route" ]; then
+                    nh+=(nexthop via "${PATH_GW[$i]}" weight 1)
+                  else
+                    ip link show "${PATH_DEV[$i]}" 2>/dev/null | grep -q UP || continue
+                    nh+=(nexthop dev "${PATH_DEV[$i]}" weight 1)
+                  fi
+                  up=$(( up + 1 ))
+                done
+
+                if [ "$up" -eq 0 ]; then
+                  echo "WARNING: no gateway answered - leaving routes alone" >&2
+                  return 0
+                fi
+                [ "$TRANSPORT" = "route" ] && [ -n "${ROUTE_MTU:-}" ] && mtu=(mtu "$ROUTE_MTU")
+
+                local desired="${nh[*]}"
+                if [ "$desired" != "${LAST_NH:-}" ]; then
+                  echo "ECMP: $up/${#PATH_DEV[@]} path(s) up"
+                  LAST_NH="$desired"
+                fi
                 for cidr in $REMOTE_CIDRS; do
-                  ip route replace "$cidr" dev gre-vpn 2>/dev/null || true
+                  ip route replace "$cidr" "${nh[@]}" "${mtu[@]}" 2>/dev/null || true
                 done
               }
 
               cleanup() {
-                echo "Cleaning up"
+                echo "cleaning up"
                 for cidr in $REMOTE_CIDRS; do
-                  ip route del "$cidr" dev gre-vpn 2>/dev/null || true
+                  ip route del "$cidr" 2>/dev/null || true
                 done
-                ip link del gre-vpn 2>/dev/null || true
-                ip tunnel del gre-vpn 2>/dev/null || true
-                ip fou del port "$FOU_PORT" 2>/dev/null || true
+                local i
+                for (( i=0; i<${#PATH_DEV[@]}; i++ )); do
+                  ip link del "${PATH_DEV[$i]}" 2>/dev/null || true
+                  ip tunnel del "${PATH_DEV[$i]}" 2>/dev/null || true
+                  ip fou del port "${PATH_PORT[$i]}" 2>/dev/null || true
+                done
                 exit 0
               }
-
               trap cleanup SIGTERM SIGINT
 
-              setup_tunnel
+              build_paths
+              apply_sysctls
+              setup_tunnels
               sync_routes
-              echo "VPN client running (sync every ${SYNC_INTERVAL}s)"
-              echo "  Gateway: $GATEWAY_IP"
-              echo "  Remote CIDRs: $REMOTE_CIDRS"
+
+              echo "vpn-client running (transport=$TRANSPORT, sync every ${SYNC_INTERVAL}s)"
+              echo "  gateways:    $GATEWAY_IPS"
+              echo "  paths:       ${#PATH_DEV[@]}"
+              echo "  remote:      $REMOTE_CIDRS"
+              echo "  hash policy: $(sysctl -n net.ipv4.fib_multipath_hash_policy 2>/dev/null)"
+              if [ "$TRANSPORT" = "gre_fou" ]; then
+                _u=$(ip -o -4 route show default | awk '{print $5; exit}')
+                echo "  GRO on $_u:  $(ethtool -k "$_u" 2>/dev/null | awk '/generic-receive-offload/{print $2}') (must be off)"
+              fi
 
               while true; do
                 sleep "$SYNC_INTERVAL" &
                 wait $!
-                if ! ip link show gre-vpn 2>/dev/null | grep -q UP; then
-                  echo "Tunnel missing, recreating..."
-                  setup_tunnel
-                fi
+                setup_tunnels
                 sync_routes
               done
           resources:
@@ -157,5 +291,5 @@ spec:
               cpu: 10m
               memory: 16Mi
             limits:
-              cpu: 50m
-              memory: 32Mi
+              cpu: 100m
+              memory: 64Mi

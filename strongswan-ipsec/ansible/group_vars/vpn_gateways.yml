@@ -1,8 +1,0 @@
----
-# Shared settings for all VPN gateways.
-#
-# The PSK must be identical on both gateways (and must match the K8s
-# DaemonSet Secret if using k8s/vpn-client.yaml).
-
-# IPsec pre-shared key (generate with: openssl rand -base64 48)
-vpn_psk: "<pre-shared-key>"

@@ -1,23 +1,529 @@
 ---
-vpn_xfrm_iface: "xfrm0"
-vpn_xfrm_if_id: 100
-vpn_xfrm_mtu: 1400
+# ===========================================================================
+# vpn_gateway role defaults
+#
+# DEFAULTS ARE TUNED FOR A MANAGED CLOUD PEER (Azure/GCP/AWS).
+#
+# Out of the box this role gives you: one gateway VM, one tunnel per remote
+# outer address (so 2 against an Azure active-active gateway), GCMAES256,
+# GRE-over-FOU to local clients, a stateless datapath, every measured host
+# tweak applied, and a VAES-capable kernel installed and booted if the running
+# one predates 6.11.
+#
+# The customer edits ONE file: group_vars/all.yml. Everything below is already
+# correct for that case.
+#
+# Sizing, transports, ciphers, cloud-side prerequisites:  README.md
+# Reaching 10 Gbps with N+1 against Azure:                AZURE-10G-GUIDE.md
+# ===========================================================================
 
-# GRE-over-FOU (GRE encapsulated in UDP — works through firewalls that
-# only allow TCP/UDP and block raw GRE protocol 47)
-vpn_gre_mtu: 1360
-vpn_gre_key: 100
-vpn_fou_port: 9473
+# ---------------------------------------------------------------------------
+# XFRM interfaces
+# ---------------------------------------------------------------------------
+# Tunnel i (0-based) gets interface "{{ vpn_xfrm_iface_prefix }}{{ i }}" and
+# if_id "{{ vpn_xfrm_if_id }} + i"  ->  xfrm0/100, xfrm1/101, xfrm2/102 ...
+vpn_xfrm_iface_prefix: "xfrm"
+vpn_xfrm_iface: "xfrm0"          # tunnel 0 - kept for backward compatibility
+vpn_xfrm_if_id: 100              # tunnel 0, and the base for the fan-out
+vpn_xfrm_mtu: 1400               # Azure's documented tunnel MTU. Do not raise.
 
-vpn_ike_proposals: "aes256-sha384-ecp256-modp3072"
-vpn_esp_proposals: "aes256gcm128-ecp256-modp3072"
+# ---------------------------------------------------------------------------
+# Tunnel fan-out (ECMP)
+# ---------------------------------------------------------------------------
+# SIZING, measured across two Crusoe regions with 20 client pairs:
+#
+#   Inbound ESP decrypt for ONE tunnel is pinned to ONE core. One tunnel is one
+#   outer flow, one RX queue, one CPU - and nothing software-side splits it
+#   (RPS hashes per flow; a 16 vCPU gateway still sat at 91% of a single core).
+#
+#   That core sustains about 2.1-2.2 Gbps, so:
+#     throughput per gateway PAIR  ~ 2.1 Gbps
+#     NIC load per gateway         ~ 2x that, because every packet crosses the
+#                                    uplink twice (in as FOU, out as ESP)
+#
+#   Scale by ADDING GATEWAYS, not by growing them. Measured: 1 gateway/site
+#   2.05 Gbps, 2 gateways/site 4.38 Gbps - linear. An 8 vCPU / 10 Gbps-NIC
+#   instance is comfortable; 16 vCPU bought nothing.
+#
+# Number of parallel IPsec SAs from THIS gateway to the remote site.
+#
+# N tunnels only spread load if the OUTER flow varies. With NAT-T both UDP
+# ports are pinned to 4500, so the only entropy is the IP pair. Raising this
+# without giving vpn_remote_addrs (or vpn_local_addrs) more than one entry
+# produces a setup that looks right and performs like a single tunnel. The
+# role warns when that happens.
+# 0 = AUTO: one tunnel per entry in vpn_remote_addrs, minimum 1. An Azure
+# gateway in active-active mode publishes two public IPs, so listing both
+# gives two tunnels with no extra config - which is the most a single
+# on-premises device gets. Set a number to override.
+#
+# Two tunnels to the SAME remote IP are pointless: same outer 4-tuple means
+# same RX queue means same CPU. Tunnels only help when the outer addresses
+# differ, which is why this counts addresses rather than defaulting to 2.
+vpn_tunnel_count: 0
+
+# Remote (outer) addresses, one per tunnel. Empty = [vpn_remote_gw_ip] for all.
+# For Azure active-active, list both gateway instance public IPs.
+vpn_remote_addrs: []
+
+# Local (outer) addresses, one per tunnel. Empty = "%any" for every tunnel,
+# which is correct on Crusoe (one IP per VM, and public IPs are 1:1 NAT'd).
+# Entries are a bare IP, or a dict:
+#   addr     bindable local address -> swanctl "local_addrs"
+#   public   address the peer sees; used as the IKE id when vpn_id_style=address
+#   iface    uplink for this tunnel's XFRM device and source routing
+#   gateway  next hop for that uplink (non-primary NICs only)
+vpn_local_addrs: []
+
+# Escape hatch: supply the fully-formed tunnel list and skip all derivation.
+vpn_tunnels_override: []
+
+# Prune dead tunnels from the local ECMP route, and signal tunnel health to
+# clients (clients do not run BGP, so this is how they learn). An XFRM
+# interface stays UP whether or not its SA is established.
+# "" = auto: on whenever this gateway has more than one tunnel OR serves
+# clients. The second half matters: with N single-tunnel gateways sharing the
+# ECMP load, this timer is the ONLY way a client learns that one of them has
+# lost its tunnel - clients do not run BGP, they just probe. Without it a
+# gateway with a dead tunnel keeps answering and keeps its 1/N share of traffic.
+vpn_ecmp_healthcheck: ""
+vpn_ecmp_healthcheck_interval: "15s"
+
+# Source-routing tables for multi-uplink deployments (tunnel i -> base + i).
+vpn_srcrt_table_base: 300
+
+# ---------------------------------------------------------------------------
+# Crypto profiles
+# ---------------------------------------------------------------------------
+# In strongSwan "aes256gcm128" and "aes256gcm16" are the SAME thing:
+# AES-256-GCM with a 128-bit (16-byte) ICV. That is what Azure calls
+# GCMAES256. Today's ESP is already GCMAES256; it is IKE that is AES-CBC.
+#
+# Azure's own per-tunnel numbers (VpnGw4/VpnGw5):
+#   GCMAES256          2.3 Gbps / 220,000 pps
+#   AES256 + SHA256    700 Mbps /  66,000 pps
+# So the profile is worth ~3.3x per tunnel on the Azure side.
+vpn_crypto_profile: "gcmaes256"
+
+vpn_crypto_profiles:
+  # Exactly what this role has always shipped.
+  default:
+    ike: "aes256-sha384-ecp256-modp3072"
+    esp: "aes256gcm128-ecp256-modp3072"
+  # AEAD end to end. Matches an Azure custom IPsec/IKE policy of
+  # GCMAES256 / GCMAES256 with PFS group ECP384.
+  gcmaes256:
+    ike: "aes256gcm16-prfsha384-ecp384"
+    esp: "aes256gcm16-ecp384"
+  # Same AEAD, cheaper PRF and DH group - throughput-first deployments.
+  gcmaes256_fast:
+    ike: "aes256gcm16-prfsha256-ecp256"
+    esp: "aes256gcm16-ecp256"
+  # For peers that will not negotiate AEAD at all.
+  cbc_compat:
+    ike: "aes256-sha256-modp2048"
+    esp: "aes256-sha256-modp2048"
+
+# Set either explicitly to override the profile.
+vpn_ike_proposals: "{{ vpn_crypto_profiles[vpn_crypto_profile].ike }}"
+vpn_esp_proposals: "{{ vpn_crypto_profiles[vpn_crypto_profile].esp }}"
+
 vpn_ike_rekey_time: "14400s"
 vpn_child_rekey_time: "3600s"
 vpn_dpd_delay: "30s"
 
-# Policy routing table for xfrm → GRE forwarding
-vpn_rt_table: 100
+# Force UDP encapsulation (port 4500) even when no NAT is detected.
+# UDP-encapsulate ESP unconditionally. Managed cloud peers sit behind NAT
+# more often than not, and forcing encap avoids a class of intermittent
+# "tunnel up, no traffic" failures. Also gives the outer flow a UDP 4500
+# 4-tuple, which is what the NIC hashes on.
+vpn_force_encap: true
 
-# Set to true + vpn_client_cidr for Crusoe (GRE-over-FOU mode)
-vpn_use_gre: false
-# vpn_client_cidr: "<source-private-subnet-cidr>"
+# "" = auto. "start" brings every tunnel up at deploy time; "trap" waits for
+# the first matching packet.
+#
+# INTENTIONAL DEFAULT CHANGE, measured: "trap" is lazy, so in any scale-out
+# deployment the tunnels come up one at a time as traffic happens to hash to
+# them - and the flows that trigger them are dropped while IKE runs. Observed
+# live with 5 gateways per site: only gateway 1 had an SA; the other four sat
+# idle with no tunnel at all until traffic reached them. That silently
+# understates throughput and drops real user traffic.
+#
+# Auto now resolves to:
+#   start  whenever this gateway serves clients (gre_fou or route), or has
+#          more than one tunnel - i.e. every case where laziness costs traffic
+#   trap   only for a plain point-to-point gateway with no local clients
+vpn_start_action: ""
+
+# IKE identity style.
+#   fixed    vpn_local_id / vpn_remote_id verbatim (today)
+#   indexed  site-b-gw-1@..., site-b-gw-2@...  - for Crusoe<->Crusoe fan-out
+#   address  the tunnel's outer IP - what Azure/AWS/GCP peers require
+# "" = auto: "fixed" for one tunnel, "address" when the tunnels have distinct
+# remote outer IPs (the Azure case), "indexed" otherwise.
+vpn_id_style: ""
+
+# IKE identities. Defaulted so the customer never has to set them.
+#
+# Azure identifies an on-premises device by its PUBLIC IP, and a Crusoe VM
+# cannot read its own public IP from its interface - the fabric maps it to the
+# private NIC address. But the customer already typed it into inventory.ini as
+# ansible_host, so that is the authoritative source.
+vpn_local_outer_ip: "{{ ansible_host | default(vpn_local_gw_ip | default('%any')) }}"
+vpn_local_id: "{{ vpn_local_outer_ip }}"
+
+# The peer's identity is its outer address: the first entry of vpn_remote_addrs
+# if given, else vpn_remote_gw_ip. With "address" style each tunnel uses its
+# own remote address instead of this single value.
+vpn_remote_id: >-
+  {{ (vpn_remote_addrs | first) if (vpn_remote_addrs | default([]) | length) > 0
+     else (vpn_remote_gw_ip | default('%any')) }}
+
+# ESP anti-replay window, rendered on each child SA.
+#
+# Multi-queue receive and WAN reordering both deliver valid packets late, and
+# the strongSwan default window (32) drops them at high pps. The drops are
+# invisible: the tunnel stays INSTALLED, ping is clean, and only TCP suffers.
+# Watch for them with:
+#     cat /proc/net/xfrm_stat | grep XfrmInStateSeqError
+#     ip -s xfrm state | grep replay-window
+#
+# Measured: 1024 rejected 28,290 packets per 20 s at 4.8 Gbps on a 54 ms path
+# (0.28% loss). Setting it to 0 disables anti-replay and removed the drops
+# entirely - retransmits fell from 17,110 to 62 - but throughput did NOT
+# improve, so the drops were costing correctness noise, not bandwidth.
+# Fixing RFS (vpn_disable_rfs) removes most of the reordering at the source
+# and is the better lever.
+#
+# Values above 4096 are untested here and 32768 is KNOWN BAD: the SA fails to
+# install and the tunnel never comes up. Validated in tasks/main.yml.
+#
+# 0 disables anti-replay protection. That is a real, if modest, security
+# reduction on a public-internet tunnel - an attacker who can capture ESP
+# packets can replay them. Do not set it to 0 to chase throughput.
+vpn_replay_window: 1024
+
+# ---------------------------------------------------------------------------
+# Client transport (how local Crusoe VMs / K8s nodes reach this gateway)
+# ---------------------------------------------------------------------------
+#   gre_fou  GRE-over-FOU overlay (== the deprecated vpn_use_gre: true)
+#   route    plain static routes, no encapsulation. REQUIRES Crusoe port
+#            security to be DISABLED on this gateway's vNIC (or allowed-
+#            address-pairs covering vpn_remote_subnet). Without that,
+#            decrypted return traffic is dropped by the SDN. See the README.
+#   none     this gateway carries no local clients (== vpn_use_gre: false)
+#
+# "" = gre_fou. That is the default because "route" REQUIRES Crusoe NetEng to
+# disable port security on every gateway vNIC by hand, and no playbook can do
+# that for you.
+#
+# Left as "" rather than the literal "gre_fou" so the deprecated vpn_use_gre
+# spelling stays reachable: hardcoding it here would make "vpn_use_gre: false"
+# silently do nothing. See "Resolve client transport" in tasks/main.yml.
+vpn_client_transport: ""
+
+# vpn_use_gre is the deprecated alias, and it is DELIBERATELY NOT DEFAULTED.
+#
+# tasks/main.yml decides the transport by asking whether it was explicitly
+# set. A default here makes "vpn_use_gre is defined" always true, so every
+# gateway resolves to the "none" transport and carries no client traffic at
+# all - the deploy reports success and nothing flows. Measured on live hosts.
+# Leave it undefined.
+
+# GRE-over-FOU (GRE in UDP - passes firewalls that block raw GRE proto 47)
+#
+# MTU maths, and why 1400 rather than the 1360 this role used to ship:
+#
+#   The gateway STRIPS the GRE/FOU wrapper before encrypting, so IPsec carries
+#   the client's original packet, not the wrapped one. The client's packet size
+#   is therefore bounded by two things:
+#     the XFRM interface   -> vpn_xfrm_mtu            (1400)
+#     the client->gateway hop -> uplink MTU - 36      (1500 - 36 = 1464)
+#   The binding constraint is 1400, so 1360 was leaving 40 bytes unused - about
+#   2.9% of payload, which matters because the peer caps PACKETS per second.
+#
+# Lower this if the uplink MTU is below 1500, or vpn_xfrm_mtu is reduced.
+# The role asserts both constraints at deploy time.
+vpn_gre_mtu: 1400
+vpn_gre_key: 100
+vpn_fou_port: 9473
+
+# Randomise the outer FOU source port per inner flow on the packets THIS
+# gateway sends to its clients, so a client's NIC sees many RSS flows from
+# one gateway instead of one. The receiver matches on destination port only.
+# The client role has the matching setting for the other direction.
+vpn_fou_sport_auto: true
+
+# For kernels whose iproute2 lacks "encap-sport auto": N FOU ports.
+# Device name stays exactly "gre-vpn" while this is 1.
+vpn_fou_port_count: 1
+
+# How "route" transport gets decrypted return traffic past the SDN:
+#   port_security_disabled  NetEng disabled port security / added allowed-
+#                           address-pairs. Stateless, scales. Recommended.
+#   snat                    gateway SNATs remote->client traffic to its own
+#                           address. No network-team dependency, but needs
+#                           conntrack per packet and is INCOMPATIBLE with
+#                           multi-gateway ECMP. Not for >10 Gbps.
+vpn_route_return: "port_security_disabled"
+
+# SNAT decrypted traffic heading for the internet. Required for full-tunnel
+# internet egress, but SNAT is stateful, so it CANNOT be combined with
+# multi-gateway ECMP. Off by default: the shipped datapath is stateless so
+# ECMP survives a failover. Turn it on only for full-tunnel internet egress
+# through a SINGLE gateway.
+vpn_snat_internet_egress: false
+
+# The multipoint GRE tunnel holds one PERMANENT neighbour entry per host in
+# vpn_client_cidr. The kernel's default hard limit is 1024, which a /22 or
+# larger silently exceeds. These cover up to a /19 (8190 hosts).
+vpn_neigh_gc_thresh1: 8192
+vpn_neigh_gc_thresh2: 16384
+vpn_neigh_gc_thresh3: 32768
+
+# Policy routing
+vpn_rt_table: 100        # xfrm -> client overlay
+vpn_mark_table: 200      # marked client traffic -> xfrm
+vpn_fwmark: "0x64"
+
+# ---------------------------------------------------------------------------
+# BGP (FRR) - MANDATORY for multi-gateway ECMP against Azure
+# ---------------------------------------------------------------------------
+# Azure requires BGP whenever several on-premises devices advertise the same
+# prefixes to one VPN gateway. Static routing cannot express it.
+vpn_bgp_enabled: false
+vpn_bgp_local_asn: 65010          # unique per gateway VM
+vpn_bgp_peer_asn: 65515           # Azure's default
+vpn_bgp_advertise: []             # Crusoe prefixes - IDENTICAL on every gateway
+vpn_bgp_accept: []                # prefixes to accept from the peer
+vpn_bgp_peer_addrs: []            # peer BGP address per tunnel, in tunnel order
+vpn_bgp_maximum_paths: 8
+vpn_bgp_keepalive: 10
+vpn_bgp_holdtime: 30
+vpn_bgp_ebgp_multihop: 8
+
+# With BGP the prefixes are dynamic, so let routing decide.
+vpn_traffic_selectors_any: "{{ vpn_bgp_enabled }}"
+
+# ---------------------------------------------------------------------------
+# Performance - see README.md and AZURE-10G-GUIDE.md
+# ---------------------------------------------------------------------------
+# Master switch for host tuning (offloads, queues, RPS, IRQ, governor).
+vpn_perf_tuning: true
+
+# ECMP hashing. 0 (kernel default) hashes src/dst IP only, so every flow
+# between the same host pair takes ONE nexthop and the other tunnels idle.
+# The single most missable line in this whole solution.
+vpn_multipath_hash_policy: 1
+
+# Loose reverse-path filtering - with ECMP the reverse path will not always
+# match the forward nexthop.
+vpn_rp_filter: 2
+
+# Clamp forwarded TCP SYNs. ON by default: the one intentional behaviour
+# change, because without it TCP relies on PMTUD across a path that may drop
+# ICMP.
+#
+# "" = DERIVE from the transport actually in use, which is the only safe
+# default. iptables TCPMSS --set-mss sets the MSS to exactly that value - it
+# will RAISE an MSS as happily as lower it. Setting a value larger than the
+# path can carry produces a silent blackhole: ICMP still works, TCP collapses
+# to a few Mbit/s with massive retransmits. Measured on real hardware:
+# 3.36 Mbps instead of 9 Gbps.
+#
+# Derived values (see vpn_mss_effective in tasks/main.yml):
+#   gre_fou      vpn_gre_mtu  - 40   (1400 - 40 = 1360)
+#   route/none   vpn_xfrm_mtu - 40   (1400 - 40 = 1360)
+#
+# Both come to 1360 because vpn_gre_mtu is 1400: the gateway strips the GRE
+# wrapper before encrypting, so the tunnel MTU, not the GRE MTU, is the
+# binding constraint. Azure's documented "MSS 1350" is therefore safe on both
+# transports - but derive it anyway, because a lower vpn_gre_mtu (a sub-1500
+# uplink) moves the limit and a pinned 1350 would then be a blackhole.
+vpn_mss_clamp: true
+vpn_mss_clamp_value: ""          # "" = derive (recommended). A number pins it.
+
+# Nothing in this design needs conntrack. NOTRACK removes its per-packet cost
+# AND enforces the statelessness that multi-gateway ECMP depends on.
+vpn_disable_conntrack: true
+# The ESTABLISHED,RELATED FORWARD rule. Must be false when conntrack is
+# disabled, because a NOTRACK'd packet can never match a ctstate rule.
+vpn_stateful_forward_rule: false
+
+# GRO MUST BE OFF on any host that RECEIVES GRE-over-FOU. Generic Receive
+# Offload coalesces the inbound FOU/UDP packets on the physical NIC; the
+# oversized result cannot be re-encapsulated on the way out and is dropped.
+# UDP is unaffected, so the tunnel looks perfectly healthy while TCP collapses.
+#
+# Measured on 8 vCPU VMs across two Crusoe regions, client to client:
+#   ens3 GRO on   ->    3.65 Mbps
+#   ens3 GRO off  ->  4590    Mbps      (~1250x)
+#
+# This is correctness, not tuning, so it is applied by vpn-network.sh whenever
+# the transport is gre_fou - not gated behind vpn_perf_tuning. The route
+# transport has no FOU and keeps GRO on.
+vpn_fou_disable_gro: true
+
+# NIC offloads and queues. GRO is deliberately absent here; see above.
+vpn_nic_offloads: "gso on tso on"
+vpn_rx_queues: ""                # "" = one combined queue per vCPU, capped at NIC max
+vpn_adaptive_rx: true
+
+# Receive Packet Steering. Re-queues packets to other CPUs early in
+# netif_receive_skb, before the XFRM input path.
+#
+# IMPORTANT, and measured: RPS hashes PER FLOW, so it spreads MANY flows over
+# more CPUs than the NIC has queues. It does NOT split a single flow. One
+# IPsec tunnel is one outer flow, so its ESP decrypt stays pinned to one core
+# no matter what RPS is set to - observed live at 94% on one core of a 16 vCPU
+# gateway with RPS enabled. The only fix for that is MORE TUNNELS.
+#
+# Useful on a gateway that receives many client FOU flows; useless for the
+# single ESP flow arriving from the peer.
+vpn_enable_rps: true
+
+# ---------------------------------------------------------------------------
+# Receive Flow Steering - SEPARATE from RPS above, and the most valuable
+# per-tunnel knob measured on Crusoe mlx5 hardware.
+# ---------------------------------------------------------------------------
+# RFS (rps_flow_cnt) steers a packet to the CPU where the consuming socket
+# last ran. For ONE IPsec tunnel that is actively harmful: the SA's packets
+# are handed between CPUs, reach xfrm_input out of order, and the ESP
+# anti-replay window rejects the stragglers. The tunnel stays up, ping stays
+# clean, and TCP quietly retransmits instead.
+#
+# Measured: one tunnel, 16 flows, 54 ms RTT, kernel 6.8, identical WAN path.
+#   rps_flow_cnt 4096  ->  4.67 Gbps   18,624 retransmits   46,697 replay drops
+#   rps_flow_cnt 0     ->  4.86 Gbps      106 retransmits    3,141 replay drops
+#                          +4.2% throughput, 176x fewer retransmits
+#
+# CAVEAT, measured: that comparison is at 4.7 Gbps on kernel 6.8. On 6.11 at
+# 5.7 Gbps the anti-replay rejections come back to ~1M per 20 s with RFS
+# already off, because at that rate the reordering is coming from the WAN
+# path, not from RFS - the no-tunnel control on the same path retransmits
+# 2.57M at 9 Gbps. So RFS-off removes the reordering THIS HOST causes; it
+# cannot fix what the network does.
+#
+# There is still no case in this design where RFS helps, so this defaults to
+# true and is applied whenever vpn_perf_tuning is on.
+vpn_disable_rfs: true
+
+# NIC interrupt coalescing. Fixed coalescing batches more packets per NAPI
+# poll, which helps a single-queue tunnel a little. Measured +2.6% at
+# rx-usecs 64. rx-usecs 128 measured -2.0%, so do not push it further.
+# 0 = leave the driver's adaptive-rx alone. That is the safe default.
+vpn_rx_usecs: 0
+
+# GRO batch size. Measured +1.1%, which is inside this rig's noise band,
+# so it is off by default. 0 = leave the kernel default of 8.
+vpn_gro_normal_batch: 0
+
+# NIC ring sizes: DELIBERATELY NOT RAISED.
+# The mlx5 VF permits rx/tx 8192 and the obvious move is to take it. Measured
+# on the same rig, rx/tx 8192 gave 4.24 Gbps against a 4.67 Gbps baseline - a
+# 9.1% REGRESSION. A deeper ring holds more packets in flight, which widens
+# reordering and feeds the anti-replay problem above.
+# 0 = leave the driver default. A number sets both rx and tx.
+vpn_nic_rings: 0
+
+# NOT SET BY THIS ROLE, and measured so you do not have to:
+# the mlx5 private flags rx_cqe_moder and rx_cqe_compress are widely
+# recommended for throughput. On this VF they measured -0.2%. Nothing.
+
+# ---------------------------------------------------------------------------
+# Kernel AES-GCM implementation check
+# ---------------------------------------------------------------------------
+# The kernel binds the highest-priority driver registered for
+# rfc4106(gcm(aes)). Kernels before 6.11 ship only the 2010-era AES-NI
+# implementation. 6.11 and later add a VAES/AVX-512 one that is far cheaper
+# per byte on AMD Zen 4/5 and recent Intel.
+#
+# Measured: one tunnel, same two VMs, same WAN path (9.01 Gbps raw control).
+#   6.8.0-78    rfc4106-gcm-aesni           4.67 Gbps mean   decrypt core 83%
+#   6.11.0-29   rfc4106-gcm-vaes-avx10_512  5.75 Gbps mean   decrypt core 62%
+#
+# +23% per tunnel, and crypto fell from 22.6% of receive cycles to under 3%.
+#
+# The kernel play (tasks/kernel.yml) installs and, where safe, boots the right
+# kernel when vpn_kernel_upgrade is true. This check is the report that
+# remains when that is off, or could not act (no package, live gateway).
+vpn_check_crypto_accel: true
+
+# Fail the play, rather than warn, when the kernel has no VAES AES-GCM driver.
+# Left false so an existing deployment is not blocked by it.
+vpn_require_crypto_accel: false
+
+# ---------------------------------------------------------------------------
+# Preflight (tasks/preflight.yml, the FIRST play in site.yml)
+# ---------------------------------------------------------------------------
+# Nothing is configured until every check passes on every host. Replaces the
+# old scripts/preflight.sh, which could be skipped and only knew about two
+# hand-typed SSH targets.
+#
+# Checks: the five required values are filled in; the OS is apt-based; the
+# apt mirrors answer; xfrm_interface/fou/ip_gre/esp4 exist; the uplink MTU is
+# at least 1500; every client VM falls inside some gateway's vpn_client_cidr;
+# and UDP 500 + 4500 pass in BOTH directions between gateways.
+vpn_preflight: true
+
+# The bidirectional UDP probe. Only runs when the peer is a host in THIS
+# inventory - a managed cloud gateway has nothing to run a listener on - and
+# is skipped when a tunnel is already established, because an installed SA is
+# stronger evidence than any probe.
+vpn_preflight_udp_test: true
+vpn_preflight_listen_secs: 25
+
+# ---------------------------------------------------------------------------
+# Automatic kernel upgrade (tasks/kernel.yml, second play in site.yml)
+# ---------------------------------------------------------------------------
+# ON by default, because the whole point of this role's defaults is that a
+# customer runs one command and gets a correctly performing gateway.
+#
+# It is conservative about when it acts. It does nothing at all unless ALL of:
+#   * vpn_kernel_upgrade is true
+#   * the CPU actually advertises the "vaes" flag
+#   * the running kernel is NOT already bound to a *vaes* AES-GCM driver
+#   * the kernel package is available from the host's mirrors
+#
+# On a FIRST deploy that means once, before any VPN config exists, so the
+# reboot interrupts nothing. Two further guards make it safe to leave on:
+#   * a host that already carries a VPN (swanctl config or established SA)
+#     gets the kernel INSTALLED but is NOT rebooted unless
+#     vpn_kernel_reboot_live is true - the note it prints tells you how
+#   * a host already running the newest installed kernel of the requested
+#     series is never rebooted again, so a CPU whose 6.11 still binds AES-NI
+#     (vaes without AVX512BW/VL) warns once instead of looping
+vpn_kernel_upgrade: true
+
+# 6.11 is the first release with VAES/AVX-512 AES-GCM and is what was measured
+# (+23% per tunnel). 6.14 also carries it.
+#
+# DO NOT set this to 7.0. Measured on this hardware, 7.0 has the same fast
+# crypto and was still 2.4x SLOWER end to end (2.16 vs 5.75 Gbps): a perf
+# profile showed the cycles moving into fib_rules_lookup, nft_meta_store_ifname,
+# xfrm_sk_policy_lookup, pskb_expand_head and the srso_safe_ret speculation
+# mitigation, which 6.11 reports as "Not affected" on the same CPU.
+vpn_kernel_package: "linux-image-generic-6.11"
+
+# Reboot to activate it. With this false the kernel is installed and made
+# bootable, and the host keeps running the old one until you reboot yourself.
+vpn_kernel_reboot: true
+vpn_kernel_reboot_timeout: 900
+
+# Allow the reboot on a host that ALREADY carries a VPN. Off by default because
+# it drops every flow through that gateway for the duration. Turn it on for a
+# planned window, one gateway at a time, so the others keep carrying traffic.
+vpn_kernel_reboot_live: false
+
+vpn_netdev_budget: 600
+vpn_netdev_budget_usecs: 8000
+vpn_irq_affinity: true           # pin NIC IRQs + xps_cpus, stop irqbalance moving them
+vpn_cpu_governor: "performance"  # "" to leave the host alone
+
+vpn_rmem_max: 268435456
+vpn_wmem_max: 268435456
+
+# Assertions, not tuning. Turn silent misconfiguration into a loud failure.
+vpn_assert_aes_ni: true          # fail if the CPU has no AES-NI
+vpn_assert_gcm_plugin: true      # warn if strongSwan cannot do GCM
+vpn_assert_negotiated_esp: true  # warn if the live SAs are not using GCM
