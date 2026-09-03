@@ -1,7 +1,7 @@
-# Bind an existing VAST shared disk via an in-tree NFS PV (bypasses the CSI
+# Bind an existing Crusoe shared disk via an in-tree NFS PV (bypasses the CSI
 # driver). Use this where the fs CSI driver's mount times out on an unroutable
-# fallback IP (the disk returns no "data path connectivity fields"): the VAST
-# DNS endpoint resolves to the in-VPC data IPs and mounts cleanly with
+# fallback IP (the disk returns no "data path connectivity fields"): the Crusoe
+# shared filesystem DNS endpoint resolves to the in-VPC data IPs and mounts cleanly with
 # remoteports=dns.
 #
 # The orchestrator generates the authoritative versions when DEST_MODE=nfs; this
@@ -23,7 +23,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   volumeMode: Filesystem
-  mountOptions:                          # VAST multipath NFS over DNS
+  mountOptions:                          # multipath NFS over DNS
     - vers=3
     - nconnect=16
     - spread_reads

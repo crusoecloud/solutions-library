@@ -1,7 +1,7 @@
 # Master / distribution pod: mounts the shared disk and the rclone Secret.
 # The orchestrator execs `rclone lsf` here to list the source, then pushes the
 # computed shard files into ${MOUNT_ROOT}/shards. Pinned to the same instance
-# class as the workers so its egress path to OCI matches theirs.
+# class as the workers so its egress path to the source matches theirs.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -34,7 +34,7 @@ spec:
         claimName: ${PVC_NAME}
     - name: rclone-conf
       secret:
-        secretName: ${SECRET_NAME}                  # cmk-data-transfer-oci
+        secretName: ${SECRET_NAME}                  # cmk-data-transfer-s3
         defaultMode: 0400
         items:
           - key: rclone.conf

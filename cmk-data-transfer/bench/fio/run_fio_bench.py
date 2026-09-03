@@ -10,8 +10,8 @@ Usage:
         [--size 10G] [--jobs 4] [--direct 1] [--instance-class s2a]
         [--namespace default] [--image alpine:3.20] [--timeout 1200]
 
-Safe: writes only under /data/_fiobench/<node>/ on the PVC and cleans up. No OCI
-egress (VAST I/O is in-region).
+Safe: writes only under /data/_fiobench/<node>/ on the PVC and cleans up. No
+egress (disk I/O is in-region).
 """
 from __future__ import annotations
 

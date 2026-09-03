@@ -1,4 +1,4 @@
-# Crusoe VAST shared-filesystem (ReadWriteMany) StorageClass.
+# Crusoe shared-filesystem (ReadWriteMany) StorageClass.
 #
 # This cluster ships the fs CSI driver (fs.csi.crusoe.ai) but does not always
 # create the StorageClass object. The orchestrator creates this automatically

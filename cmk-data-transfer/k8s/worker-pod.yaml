@@ -45,7 +45,7 @@ spec:
           mkdir -p /data/dataset /data/logs;
           rclone copy
           --files-from /data/shards/shard-${SHARD_INDEX}.txt
-          oci:${OCI_BUCKET}/${OCI_PREFIX} /data/dataset
+          src:${SRC_S3_BUCKET}/${SRC_S3_PREFIX} /data/dataset
           --config /config/rclone.conf
           --transfers ${RCLONE_TRANSFERS}
           --multi-thread-streams ${RCLONE_MULTI_THREAD_STREAMS}

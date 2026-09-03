@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""VAST write-ceiling preflight.
+"""Shared-disk write-ceiling preflight.
 
 Launches one fio pod per s2a node (anti-affinity on hostname), each doing a
 sequential buffered write to the shared RWX PVC, then sums per-pod write
 bandwidth into an aggregate. This establishes the destination write ceiling so a
-later download plateau can be attributed correctly (VAST vs NIC vs OCI).
+later download plateau can be attributed correctly (disk vs NIC vs source).
 
 Safe to run before the big pull — it only writes to /data/fio and is cleaned up.
 
@@ -32,14 +32,14 @@ def kc(ns, *args, check=True, capture=True):
 
 
 def fio_pod(cfg, index, size, jobs, bs, direct):
-    # direct=1 (O_DIRECT) bypasses the page cache so we measure the real VAST
-    # write path, not RAM. end_fsync=1 forces a flush so the reported bandwidth
-    # reflects bytes durably on VAST. If the mount rejects O_DIRECT, rerun with
+    # direct=1 (O_DIRECT) bypasses the page cache so we measure the real shared
+    # disk write path, not RAM. end_fsync=1 forces a flush so the reported
+    # bandwidth reflects bytes durably on disk. If the mount rejects O_DIRECT, rerun with
     # --direct 0 (buffered) and a size well above node RAM.
     cmd = (
         "apk add --no-cache fio >/dev/null && "
         "mkdir -p /data/fio/$(hostname) && "
-        f"fio --name=vastwrite --directory=/data/fio/$(hostname) "
+        f"fio --name=diskwrite --directory=/data/fio/$(hostname) "
         f"--rw=write --bs={bs} --size={size} --numjobs={jobs} "
         f"--ioengine=libaio --iodepth=32 --direct={direct} --end_fsync=1 "
         "--group_reporting --output-format=json"
@@ -128,7 +128,7 @@ def main(argv=None) -> int:
         bw = parse_write_bw_bytes(log)
         total += bw
         print(f"  {name}: {bw/1e9:.2f} GB/s")
-    print(f"\nVAST aggregate write ceiling (this fleet): {total/1e9:.2f} GB/s")
+    print(f"\nDisk aggregate write ceiling (this fleet): {total/1e9:.2f} GB/s")
     print(f"  => download throughput cannot durably exceed this. Compare to "
           f"TARGET_GBPS={cfg.target_gbps}.")
 

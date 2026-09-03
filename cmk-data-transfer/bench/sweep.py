@@ -5,9 +5,9 @@ For each grid point it launches the worker fleet with those rclone settings
 against a BOUNDED sample of the source, records the throughput curve via
 collect.py, tears the fleet down, and appends peak/median aggregate GB/s to a
 results CSV. The goal is to find the saturation knee and identify the binding
-constraint (network vs VAST write ceiling vs OCI request throttling).
+constraint (network vs disk write ceiling vs S3 request throttling).
 
-COST WARNING: each grid point re-downloads the sample (OCI egress is billed).
+COST WARNING: each grid point re-downloads the sample (source egress is billed).
 Keep --sample-prefix small and --max-seconds short. Requires --yes.
 
 Prereqs: run the main orchestrator once (or this with --do-list) so the Secret,
@@ -37,7 +37,7 @@ from shard import shard_manifest                       # noqa: E402
 from orchestrator import manifests                      # noqa: E402
 from orchestrator.config import load_config             # noqa: E402
 from orchestrator.k8s import Kubectl                     # noqa: E402
-from orchestrator.rclone_conf import build_s3_compat_conf  # noqa: E402
+from orchestrator.rclone_conf import build_rclone_conf  # noqa: E402
 from orchestrator.sizing import compute_sizing           # noqa: E402
 
 from bench import collect  # noqa: E402
@@ -50,7 +50,7 @@ def _grid(s: str) -> list[int]:
 def ensure_base(cfg, kc: Kubectl, do_list: bool) -> None:
     """Make sure Secret / PVC / master pod exist; optionally (re)list+shard."""
     kc.create_secret_from_files(
-        cfg.secret_name, {"rclone.conf": build_s3_compat_conf(cfg)})
+        cfg.secret_name, {"rclone.conf": build_rclone_conf(cfg)})
     kc.apply(manifests.pvc(cfg))
     if not kc.exists("pod", cfg.master_pod_name):
         kc.apply(manifests.master_pod(cfg))
@@ -59,7 +59,7 @@ def ensure_base(cfg, kc: Kubectl, do_list: bool) -> None:
         listing = f"{cfg.mount_root}/listing.tsv"
         lsf = ("SEP=$(printf '\\t'); rclone lsf --recursive --files-only "
                "--format sp --separator \"$SEP\" --config /config/rclone.conf "
-               f"{cfg.remote_root()} > {listing}")
+               f"{cfg.source_remote_root()} > {listing}")
         kc.exec(cfg.master_pod_name, ["/bin/sh", "-c", lsf])
 
 
@@ -128,7 +128,7 @@ def main(argv=None) -> int:
     p.add_argument("--pods-per-node-grid", default="2,4,8",
                    help="sweep workers-per-node (the new throughput lever)")
     p.add_argument("--sample-prefix", default=None,
-                   help="override OCI_PREFIX with a small sample subdir")
+                   help="override SRC_S3_PREFIX with a small sample subdir")
     p.add_argument("--max-seconds", type=int, default=120)
     p.add_argument("--out", default="bench/results/sweep.csv")
     p.add_argument("--do-list", action="store_true",
@@ -138,10 +138,10 @@ def main(argv=None) -> int:
     args, _unknown = p.parse_known_args(argv)
 
     if not args.yes:
-        print("Refusing to run without --yes (each point bills OCI egress).")
+        print("Refusing to run without --yes (each point bills source egress).")
         return 2
     if args.sample_prefix is not None:
-        cfg.prefix = args.sample_prefix
+        cfg.src_s3_prefix = args.sample_prefix
 
     import tempfile
     run_dir = tempfile.mkdtemp(prefix="cmk-sweep-")

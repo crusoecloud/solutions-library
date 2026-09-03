@@ -8,7 +8,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: ${STORAGE_CLASS}   # crusoe-csi-driver-fs-sc (VAST)
+  storageClassName: ${STORAGE_CLASS}   # crusoe-csi-driver-fs-sc
   resources:
     requests:
       storage: ${PVC_SIZE}    # e.g. 1000Ti
