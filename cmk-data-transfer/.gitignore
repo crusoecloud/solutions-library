@@ -37,3 +37,4 @@ venv/
 .vscode/
 *.swp
 .claude/
+.superpowers/

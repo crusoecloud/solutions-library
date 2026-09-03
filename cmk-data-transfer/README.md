@@ -1,11 +1,13 @@
 # CMK Cross-Region Object Storage Data Transfer
 
-Parallel-pull a dataset from **any S3-compatible object store** to a **VAST-backed
-RWX shared disk** on **Crusoe Managed Kubernetes (CMK)**, tuned to saturate worker
-hosts across a high-latency path. **OCI Object Storage is the worked example**, but
-the source backend is rclone's generic `provider = Other`, so AWS S3, MinIO/Ceph,
-GCS (S3 interop), Cloudflare R2, Backblaze B2, etc. work too — see
-[Other S3-compatible sources](#other-s3-compatible-sources).
+Parallel-pull a dataset from **any S3-compatible object store** to a **Crusoe shared filesystem
+RWX shared disk** or **S3-compatible destination** on **Crusoe Managed Kubernetes
+(CMK)**, tuned to saturate worker hosts across a high-latency path. **AWS S3 is the
+worked example**, but the source backend is rclone's generic `provider = Other`, so
+OCI Object Storage, MinIO/Ceph, GCS (S3 interop), Cloudflare R2, Backblaze B2,
+etc. work too — see [Other S3-compatible sources](#other-s3-compatible-sources).
+Set `DEST_TYPE=s3` to write directly to Crusoe S3 (or any S3-compatible
+destination) instead of a shared disk.
 
 A **master pod** lists the source and writes balanced shard manifests to the shared
 disk; **N worker pods** each `rclone copy` one shard in parallel. It follows Crusoe's
@@ -18,17 +20,36 @@ concurrency**.
 ## Quick Start
 
 ```bash
-cp .env.example .env    # fill in creds, namespace, region, bucket, destination disk
+cp .env.example .env    # fill in creds, namespace, bucket, and destination
 make sizing             # (optional) print the concurrency plan — no cluster access
 make dry-run            # render manifests + preflight checks (launches nothing)
 make preflight          # (optional) fio write-ceiling test (safe, no egress)
 make run                # full pipeline; PROMPTS before the large transfer
 ```
 
-> **Where does the data land?** The shared disk mounts at **`/data`** in every pod,
-> and objects copy to **`DEST_PATH`** (default `/data/dataset`) — set it in `.env`.
-> **Using an existing disk?** Set `DEST_MODE=import` (or `nfs`) + the disk id, then
-> point `DEST_PATH` at where on that disk you want the files. See
+**Disk destination** (default — writes to a Crusoe shared filesystem RWX shared disk):
+
+```bash
+# In .env:
+DEST_TYPE=disk          # or omit (disk is the default)
+DEST_PATH=/data/dataset
+```
+
+**S3 destination** (copies directly to Crusoe S3 or any S3-compatible store):
+
+```bash
+# In .env:
+DEST_TYPE=s3
+DEST_S3_ENDPOINT=https://s3.crusoe.ai
+DEST_S3_BUCKET=my-dest-bucket
+DEST_S3_ACCESS_KEY_ID=...
+DEST_S3_SECRET_ACCESS_KEY=...
+```
+
+> **Disk mode — where does the data land?** The shared disk mounts at **`/data`** in
+> every pod, and objects copy to **`DEST_PATH`** (default `/data/dataset`) — set it in
+> `.env`. **Using an existing disk?** Set `DEST_MODE=import` (or `nfs`) + the disk id,
+> then point `DEST_PATH` at where on that disk you want the files. See
 > [Destination modes](#destination-modes-dest_mode).
 
 ---
@@ -41,7 +62,7 @@ make run                # full pipeline; PROMPTS before the large transfer
         │  list (via master) → bin-pack shards locally → push to shared disk
         ▼
 ┌──────────────────────────── Crusoe Managed Kubernetes ───────────────────────┐
-│   Secret(rclone.conf, RO)        PVC: shared disk (VAST, RWX)                 │
+│   Secret(rclone.conf, RO)        PVC: shared disk (Crusoe shared filesystem, RWX)                 │
 │        ▼                                   ▼                                  │
 │   ┌─────────────┐   rclone lsf      ┌─────────────────────────────────────┐  │
 │   │ master pod  │ ───────────────►  │  shared disk  /data                 │  │
@@ -56,8 +77,14 @@ make run                # full pipeline; PROMPTS before the large transfer
 └─────────┼──────────────┼────────────────────┼──────────────┼──────────────────┘
           ▼              ▼                    ▼              ▼  hundreds of parallel
         ┌──────────────────────────────────────────────────┐   ranged-GET streams
-        │   S3-compatible object store (e.g. OCI)            │   high RTT (intercontinental)
+        │   S3-compatible source (AWS S3, OCI, R2, …)       │   high RTT (intercontinental)
         └──────────────────────────────────────────────────┘
+                                                              DEST_TYPE=s3: workers
+                                                              also write to an
+                                                              S3-compatible destination
+                                                              (e.g. Crusoe S3) using a
+                                                              small 1 TiB coordination
+                                                              PVC (shards + logs only)
 ```
 
 The fleet runs **`PODS_PER_NODE` independent rclone processes per node** — multiple
@@ -128,34 +155,34 @@ All inputs come from `.env` (copied from `.env.example`), process env, or CLI fl
 
 | Variable | Meaning |
 |---|---|
-| `OCI_ACCESS_KEY_ID` / `OCI_SECRET_ACCESS_KEY` | S3-compat access/secret key pair (OCI: "Customer Secret Key") |
-| `OCI_NAMESPACE` / `OCI_REGION` | OCI Object Storage namespace + region (auto-build the endpoint) |
-| `OCI_BUCKET` / `OCI_PREFIX` | source bucket and optional prefix |
-| `OCI_ENDPOINT` | explicit S3 endpoint (for non-OCI stores; blank = auto from namespace+region) |
+| `SRC_S3_ACCESS_KEY_ID` / `SRC_S3_SECRET_ACCESS_KEY` | S3-compat access/secret key pair for the source |
+| `SRC_S3_ENDPOINT` | source S3 endpoint URL (e.g. `https://s3.us-east-1.amazonaws.com`) |
+| `SRC_S3_REGION` | source region (optional, depends on provider) |
+| `SRC_S3_BUCKET` / `SRC_S3_PREFIX` | source bucket and optional prefix |
+| `DEST_TYPE` | `disk` (default) or `s3` — destination type |
+| `DEST_S3_ACCESS_KEY_ID` / `DEST_S3_SECRET_ACCESS_KEY` | S3-compat credentials for the destination (when `DEST_TYPE=s3`) |
+| `DEST_S3_ENDPOINT` / `DEST_S3_REGION` | destination S3 endpoint + region (when `DEST_TYPE=s3`) |
+| `DEST_S3_BUCKET` / `DEST_S3_PREFIX` | destination bucket and optional prefix (when `DEST_TYPE=s3`) |
 | `TARGET_GBPS` | **the single sizing knob** (default 30) |
 | `NUM_NODES` / `PODS_PER_NODE` | fleet size; total = nodes × pods/node (`NUM_PODS` forces an absolute total) |
 | `INSTANCE_CLASS` | node class for the nodeSelector (default `s2a`) |
 | `NODE_VCPU` / `NODE_RAM_GIB` / `NODE_NIC_GBPS` | per-node hardware for the sizing model (defaults = s2a.80x) |
 | `RTT_MS` / `PER_STREAM_MBPS` / `STREAM_SAFETY` | BDP model inputs |
-| `DEST_PATH` | **where objects are saved** — folder under the `/data` mount (default `/data/dataset`) |
-| `DEST_MODE` | `dynamic` / `import` / `nfs` destination (see below) |
-| `STORAGE_CLASS` / `PVC_NAME` / `PVC_SIZE` | destination shared disk |
+| `DEST_PATH` | **where objects are saved** — folder under the `/data` mount (default `/data/dataset`, disk mode only) |
+| `DEST_MODE` | `dynamic` / `import` / `nfs` destination (disk mode only; see below) |
+| `STORAGE_CLASS` / `PVC_NAME` / `PVC_SIZE` | destination shared disk (disk mode only) |
 | `EXISTING_DISK_ID` / `_NAME` / `_SERIAL` / `NFS_SERVER` | bind an existing disk (import/nfs modes) |
 | `RCLONE_*` / `WORKER_MEM_REQUEST` | per-flag / resource overrides (blank = auto-derive) |
-
-> **Region note:** use the **OCI** region slug where the *bucket* lives (not your
-> destination region). Preflight warns if it doesn't look like an OCI slug.
 
 ### Other S3-compatible sources
 
 The source backend is rclone `provider = Other`, so any S3-compatible store works.
-The `OCI_*` names are just labels — for a non-OCI store, set `OCI_ENDPOINT` to its S3
-endpoint and use its access/secret key + bucket:
+Set `SRC_S3_ENDPOINT` to its S3 endpoint and use its access/secret key + bucket:
 
-| Source | `OCI_ENDPOINT` |
+| Source | `SRC_S3_ENDPOINT` |
 |---|---|
-| OCI Object Storage | *(auto from namespace + region)* |
 | AWS S3 | `https://s3.<region>.amazonaws.com` (or blank with a real AWS key) |
+| OCI Object Storage | `https://<namespace>.compat.objectstorage.<region>.oraclecloud.com` |
 | MinIO / Ceph RGW | `https://<host>:<port>` |
 | Google Cloud Storage | `https://storage.googleapis.com` (S3 interop + HMAC key) |
 | Cloudflare R2 | `https://<account>.r2.cloudflarestorage.com` |
@@ -176,14 +203,16 @@ lands in the repo, in pod args, or in shell history. `.gitignore` blocks `.env`,
 
 1. **Sizing + preflight** — prints the concurrency plan; verifies `kubectl`,
    enough schedulable nodes (`INSTANCE_CLASS`), and the StorageClass (creates it if
-   absent).
-2. **Secret** — builds `rclone.conf`, applies it in-cluster.
-3. **PVC + master pod** — applies the RWX claim and the master.
+   absent, disk mode only).
+2. **Secret** — builds `rclone.conf` (source + optional dest remote), applies it in-cluster.
+3. **PVC + master pod** — provisions the coordination PVC (large RWX disk for
+   `DEST_TYPE=disk`; small 1 TiB for `DEST_TYPE=s3`) and launches the master pod.
 4. **List + shard** — `rclone lsf` in the master → pull the listing → bin-pack (LPT)
    into N balanced shard files → push to `/data/shards/`.
 5. **Confirm** — prompts before the large transfer (skip with `--yes`).
 6. **Launch** — `PODS_PER_NODE` workers per node (pinned), each `rclone copy
-   --files-from shard-i.txt --no-traverse …`.
+   --files-from shard-i.txt --no-traverse …` (to disk or S3 dest depending on
+   `DEST_TYPE`).
 7. **Monitor → teardown** — polls to completion, then deletes worker + master pods
    (keeps PVC, Secret, data) unless `--keep`.
 
@@ -198,7 +227,7 @@ only fetches what's missing.
 |---|---|---|---|
 | `dynamic` (default) | provisions a new disk via the fs CSI driver | — | greenfield |
 | `import` | binds an **existing** disk via a CSI **static PV** | disk `id` + `name` + `serial` | migrate into an existing disk, CSI healthy |
-| `nfs` | binds an **existing** disk via an **in-tree NFS PV** to the VAST DNS endpoint (bypasses CSI) | disk `id` (+ `NFS_SERVER`) | when a CSI mount times out on an unroutable fallback IP |
+| `nfs` | binds an **existing** disk via an **in-tree NFS PV** to the Crusoe shared filesystem DNS endpoint (bypasses CSI) | disk `id` (+ `NFS_SERVER`) | when a CSI mount times out on an unroutable fallback IP |
 
 Find the disk with `crusoe storage disks list -f json` (pick the `shared-volume` in
 your region): `.id`, `.name`, `.serial_number`. All modes use `reclaimPolicy: Retain`,
@@ -217,10 +246,42 @@ Because `rclone copy` is idempotent, `DEST_PATH` can point at a folder already h
 part of the dataset — only missing/changed objects are pulled.
 
 > **`nfs` mode** exists because the fs CSI driver can fall back to a fixed IP that may
-> be unroutable from your nodepool (mounts hang). The VAST DNS endpoint
+> be unroutable from your nodepool (mounts hang). The Crusoe shared filesystem DNS endpoint
 > (`nfs.crusoecloudcompute.com`, `remoteports=dns`) mounts cleanly; `nfs` mode creates
 > an in-tree NFS PV straight to it (see `k8s/nfs-pv.yaml`). If a CSI mount hangs,
 > prefer `nfs`. Export path defaults to `/volumes/<EXISTING_DISK_ID>`.
+
+---
+
+## S3-to-S3 mode (`DEST_TYPE=s3`)
+
+Set `DEST_TYPE=s3` to copy directly from a source S3-compatible store to a destination
+S3-compatible store (e.g. Crusoe S3), bypassing the shared disk entirely. Workers run
+`rclone copy src:bucket dest:bucket` instead of writing to the mounted PVC.
+
+A **small 1 TiB coordination PVC** is still provisioned to hold shard manifests and
+worker logs — no large data disk is needed.
+
+```bash
+SRC_S3_ACCESS_KEY_ID=<src-key>         \
+SRC_S3_SECRET_ACCESS_KEY=<src-secret>  \
+SRC_S3_ENDPOINT=https://s3.us-east-1.amazonaws.com \
+SRC_S3_BUCKET=my-source-bucket         \
+DEST_TYPE=s3                            \
+DEST_S3_ACCESS_KEY_ID=<dest-key>       \
+DEST_S3_SECRET_ACCESS_KEY=<dest-secret> \
+DEST_S3_ENDPOINT=https://s3.crusoe.ai  \
+DEST_S3_BUCKET=my-dest-bucket          \
+make run
+```
+
+Or place all variables in `.env` and just run `make run`. The `DEST_S3_*` credentials
+are kept in the same Kubernetes Secret as the source credentials, assembled into a
+single `rclone.conf` with `[src]` and `[dest]` remotes.
+
+> **Note:** `DEST_MODE`, `STORAGE_CLASS`, `PVC_SIZE`, and disk-specific settings are
+> ignored when `DEST_TYPE=s3`. Use `RCLONE_EXTRA_FLAGS` as an escape hatch for
+> destination-specific rclone options.
 
 ---
 
@@ -286,26 +347,6 @@ kubectl get po -l app=cmk-data-transfer-worker --field-selector=status.phase=Run
   cross-check throughput against the node NIC counters.
 - **`hostNetwork: true`** — workers share the node's network namespace and bind host
   ports (`localhost:5572+index`). Don't co-schedule workloads that grab those ports.
-
----
-
-## Alternative: native OCI backend
-
-Instead of the S3-compat path you can use rclone's native `oracleobjectstorage`
-backend (OCI IAM auth, no access/secret key):
-
-```ini
-[oci-native]
-type = oracleobjectstorage
-namespace = <namespace>
-region = <region>
-provider = user_principal_auth      # or instance_principal_auth / resource_principal_auth
-config_file = /root/.oci/config
-config_profile = DEFAULT
-```
-
-Mount your `~/.oci` config + key into the pods and point the remote at `oci-native:`.
-The S3-compat path is the default because it matches the credential most users hold.
 
 ---
 

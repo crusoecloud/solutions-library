@@ -28,7 +28,7 @@ def log_dir(cfg: Config) -> str:
 
 
 def storage_class(name: str) -> dict:
-    """Crusoe VAST RWX storage class (created only if absent)."""
+    """Crusoe shared filesystem RWX storage class (created only if absent)."""
     return {
         "apiVersion": "storage.k8s.io/v1",
         "kind": "StorageClass",
@@ -73,12 +73,12 @@ def import_pv(cfg: Config) -> dict:
 
 
 def nfs_pv(cfg: Config) -> dict:
-    """Static IN-TREE NFS PV bound to an existing VAST volume via the DNS
+    """Static IN-TREE NFS PV bound to an existing Crusoe shared volume via the DNS
     endpoint — bypasses the CSI driver.
 
     Why this exists: where the fs CSI driver falls back to an unroutable IP
     (the disk returns no data-path connectivity fields) and mounts time out, the
-    VAST DNS endpoint resolves to the in-VPC data IPs and mounts cleanly with
+    Crusoe shared filesystem DNS endpoint resolves to the in-VPC data IPs and mounts cleanly with
     remoteports=dns. reclaimPolicy Retain so the disk/data is never deleted.
     """
     return {
@@ -99,16 +99,22 @@ def nfs_pv(cfg: Config) -> dict:
 
 
 def pvc(cfg: Config) -> dict:
+    # S3 dest: small coordination-only PVC for shards + logs
+    # Crusoe fs CSI minimum disk size is 1 Ti; use that for S3 coordination
+    pvc_size = "1Ti" if cfg.is_s3_dest() else cfg.pvc_size
+
     spec = {
         "accessModes": ["ReadWriteMany"],
-        "resources": {"requests": {"storage": cfg.pvc_size}},
+        "resources": {"requests": {"storage": pvc_size}},
         "volumeMode": "Filesystem",
     }
-    if cfg.is_import() or cfg.is_nfs():
-        # bind to the static PV; empty class disables dynamic provisioning
+    if not cfg.is_s3_dest() and (cfg.is_import() or cfg.is_nfs()):
         spec["storageClassName"] = ""
         spec["volumeName"] = cfg.static_pv_name()
+    elif not cfg.is_s3_dest():
+        spec["storageClassName"] = cfg.storage_class
     else:
+        # S3 dest: always dynamic provisioning for the small coordination disk
         spec["storageClassName"] = cfg.storage_class
     return {
         "apiVersion": "v1",
@@ -132,13 +138,13 @@ def _rclone_conf_volume(cfg: Config) -> dict:
 
 
 def master_pod(cfg: Config) -> dict:
-    """Lightweight pod that mounts the shared disk; lists + shards run here.
-
-    Pinned to the worker instance class so its in-cluster egress path to OCI
-    matches the workers' (relevant for the listing pass).
-    """
-    init = (f"mkdir -p {shard_dir(cfg)} {log_dir(cfg)} {cfg.dest_path}; "
-            "while true; do sleep 3600; done")
+    """Lightweight pod that mounts the shared disk; lists + shards run here."""
+    if cfg.is_s3_dest():
+        init = (f"mkdir -p {shard_dir(cfg)} {log_dir(cfg)}; "
+                "while true; do sleep 3600; done")
+    else:
+        init = (f"mkdir -p {shard_dir(cfg)} {log_dir(cfg)} {cfg.dest_path}; "
+                "while true; do sleep 3600; done")
     return {
         "apiVersion": "v1",
         "kind": "Pod",
@@ -176,10 +182,16 @@ def _worker_command(cfg: Config, sizing: Sizing) -> list[str]:
     shard_file = f"{shard_dir(cfg)}/shard-${{SHARD_INDEX}}.txt"
     log_file = f"{log_dir(cfg)}/worker-${{SHARD_INDEX}}.log"
 
+    # destination: S3 remote or local disk path
+    if cfg.is_s3_dest():
+        dest_target = cfg.dest_remote_root()
+    else:
+        dest_target = cfg.dest_path
+
     rclone = [
         "rclone", "copy",
         "--files-from", shard_file,
-        cfg.remote_root(), cfg.dest_path,
+        cfg.source_remote_root(), dest_target,
         "--config", "/config/rclone.conf",
         "--transfers", str(sizing.transfers),
         "--multi-thread-streams", str(sizing.multi_thread_streams),
@@ -206,9 +218,12 @@ def _worker_command(cfg: Config, sizing: Sizing) -> list[str]:
         rclone += cfg.rclone_extra_flags.split()
 
     rclone_str = " ".join(rclone)
+    if cfg.is_s3_dest():
+        setup = f"mkdir -p {log_dir(cfg)}"
+    else:
+        setup = f"mkdir -p {cfg.dest_path} {log_dir(cfg)}"
     script = (
-        "set -eu; "
-        f"mkdir -p {cfg.dest_path} {log_dir(cfg)}; "
+        f"set -eu; {setup}; "
         'echo "[worker ${SHARD_INDEX}] $(date -u) starting"; '
         f"{rclone_str} 2>&1 | tee {log_file}"
     )

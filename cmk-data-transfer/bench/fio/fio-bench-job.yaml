@@ -1,7 +1,7 @@
-# Disk benchmark: one fio pod per s2a node, against the shared VAST PVC.
+# Disk benchmark: one fio pod per s2a node, against the shared filesystem PVC.
 #
 # Runs four stonewalled (sequential) fio profiles against a single per-node file
-# so reads measure data actually on VAST (direct=1 bypasses the page cache):
+# so reads measure data actually on disk (direct=1 bypasses the page cache):
 #   seqwrite  (1M)  -> sequential write bandwidth
 #   seqread   (1M)  -> sequential read bandwidth (re-reads the written file)
 #   randwrite (4k)  -> random write IOPS

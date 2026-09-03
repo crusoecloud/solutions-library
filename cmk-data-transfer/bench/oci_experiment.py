@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OCI -> VAST transfer experiment: measure sustained pull rate at a given
+"""S3 transfer experiment: measure sustained pull rate at a given
 node/pod concurrency, writing to a DISTINCT destination subfolder per run.
 
 Drives the orchestrator (secret -> PVC/master -> list -> shard -> workers) for a
@@ -8,7 +8,7 @@ rclone rc core/stats to compute the aggregate transfer rate over time. Reports:
   - bytes transferred + wall-clock elapsed
   - average GB/s   (= bytes / elapsed)  <- the headline "how fast did we pull"
   - peak windowed GB/s (steady-state)
-  - per-node GB/s, and any OCI throttling (429/503 SlowDown) seen in logs
+  - per-node GB/s, and any S3 throttling (429/503 SlowDown) seen in logs
 Time-series + summary saved to bench/results/oci-exp-<label>-<ts>/ (git-ignored).
 
 Each run writes to DEST_PATH=/data/dataset/<label> so it re-pulls the full data
@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from orchestrator import manifests, run as orun          # noqa: E402
 from orchestrator.config import load_config               # noqa: E402
 from orchestrator.k8s import Kubectl                       # noqa: E402
-from orchestrator.rclone_conf import build_s3_compat_conf  # noqa: E402
+from orchestrator.rclone_conf import build_rclone_conf  # noqa: E402
 from orchestrator.sizing import compute_sizing             # noqa: E402
 from bench import collect                                  # noqa: E402
 
@@ -78,7 +78,7 @@ def main(argv=None) -> int:
     cfg.rclone_multi_thread_streams = args.mts
     cfg.dest_path = f"{cfg.mount_root}/dataset/{args.label}"   # DISTINCT per run
     if args.prefix_override is not None:
-        cfg.prefix = args.prefix_override
+        cfg.src_s3_prefix = args.prefix_override
     errs = cfg.validate()
     if errs:
         for e in errs:
@@ -88,10 +88,10 @@ def main(argv=None) -> int:
     sizing = compute_sizing(cfg)
     ns = cfg.k8s_namespace
     kc = Kubectl(namespace=ns)
-    run_dir = tempfile.mkdtemp(prefix=f"oci-exp-{args.label}-")
+    run_dir = tempfile.mkdtemp(prefix=f"s3-exp-{args.label}-")
 
-    print(f"=== OCI experiment: {args.label} ===")
-    print(f"  source : {cfg.remote_root()}")
+    print(f"=== S3 transfer experiment: {args.label} ===")
+    print(f"  source : {cfg.source_remote_root()}")
     print(f"  dest   : {cfg.dest_path}  (PVC {cfg.pvc_name}, nfs)")
     print(f"  fleet  : {cfg.num_nodes} nodes x {sizing.pods_per_node} pods "
           f"= {sizing.total_pods} workers; per-pod T={sizing.transfers} "
@@ -101,7 +101,7 @@ def main(argv=None) -> int:
     # --- setup (reuse orchestrator steps) ---
     orun.preflight(cfg, kc)
     kc.create_secret_from_files(cfg.secret_name,
-                                {"rclone.conf": build_s3_compat_conf(cfg)})
+                                {"rclone.conf": build_rclone_conf(cfg)})
     if cfg.is_nfs():
         kc.apply(manifests.nfs_pv(cfg))
     elif cfg.is_import():
@@ -305,7 +305,7 @@ def main(argv=None) -> int:
     print(f"  NIC     avg/steady/peak: {nic_avg/GB:.2f} / {nic_steady_med/GB:.2f} / "
           f"{peak_nic/GB:.2f} GB/s  <- GROUND TRUTH "
           f"({nic_avg/GB/cfg.num_nodes:.2f} GB/s/node)")
-    print(f"  OCI throttle signals: {throttle}")
+    print(f"  S3 throttle signals: {throttle}")
     print(f"  -> {out}/summary.json , timeseries.csv")
 
     if not args.keep:

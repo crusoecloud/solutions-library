@@ -17,7 +17,7 @@ sizing: ## Print the BDP/target sizing plan (no cluster access)
 dry-run: ## Render manifests + run preflight checks, launch nothing
 	$(PY) -m orchestrator.run --dry-run
 
-preflight: ## VAST write-ceiling test (fio, one pod per node) — safe, no egress
+preflight: ## Disk write-ceiling test (fio, one pod per node) — safe, no egress
 	$(PY) preflight/run_fio.py
 
 fio-bench: ## Disk read+write benchmark: fio on every s2a node -> bench/results/
@@ -45,7 +45,7 @@ clean: ## Delete worker + master + fio pods (keep PVC/Secret/data)
 	-kubectl -n $(NAMESPACE) delete pod cmk-data-transfer-master --ignore-not-found
 
 clean-all: clean ## Also delete the Secret (keeps the PVC and downloaded data)
-	-kubectl -n $(NAMESPACE) delete secret cmk-data-transfer-oci --ignore-not-found
+	-kubectl -n $(NAMESPACE) delete secret cmk-data-transfer-s3 --ignore-not-found
 	@echo "PVC and downloaded data left intact. Delete the PVC manually if desired."
 
 # --- defaults for sweep knobs (override on CLI) ---

@@ -4,7 +4,7 @@ Pipeline:
   1. load config + compute sizing (BDP-grounded)               [always]
   2. preflight: kubectl reachable, enough s2a nodes, StorageClass present
   3. create K8s Secret (rclone.conf) — creds only live in-cluster
-  4. apply PVC (RWX VAST) + master pod
+  4. apply PVC (RWX shared filesystem) + master pod
   5. list source via `rclone lsf` (in master pod) -> /data/listing.tsv
   6. pull listing, shard locally (LPT bin-pack), push shard files back
   7. CONFIRM, then launch N pinned worker pods (the large transfer)
@@ -28,7 +28,7 @@ from shard import shard_manifest  # noqa: E402
 from . import manifests  # noqa: E402
 from .config import load_config  # noqa: E402
 from .k8s import Kubectl, die  # noqa: E402
-from .rclone_conf import build_s3_compat_conf  # noqa: E402
+from .rclone_conf import build_rclone_conf  # noqa: E402
 from .sizing import compute_sizing  # noqa: E402
 
 
@@ -64,6 +64,18 @@ def preflight(cfg, kc: Kubectl) -> None:
         die(f"only {len(nodes)} schedulable {cfg.instance_class} nodes; "
             f"NUM_NODES={cfg.num_nodes}. Lower NUM_NODES or add nodes.")
 
+    if cfg.is_s3_dest():
+        print(f"  destination: S3 -> {cfg.dest_s3_endpoint} "
+              f"(coordination PVC only)")
+        # S3 dest still needs a StorageClass for the coordination PVC
+        if kc.cluster_exists("storageclass", cfg.storage_class):
+            print(f"  StorageClass {cfg.storage_class}: present")
+        else:
+            print(f"  StorageClass {cfg.storage_class}: ABSENT — creating "
+                  "(fs.csi.crusoe.ai)")
+            kc.apply_cluster(manifests.storage_class(cfg.storage_class))
+        return
+
     if cfg.is_nfs():
         print(f"  destination: NFS in-tree PV -> {cfg.nfs_server}:"
               f"{cfg.nfs_path()} (bypasses CSI; reclaimPolicy=Retain)")
@@ -92,10 +104,10 @@ def list_source(cfg, kc: Kubectl) -> None:
     lsf = (
         "SEP=$(printf '\\t'); "
         "rclone lsf --recursive --files-only --format sp --separator \"$SEP\" "
-        f"--config /config/rclone.conf {cfg.remote_root()} > {listing} && "
+        f"--config /config/rclone.conf {cfg.source_remote_root()} > {listing} && "
         f"wc -l {listing}"
     )
-    print(f"  {cfg.remote_root()}  ->  {listing}")
+    print(f"  {cfg.source_remote_root()}  ->  {listing}")
     res = kc.exec(cfg.master_pod_name, ["/bin/sh", "-c", lsf])
     if res.stdout:
         print("  " + res.stdout.decode(errors="replace").strip())
@@ -199,8 +211,6 @@ def main(argv: list[str] | None = None) -> int:
     cfg, args = load_config(argv)
 
     errs = cfg.validate(require_secrets=not args.dry_run)
-    for w in cfg.warnings():
-        print(f"WARNING: {w}", file=sys.stderr)
     if errs:
         for e in errs:
             print(f"ERROR: {e}", file=sys.stderr)
@@ -208,9 +218,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sizing = compute_sizing(cfg)
     banner("Plan")
-    print(f"  source : {cfg.remote_root()}")
-    print(f"  via    : {cfg.effective_endpoint()}")
-    if cfg.is_nfs():
+    print(f"  source : {cfg.source_remote_root()}")
+    print(f"  via    : {cfg.effective_source_endpoint()}")
+    if cfg.is_s3_dest():
+        print(f"  dest   : {cfg.dest_remote_root()} (S3)")
+        print(f"  via    : {cfg.dest_s3_endpoint}")
+    elif cfg.is_nfs():
         print(f"  dest   : PVC {cfg.pvc_name} -> NFS {cfg.nfs_server}:"
               f"{cfg.nfs_path()} (in-tree PV, Retain) -> {cfg.dest_path}")
     elif cfg.is_import():
@@ -238,17 +251,19 @@ def main(argv: list[str] | None = None) -> int:
 
     banner("Creating Secret (rclone.conf) — creds stay in-cluster")
     kc.create_secret_from_files(
-        cfg.secret_name, {"rclone.conf": build_s3_compat_conf(cfg)})
+        cfg.secret_name, {"rclone.conf": build_rclone_conf(cfg)})
     print(f"  secret/{cfg.secret_name} applied")
 
     banner("Applying PVC + master pod")
-    if cfg.is_nfs():
-        kc.apply(manifests.nfs_pv(cfg))
-        print(f"  static NFS PV {cfg.static_pv_name()} -> {cfg.nfs_server}:"
-              f"{cfg.nfs_path()}")
-    elif cfg.is_import():
-        kc.apply(manifests.import_pv(cfg))
-        print(f"  static PV {cfg.static_pv_name()} -> disk {cfg.existing_disk_id}")
+    if not cfg.is_s3_dest():
+        if cfg.is_nfs():
+            kc.apply(manifests.nfs_pv(cfg))
+            print(f"  static NFS PV {cfg.static_pv_name()} -> {cfg.nfs_server}:"
+                  f"{cfg.nfs_path()}")
+        elif cfg.is_import():
+            kc.apply(manifests.import_pv(cfg))
+            print(f"  static PV {cfg.static_pv_name()} -> disk "
+                  f"{cfg.existing_disk_id}")
     kc.apply(manifests.pvc(cfg))
     kc.apply(manifests.master_pod(cfg))
     kc.wait_ready(cfg.master_pod_name)
@@ -278,7 +293,10 @@ def main(argv: list[str] | None = None) -> int:
         teardown(cfg, kc)
 
     banner("Done")
-    print(f"  dataset on PVC {cfg.pvc_name} at {cfg.dest_path}")
+    if cfg.is_s3_dest():
+        print(f"  data written to {cfg.dest_remote_root()}")
+    else:
+        print(f"  dataset on PVC {cfg.pvc_name} at {cfg.dest_path}")
     print(f"  per-worker logs: {manifests.log_dir(cfg)}/worker-<i>.log")
     return 0
 
@@ -292,12 +310,13 @@ def _render_generated(cfg, sizing) -> None:
         "master-pod.json": manifests.master_pod(cfg),
         "worker-pod-0.json": manifests.worker_pod(cfg, sizing, 0),
     }
-    if cfg.is_nfs():
-        docs["nfs-pv.json"] = manifests.nfs_pv(cfg)
-    elif cfg.is_import():
-        docs["import-pv.json"] = manifests.import_pv(cfg)
-    else:
-        docs["storageclass.json"] = manifests.storage_class(cfg.storage_class)
+    if not cfg.is_s3_dest():
+        if cfg.is_nfs():
+            docs["nfs-pv.json"] = manifests.nfs_pv(cfg)
+        elif cfg.is_import():
+            docs["import-pv.json"] = manifests.import_pv(cfg)
+        else:
+            docs["storageclass.json"] = manifests.storage_class(cfg.storage_class)
     for fname, doc in docs.items():
         with open(os.path.join(out, fname), "w") as fh:
             json.dump(doc, fh, indent=2)

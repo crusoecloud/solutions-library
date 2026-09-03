@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Optional
@@ -19,9 +18,6 @@ from typing import Optional
 S2A_VCPU = 80
 S2A_RAM_GIB = 676
 S2A_NIC_GBPS = 200
-
-
-KNOWN_OCI_REGION_RE = re.compile(r"^[a-z]{2,3}-[a-z]+-\d+$")  # e.g. us-phoenix-1
 
 
 def _load_dotenv(path: Path) -> dict[str, str]:
@@ -54,14 +50,26 @@ def _load_dotenv(path: Path) -> dict[str, str]:
 
 @dataclass
 class Config:
-    # --- OCI source ---
-    access_key_id: str = ""
-    secret_access_key: str = ""
-    namespace: str = ""
-    region: str = "us-phoenix-1"
-    bucket: str = ""
-    prefix: str = ""
-    endpoint: str = ""
+    # --- Source S3 ---
+    src_s3_access_key_id: str = ""
+    src_s3_secret_access_key: str = ""
+    src_s3_endpoint: str = ""
+    src_s3_region: str = ""
+    src_s3_bucket: str = ""
+    src_s3_prefix: str = ""
+
+    # --- Destination type ---
+    #   disk : write to a Crusoe shared filesystem (RWX, default)
+    #   s3   : write to an S3-compatible destination (e.g. Crusoe S3)
+    dest_type: str = "disk"
+
+    # --- Destination S3 (only when dest_type=s3) ---
+    dest_s3_access_key_id: str = ""
+    dest_s3_secret_access_key: str = ""
+    dest_s3_endpoint: str = ""
+    dest_s3_region: str = ""
+    dest_s3_bucket: str = ""
+    dest_s3_prefix: str = ""
 
     # --- Destination ---
     pvc_name: str = "cmk-data-transfer-fs"
@@ -83,8 +91,8 @@ class Config:
     # --- Destination mode ---
     #   dynamic : provision a new disk via the fs CSI driver (default)
     #   import  : bind an existing disk via a CSI static PV (disk id/name/serial)
-    #   nfs     : bind an existing disk via an in-tree NFS PV straight to the VAST
-    #             DNS endpoint, bypassing the CSI driver. Use this where CSI mounts
+    #   nfs     : bind an existing disk via an in-tree NFS PV straight to the
+    #             Crusoe shared filesystem DNS endpoint, bypassing the CSI driver. Use this where CSI mounts
     #             time out on an unroutable fallback IP (disk returns no data-path
     #             connectivity fields).
     dest_mode: str = "dynamic"
@@ -123,7 +131,7 @@ class Config:
 
     # --- K8s plumbing ---
     k8s_namespace: str = "default"
-    secret_name: str = "cmk-data-transfer-oci"
+    secret_name: str = "cmk-data-transfer-s3"
     rclone_image: str = "rclone/rclone:latest"
     master_pod_name: str = "cmk-data-transfer-master"
     mount_root: str = "/data"  # shared-disk (PVC) mount path in all pods
@@ -141,19 +149,14 @@ class Config:
             return max(1, -(-self.num_pods // self.num_nodes))  # ceil div
         return max(1, self.pods_per_node)
 
-    def effective_endpoint(self) -> str:
-        if self.endpoint:
-            return self.endpoint
-        return (
-            f"https://{self.namespace}.compat.objectstorage."
-            f"{self.region}.oraclecloud.com"
-        )
+    def effective_source_endpoint(self) -> str:
+        return self.src_s3_endpoint
 
-    def remote_root(self) -> str:
-        """`oci:bucket[/prefix]` for rclone."""
-        root = f"oci:{self.bucket}"
-        if self.prefix:
-            root += "/" + self.prefix.strip("/")
+    def source_remote_root(self) -> str:
+        """`src:bucket[/prefix]` for rclone."""
+        root = f"src:{self.src_s3_bucket}"
+        if self.src_s3_prefix:
+            root += "/" + self.src_s3_prefix.strip("/")
         return root
 
     def is_import(self) -> bool:
@@ -171,52 +174,68 @@ class Config:
     def nfs_path(self) -> str:
         return self.nfs_export_path or f"/volumes/{self.existing_disk_id}"
 
+    def is_s3_dest(self) -> bool:
+        """Write directly to an S3-compatible destination."""
+        return self.dest_type == "s3"
+
+    def dest_remote_root(self) -> str:
+        """`dest:bucket[/prefix]` for rclone."""
+        root = f"dest:{self.dest_s3_bucket}"
+        if self.dest_s3_prefix:
+            root += "/" + self.dest_s3_prefix.strip("/")
+        return root
+
     # ----------------------------------------------------------------- validate
     def validate(self, require_secrets: bool = True) -> list[str]:
         errs: list[str] = []
         if require_secrets:
-            if not self.access_key_id:
-                errs.append("OCI_ACCESS_KEY_ID is required")
-            if not self.secret_access_key:
-                errs.append("OCI_SECRET_ACCESS_KEY is required")
-        if not self.namespace and not self.endpoint:
-            errs.append("OCI_NAMESPACE (or explicit OCI_ENDPOINT) is required")
-        if not self.bucket:
-            errs.append("OCI_BUCKET is required")
+            if not self.src_s3_access_key_id:
+                errs.append("SRC_S3_ACCESS_KEY_ID is required")
+            if not self.src_s3_secret_access_key:
+                errs.append("SRC_S3_SECRET_ACCESS_KEY is required")
+        if not self.src_s3_endpoint:
+            errs.append("SRC_S3_ENDPOINT is required")
+        if not self.src_s3_bucket:
+            errs.append("SRC_S3_BUCKET is required")
         if self.num_nodes < 1:
             errs.append("NUM_NODES must be >= 1")
         if self.target_gbps <= 0:
             errs.append("TARGET_GBPS must be > 0")
         if self.pods_per_node < 1:
             errs.append("PODS_PER_NODE must be >= 1")
-        if self.dest_mode not in ("dynamic", "import", "nfs"):
-            errs.append(f"DEST_MODE must be dynamic|import|nfs (got "
-                        f"'{self.dest_mode}')")
-        if self.is_import() and not (self.existing_disk_id
-                                     and self.existing_disk_name
-                                     and self.existing_disk_serial):
-            errs.append(
-                "import mode needs EXISTING_DISK_ID, EXISTING_DISK_NAME, and "
-                "EXISTING_DISK_SERIAL together (from `crusoe storage disks "
-                "list -f json`: the disk's id, name, and serial_number)."
-            )
-        if self.is_nfs():
-            if not self.existing_disk_id and not self.nfs_export_path:
-                errs.append("nfs mode needs EXISTING_DISK_ID (export path "
-                            "/volumes/<id>) or an explicit NFS_EXPORT_PATH")
-            if not self.nfs_server:
-                errs.append("nfs mode needs NFS_SERVER")
+        # --- destination validation ---
+        if self.dest_type not in ("disk", "s3"):
+            errs.append(f"DEST_TYPE must be disk|s3 (got '{self.dest_type}')")
+        if self.is_s3_dest():
+            if require_secrets:
+                if not self.dest_s3_access_key_id:
+                    errs.append("DEST_S3_ACCESS_KEY_ID is required when DEST_TYPE=s3")
+                if not self.dest_s3_secret_access_key:
+                    errs.append("DEST_S3_SECRET_ACCESS_KEY is required when DEST_TYPE=s3")
+            if not self.dest_s3_endpoint:
+                errs.append("DEST_S3_ENDPOINT is required when DEST_TYPE=s3")
+            if not self.dest_s3_bucket:
+                errs.append("DEST_S3_BUCKET is required when DEST_TYPE=s3")
+        else:
+            # disk destination validation (existing logic)
+            if self.dest_mode not in ("dynamic", "import", "nfs"):
+                errs.append(f"DEST_MODE must be dynamic|import|nfs (got "
+                            f"'{self.dest_mode}')")
+            if self.is_import() and not (self.existing_disk_id
+                                         and self.existing_disk_name
+                                         and self.existing_disk_serial):
+                errs.append(
+                    "import mode needs EXISTING_DISK_ID, EXISTING_DISK_NAME, and "
+                    "EXISTING_DISK_SERIAL together (from `crusoe storage disks "
+                    "list -f json`: the disk's id, name, and serial_number)."
+                )
+            if self.is_nfs():
+                if not self.existing_disk_id and not self.nfs_export_path:
+                    errs.append("nfs mode needs EXISTING_DISK_ID (export path "
+                                "/volumes/<id>) or an explicit NFS_EXPORT_PATH")
+                if not self.nfs_server:
+                    errs.append("nfs mode needs NFS_SERVER")
         return errs
-
-    def warnings(self) -> list[str]:
-        warns: list[str] = []
-        if not self.endpoint and not KNOWN_OCI_REGION_RE.match(self.region):
-            warns.append(
-                f"OCI_REGION='{self.region}' does not look like an OCI region "
-                "slug (expected e.g. us-phoenix-1 / us-ashburn-1). Use the OCI "
-                "region where the bucket lives, not the destination/cloud region."
-            )
-        return warns
 
 
 def _coerce(name: str, raw: str):
@@ -234,13 +253,19 @@ def _coerce(name: str, raw: str):
 
 # env var name -> Config field name
 _ENV_MAP = {
-    "OCI_ACCESS_KEY_ID": "access_key_id",
-    "OCI_SECRET_ACCESS_KEY": "secret_access_key",
-    "OCI_NAMESPACE": "namespace",
-    "OCI_REGION": "region",
-    "OCI_BUCKET": "bucket",
-    "OCI_PREFIX": "prefix",
-    "OCI_ENDPOINT": "endpoint",
+    "SRC_S3_ACCESS_KEY_ID": "src_s3_access_key_id",
+    "SRC_S3_SECRET_ACCESS_KEY": "src_s3_secret_access_key",
+    "SRC_S3_ENDPOINT": "src_s3_endpoint",
+    "SRC_S3_REGION": "src_s3_region",
+    "SRC_S3_BUCKET": "src_s3_bucket",
+    "SRC_S3_PREFIX": "src_s3_prefix",
+    "DEST_TYPE": "dest_type",
+    "DEST_S3_ACCESS_KEY_ID": "dest_s3_access_key_id",
+    "DEST_S3_SECRET_ACCESS_KEY": "dest_s3_secret_access_key",
+    "DEST_S3_ENDPOINT": "dest_s3_endpoint",
+    "DEST_S3_REGION": "dest_s3_region",
+    "DEST_S3_BUCKET": "dest_s3_bucket",
+    "DEST_S3_PREFIX": "dest_s3_prefix",
     "PVC_NAME": "pvc_name",
     "PVC_SIZE": "pvc_size",
     "STORAGE_CLASS": "storage_class",
@@ -311,10 +336,10 @@ def load_config(argv: Optional[list[str]] = None):
         "num_nodes": args.num_nodes,
         "pods_per_node": args.pods_per_node,
         "num_pods": args.num_pods,
-        "bucket": args.bucket,
-        "prefix": args.prefix,
-        "namespace": args.namespace,
-        "region": args.region,
+        "src_s3_bucket": args.src_bucket,
+        "src_s3_prefix": args.src_prefix,
+        "src_s3_endpoint": args.src_endpoint,
+        "src_s3_region": args.src_region,
         "rtt_ms": args.rtt_ms,
         "per_stream_mbps": args.per_stream_mbps,
         "rclone_transfers": args.transfers,
@@ -326,6 +351,10 @@ def load_config(argv: Optional[list[str]] = None):
         "existing_disk_name": args.import_disk_name,
         "existing_disk_serial": args.import_disk_serial,
         "dest_mode": args.dest_mode,
+        "dest_type": args.dest_type,
+        "dest_s3_bucket": args.dest_s3_bucket,
+        "dest_s3_prefix": args.dest_s3_prefix,
+        "dest_s3_endpoint": args.dest_s3_endpoint,
         "nfs_server": args.nfs_server,
     }
     for field_name, val in cli_map.items():
@@ -340,7 +369,7 @@ def load_config(argv: Optional[list[str]] = None):
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Parallel OCI->VAST pull on Crusoe CMK, tuned for s2a.",
+        description="Parallel S3->S3/disk pull on Crusoe CMK, tuned for high-RTT.",
     )
     p.add_argument("--env-file", help="Path to .env (default: ./.env)")
     p.add_argument("--target-gbps", type=float, help="Single sizing knob")
@@ -349,10 +378,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="worker pods per node (spread evenly)")
     p.add_argument("--num-pods", type=int,
                    help="absolute total pods override (spread across nodes)")
-    p.add_argument("--bucket")
-    p.add_argument("--prefix")
-    p.add_argument("--namespace", help="OCI Object Storage namespace")
-    p.add_argument("--region", help="OCI region slug")
+    p.add_argument("--src-bucket", help="Source S3 bucket")
+    p.add_argument("--src-prefix", help="Source S3 prefix")
+    p.add_argument("--src-endpoint", help="Source S3 endpoint URL")
+    p.add_argument("--src-region", help="Source S3 region")
     p.add_argument("--rtt-ms", type=float)
     p.add_argument("--per-stream-mbps", type=float)
     p.add_argument("--transfers", type=int, help="Override rclone --transfers")
@@ -370,7 +399,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Existing disk `serial_number`")
     p.add_argument("--dest-mode", choices=("dynamic", "import", "nfs"),
                    help="destination: provision / CSI import / in-tree NFS PV")
-    p.add_argument("--nfs-server", help="VAST NFS DNS endpoint (nfs mode)")
+    p.add_argument("--dest-type", choices=("disk", "s3"),
+                   help="destination type: disk (Crusoe shared filesystem) or s3")
+    p.add_argument("--dest-s3-bucket", help="Destination S3 bucket (DEST_TYPE=s3)")
+    p.add_argument("--dest-s3-prefix", help="Destination S3 prefix (DEST_TYPE=s3)")
+    p.add_argument("--dest-s3-endpoint", help="Destination S3 endpoint (DEST_TYPE=s3)")
+    p.add_argument("--nfs-server", help="Crusoe shared filesystem NFS DNS endpoint (nfs mode)")
     p.add_argument("--dry-run", action="store_true",
                    help="Render plan + manifests, do not apply to the cluster")
     p.add_argument("--keep", action="store_true",
