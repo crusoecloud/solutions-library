@@ -1,0 +1,394 @@
+---
+# =============================================================================
+# Ensure the gateway runs a kernel with VAES/AVX-512 AES-GCM
+#
+# The kernel binds the highest-priority driver registered for
+# rfc4106(gcm(aes)). Kernels before 6.11 ship only the 2010-era AES-NI
+# implementation. 6.11 added a VAES/AVX-512 one.
+#
+# Measured, one tunnel, same two VMs, same WAN path (9.01 Gbps raw control
+# either side of the change):
+#
+#   6.8.0-78    rfc4106-gcm-aesni           4.67 Gbps mean   decrypt core 83%
+#   6.11.0-29   rfc4106-gcm-vaes-avx10_512  5.75 Gbps mean   decrypt core 62%
+#
+# +23% per tunnel, and crypto falls from 22.6% of receive cycles to under 3%.
+#
+# WHEN IT ACTS, precisely - because a reboot is the most disruptive thing a
+# playbook can do to a gateway:
+#
+#   * only when vpn_kernel_upgrade is true AND the CPU advertises "vaes"
+#   * only when the bound AES-GCM driver is not already a *vaes* one
+#   * NEVER when the host is already running the newest installed kernel of
+#     the requested series. Rebooting again cannot change which driver binds,
+#     so a CPU whose 6.11 still picks AES-NI (vaes without AVX512BW/VL) gets a
+#     warning once instead of a reboot on every run.
+#   * it INSTALLS on any host, but REBOOTS only a host with no VPN on it yet.
+#     If a swanctl config or an established SA exists, the reboot is deferred
+#     and announced - unless vpn_kernel_reboot_live is true. A first deploy
+#     therefore reboots before any VPN config exists and interrupts nothing;
+#     an upgrade of a live gateway installs the kernel and waits for you.
+# =============================================================================
+
+- name: Probe kernel, crypto driver and VPN state
+  ansible.builtin.shell:
+    cmd: |
+      modprobe aesni_intel 2>/dev/null || true
+      # /proc/crypto also lists internal instances ("__rfc4106(...)") and
+      # wrappers ("seqiv(rfc4106(...))"). Anchoring the name selects the entry
+      # consumers actually bind. sed BRE treats "(" literally, so no escaping.
+      drv=$(sed -n "/^name .*: rfc4106(gcm(aes))$/,+1p" /proc/crypto \
+            | sed -n "s/^driver *: *//p" | head -1)
+      vaes=no; grep -qw vaes /proc/cpuinfo && vaes=yes
+      # Newest INSTALLED kernel of the requested series (the "6.11" in
+      # linux-image-generic-6.11). Without a series in the package name, the
+      # newest kernel of any series.
+      series=$(printf '%s' "{{ vpn_kernel_package }}" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+      if [ -n "$series" ]; then
+          target=$(ls -1 /boot/vmlinuz-"$series".* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -1)
+      else
+          target=$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -1)
+      fi
+      # Is there a VPN on this host already? Either signal means a reboot
+      # would drop live traffic.
+      sas=0
+      if command -v swanctl >/dev/null 2>&1; then
+          sas=$(swanctl --list-sas 2>/dev/null | grep -c INSTALLED || true)
+      fi
+      conf=no; [ -f /etc/swanctl/conf.d/site-vpn.conf ] && conf=yes
+      echo "${drv:-unknown}|${vaes}|$(uname -r)|${target:-none}|${sas:-0}|${conf}"
+  register: vpn_kern_probe
+  changed_when: false
+  check_mode: false
+  tags: [kernel, setup]
+
+- name: Record what the probe found
+  ansible.builtin.set_fact:
+    vpn_gcm_driver: "{{ (vpn_kern_probe.stdout | trim).split('|')[0] }}"
+    vpn_cpu_has_vaes: "{{ (vpn_kern_probe.stdout | trim).split('|')[1] == 'yes' }}"
+    vpn_running_kernel: "{{ (vpn_kern_probe.stdout | trim).split('|')[2] }}"
+    vpn_kern_installed_target: "{{ (vpn_kern_probe.stdout | trim).split('|')[3] }}"
+    vpn_kern_live_sas: "{{ (vpn_kern_probe.stdout | trim).split('|')[4] | int }}"
+    vpn_kern_conf_present: "{{ (vpn_kern_probe.stdout | trim).split('|')[5] == 'yes' }}"
+  tags: [kernel, setup]
+
+- name: Decide what to do
+  ansible.builtin.set_fact:
+    # Already on the newest installed kernel of the requested series: another
+    # reboot cannot change the driver, so never loop.
+    vpn_kernel_already_on_target: >-
+      {{ vpn_kern_installed_target != 'none'
+         and vpn_kern_installed_target == vpn_running_kernel }}
+    # A VPN exists here. Installing is harmless; rebooting is not.
+    vpn_kernel_live: >-
+      {{ (vpn_kern_live_sas | int) > 0 or (vpn_kern_conf_present | bool) }}
+  tags: [kernel, setup]
+
+- name: Decide whether a kernel change is needed
+  ansible.builtin.set_fact:
+    vpn_kernel_change_needed: >-
+      {{ (vpn_kernel_upgrade | bool)
+         and (vpn_cpu_has_vaes | bool)
+         and ('vaes' not in vpn_gcm_driver)
+         and not (vpn_kernel_already_on_target | bool) }}
+  tags: [kernel, setup]
+
+- name: Report the decision
+  ansible.builtin.debug:
+    msg: >-
+      kernel={{ vpn_running_kernel }} driver={{ vpn_gcm_driver }}
+      cpu_vaes={{ vpn_cpu_has_vaes }} live_vpn={{ vpn_kernel_live }}
+      {%- if 'vaes' in vpn_gcm_driver %}
+      -> already on the VAES fast path, nothing to do.
+      {%- elif not (vpn_cpu_has_vaes | bool) %}
+      -> this CPU has no VAES, so AES-NI is already the best available.
+      {%- elif not (vpn_kernel_upgrade | bool) %}
+      -> vpn_kernel_upgrade is false; staying on the slow crypto path.
+      {%- elif vpn_kernel_already_on_target | bool %}
+      -> WARNING: already running {{ vpn_kern_installed_target }}, the newest
+      installed kernel of the requested series, and it still binds
+      {{ vpn_gcm_driver }}. This CPU's VAES cannot be used by this kernel
+      (it needs AVX512BW/VL too). Not rebooting again; roughly 23% per
+      tunnel is left on the table.
+      {%- elif vpn_kernel_live | bool and not (vpn_kernel_reboot_live | bool) %}
+      -> installing {{ vpn_kernel_package }}; NOT rebooting, because this host
+      already carries a VPN ({{ vpn_kern_live_sas }} SA(s) established). See the
+      note at the end of this play.
+      {%- else %}
+      -> installing {{ vpn_kernel_package }} and rebooting (worth ~+23%/tunnel).
+      {%- endif %}
+  tags: [kernel, setup]
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+
+- name: Refresh the package index
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: vpn_kernel_change_needed | bool
+  tags: [kernel, setup]
+
+- name: Check the kernel package is available
+  ansible.builtin.shell:
+    cmd: |
+      apt-cache policy {{ vpn_kernel_package }} 2>/dev/null \
+        | sed -n 's/^ *Candidate: *//p' | head -1
+  register: vpn_kern_candidate
+  changed_when: false
+  when: vpn_kernel_change_needed | bool
+  tags: [kernel, setup]
+
+# A missing package is a "carry on slower", not a "stop the deployment".
+- name: Skip the upgrade when the package is unavailable
+  ansible.builtin.set_fact:
+    vpn_kernel_change_needed: false
+  when:
+    - vpn_kernel_change_needed | bool
+    - (vpn_kern_candidate.stdout | default('') | trim) in ['', '(none)']
+  tags: [kernel, setup]
+
+- name: Warn that the kernel package is unavailable
+  ansible.builtin.debug:
+    msg: >-
+      {{ vpn_kernel_package }} is not available on this host, so the gateway
+      stays on {{ vpn_running_kernel }} with the slower AES-NI crypto. This
+      costs roughly 23% per tunnel but breaks nothing. Set
+      vpn_kernel_package to a kernel your mirrors carry (6.11 or newer), or
+      vpn_kernel_upgrade=false to silence this.
+  when:
+    - vpn_kernel_upgrade | bool
+    - vpn_cpu_has_vaes | bool
+    - "'vaes' not in vpn_gcm_driver"
+    - not (vpn_kernel_already_on_target | bool)
+    - not (vpn_kernel_change_needed | bool)
+    - (vpn_kern_candidate.stdout | default('') | trim) in ['', '(none)']
+  tags: [kernel, setup]
+
+- name: Install the VAES-capable kernel
+  ansible.builtin.apt:
+    name: "{{ vpn_kernel_package }}"
+    state: present
+  when: vpn_kernel_change_needed | bool
+  tags: [kernel, setup]
+
+# ---------------------------------------------------------------------------
+# Make it bootable
+#
+# MEASURED FAILURE: on both test VMs the package install left
+# /boot/initrd.img pointing at an initramfs that was never generated. GRUB
+# skips a kernel with no initrd, so the node rebooted straight back onto the
+# old kernel and looked like the upgrade had simply not worked. Everything
+# below exists to catch that before spending a reboot on it.
+# ---------------------------------------------------------------------------
+
+- name: Prepare the new kernel for boot
+  ansible.builtin.shell:
+    cmd: |
+      set -u
+      # Same series filter as the probe: newest installed kernel of the
+      # requested series, so a newer kernel of another series that happens to
+      # be present is never picked by accident.
+      series=$(printf '%s' "{{ vpn_kernel_package }}" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+      if [ -n "$series" ]; then
+          ver=$(ls -1 /boot/vmlinuz-"$series".* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -1)
+      else
+          ver=$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -1)
+      fi
+      if [ -z "$ver" ]; then echo "NOVER|absent|no|unknown"; exit 0; fi
+
+      # The bug: kernel present, initramfs absent.
+      if [ ! -f "/boot/initrd.img-$ver" ]; then
+          update-initramfs -c -k "$ver" >/dev/null 2>&1 || true
+      fi
+      built=absent; [ -f "/boot/initrd.img-$ver" ] && built=present
+
+      update-grub >/dev/null 2>&1 || true
+
+      # Is the new kernel actually in the menu at all?
+      inmenu=no
+      grep -q "vmlinuz-$ver" /boot/grub/grub.cfg 2>/dev/null && inmenu=yes
+
+      # Which kernel will actually boot? That depends on GRUB_DEFAULT, not just
+      # on menu order:
+      #   unset / 0 / "Ubuntu"  the first menuentry, which Ubuntu generates for
+      #                         the newest kernel -> first vmlinuz in grub.cfg
+      #   saved                 whatever grubenv remembers
+      #   "...Linux <ver>"      an explicitly pinned kernel
+      # A pinned or saved default pointing at the OLD kernel is exactly how a
+      # reboot lands back where it started, so read it rather than assume.
+      first=$(grep -m1 -oE "/boot/vmlinuz-[^ ]+" /boot/grub/grub.cfg 2>/dev/null \
+              | sed "s|.*/vmlinuz-||")
+      gd=$(sed -n 's/^GRUB_DEFAULT=//p' /etc/default/grub 2>/dev/null | tr -d '"' | tail -1)
+      case "${gd:-}" in
+          ""|0|Ubuntu)
+              defk="$first" ;;
+          saved)
+              se=$(grub-editenv list 2>/dev/null | sed -n 's/^saved_entry=//p')
+              defk=$(printf '%s' "$se" | grep -oE 'Linux [^ ]+' | awk '{print $2}')
+              [ -z "$defk" ] && defk="$first" ;;
+          *)
+              defk=$(printf '%s' "$gd" | grep -oE 'Linux [^ ]+' | awk '{print $2}')
+              [ -z "$defk" ] && defk="pinned:$gd" ;;
+      esac
+
+      echo "$ver|$built|$inmenu|${defk:-unknown}"
+  register: vpn_kern_prep
+  changed_when: true
+  when: vpn_kernel_change_needed | bool
+  tags: [kernel, setup]
+
+- name: Parse the boot preparation
+  ansible.builtin.set_fact:
+    vpn_kern_target: "{{ (vpn_kern_prep.stdout | trim).split('|')[0] }}"
+    vpn_kern_initrd: "{{ (vpn_kern_prep.stdout | trim).split('|')[1] }}"
+    vpn_kern_inmenu: "{{ (vpn_kern_prep.stdout | trim).split('|')[2] }}"
+    vpn_kern_default: "{{ (vpn_kern_prep.stdout | trim).split('|')[3] }}"
+  when:
+    - vpn_kernel_change_needed | bool
+    - "'|' in (vpn_kern_prep.stdout | default(''))"
+  tags: [kernel, setup]
+
+- name: Refuse to reboot into a kernel GRUB cannot boot
+  ansible.builtin.assert:
+    that:
+      - vpn_kern_target != 'NOVER'
+      - vpn_kern_initrd == 'present'
+      - vpn_kern_inmenu == 'yes'
+    fail_msg: >-
+      Kernel {{ vpn_kern_target }} is installed but not bootable
+      (initramfs={{ vpn_kern_initrd }}, in GRUB menu={{ vpn_kern_inmenu }}).
+      Rebooting now would land back on {{ vpn_running_kernel }}. Fix with:
+      sudo update-initramfs -c -k {{ vpn_kern_target }} && sudo update-grub
+    success_msg: >-
+      {{ vpn_kern_target }} is bootable (initramfs present, in GRUB menu,
+      default entry boots {{ vpn_kern_default }}).
+  when: vpn_kernel_change_needed | bool
+  tags: [kernel, setup]
+
+# Only touch GRUB_DEFAULT if the default entry would boot the wrong kernel.
+# Most hosts need nothing here, and a customer's GRUB config is not ours to
+# rewrite speculatively.
+- name: Back up /etc/default/grub before changing the default entry
+  ansible.builtin.copy:
+    src: /etc/default/grub
+    dest: /etc/default/grub.vpn-backup
+    remote_src: true
+    force: false
+    mode: "0644"
+  when:
+    - vpn_kernel_change_needed | bool
+    - vpn_kern_default != vpn_kern_target
+  tags: [kernel, setup]
+
+- name: Point GRUB at the new kernel
+  ansible.builtin.shell:
+    cmd: |
+      if grep -q '^GRUB_DEFAULT=' /etc/default/grub; then
+          sed -i 's|^GRUB_DEFAULT=.*|GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux {{ vpn_kern_target }}"|' \
+            /etc/default/grub
+      else
+          printf '%s\n' 'GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux {{ vpn_kern_target }}"' \
+            >> /etc/default/grub
+      fi
+      update-grub >/dev/null 2>&1
+      grep '^GRUB_DEFAULT' /etc/default/grub
+  register: vpn_kern_grubset
+  when:
+    - vpn_kernel_change_needed | bool
+    - vpn_kern_default != vpn_kern_target
+  tags: [kernel, setup]
+
+# ---------------------------------------------------------------------------
+# Reboot - only a host that is not yet carrying a VPN - and prove it worked
+# ---------------------------------------------------------------------------
+
+- name: Decide whether this host may be rebooted now
+  ansible.builtin.set_fact:
+    vpn_kernel_do_reboot: >-
+      {{ (vpn_kernel_change_needed | bool) and (vpn_kernel_reboot | bool)
+         and ((not (vpn_kernel_live | bool)) or (vpn_kernel_reboot_live | bool)) }}
+  tags: [kernel, setup]
+
+- name: Explain that a reboot is about to happen
+  ansible.builtin.debug:
+    msg: >-
+      Rebooting into {{ vpn_kern_target }}.
+      {%- if vpn_kernel_live | bool %}
+      This host HAS a live VPN and vpn_kernel_reboot_live is true, so traffic
+      through it will drop for the duration of the reboot.
+      {%- else %}
+      No VPN config exists on this host yet, so nothing is interrupted.
+      {%- endif %}
+  when: vpn_kernel_do_reboot | bool
+  tags: [kernel, setup]
+
+- name: Reboot into the new kernel
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ vpn_kernel_reboot_timeout }}"
+    msg: "Rebooting for a VAES-capable kernel (strongswan-ipsec)"
+  when: vpn_kernel_do_reboot | bool
+  tags: [kernel, setup]
+
+- name: Re-probe the AES-GCM driver after reboot
+  ansible.builtin.shell:
+    cmd: |
+      modprobe aesni_intel 2>/dev/null || true
+      drv=$(sed -n "/^name .*: rfc4106(gcm(aes))$/,+1p" /proc/crypto \
+            | sed -n "s/^driver *: *//p" | head -1)
+      echo "${drv:-unknown}|$(uname -r)"
+  register: vpn_kern_after
+  changed_when: false
+  when: vpn_kernel_do_reboot | bool
+  tags: [kernel, setup]
+
+- name: Confirm the fast crypto path is live
+  ansible.builtin.assert:
+    that: "'vaes' in (vpn_kern_after.stdout | default(''))"
+    fail_msg: >-
+      Rebooted but still on {{ (vpn_kern_after.stdout | default('?')).split('|')[0] }}
+      running {{ (vpn_kern_after.stdout | default('?|?')).split('|')[1] }}.
+      Either GRUB booted the wrong kernel (check "grep menuentry
+      /boot/grub/grub.cfg" and /etc/default/grub - the original is at
+      /etc/default/grub.vpn-backup) or this CPU's VAES is unusable by this
+      kernel. The next run will NOT reboot again: it detects that the
+      requested kernel is already running. Deployment continues on the slower
+      path, roughly 23% per tunnel down.
+    success_msg: >-
+      Now running {{ (vpn_kern_after.stdout | default('?|?')).split('|')[1] }}
+      on {{ (vpn_kern_after.stdout | default('?')).split('|')[0] }} - the VAES
+      fast path.
+  when: vpn_kernel_do_reboot | bool
+  # Worth shouting about, but must not block a deployment that would
+  # otherwise work. The already-on-target guard above stops this recurring.
+  ignore_errors: true
+  tags: [kernel, setup]
+
+- name: Note that the reboot was deferred because this gateway is live
+  ansible.builtin.debug:
+    msg: >-
+      {{ vpn_kern_target }} is installed and bootable, but this host already
+      carries a VPN ({{ vpn_kern_live_sas }} SA(s) established,
+      config present={{ vpn_kern_conf_present }}), so it was NOT rebooted.
+      It keeps running {{ vpn_running_kernel }} with the slower crypto until
+      you reboot it - in a maintenance window, one gateway at a time so the
+      others keep carrying traffic - or re-run with
+      "-e vpn_kernel_reboot_live=true" to let this play do it.
+  when:
+    - vpn_kernel_change_needed | bool
+    - vpn_kernel_reboot | bool
+    - vpn_kernel_live | bool
+    - not (vpn_kernel_reboot_live | bool)
+  tags: [kernel, setup]
+
+- name: Note that a reboot is still pending
+  ansible.builtin.debug:
+    msg: >-
+      {{ vpn_kern_target }} is installed and bootable but vpn_kernel_reboot is
+      false, so this host is still running {{ vpn_running_kernel }} with the
+      slower crypto. Reboot when convenient to collect the ~23%.
+  when:
+    - vpn_kernel_change_needed | bool
+    - not (vpn_kernel_reboot | bool)
+  tags: [kernel, setup]

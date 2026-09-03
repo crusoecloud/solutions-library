@@ -10,6 +10,12 @@
     swanctl --load-all 2>/dev/null || true
   changed_when: false
 
+- name: restart frr
+  ansible.builtin.systemd:
+    name: frr
+    state: restarted
+  failed_when: false
+
 - name: reload systemd
   ansible.builtin.systemd:
     daemon_reload: true

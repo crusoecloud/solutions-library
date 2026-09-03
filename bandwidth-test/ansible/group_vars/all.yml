@@ -1,0 +1,11 @@
+---
+# The inventory groups are FIXED: [source_hosts] and [dest_hosts]. Ansible
+# resolves play targets before variables load, so site.yml names them
+# literally and they cannot be renamed here.
+
+# See roles/bandwidth_test/defaults/main.yml for every tunable.
+# bw_mode: "paired"        # paired | many_to_one | mesh
+# bw_duration: 30
+# bw_streams: 8
+# bw_protocol: "tcp"       # tcp | udp
+# bw_dest_address: "private"

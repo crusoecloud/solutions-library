@@ -1,0 +1,32 @@
+#!/bin/bash
+# Managed by Ansible - {{ inventory_hostname }}
+#
+# NIC queues and offloads on the client. Unlike the gateway, extra queues DO
+# pay off here: client traffic is real application flows, so there is enough
+# flow diversity for RSS to spread across them.
+set -u
+
+UPLINK=$(ip -o -4 route show default | awk '{print $5; exit}')
+NCPU=$(nproc)
+{% if vpn_client_rx_queues %}
+WANT={{ vpn_client_rx_queues }}
+{% else %}
+WANT="$NCPU"
+{% endif %}
+
+log() { echo "client-perf-tuning: $*"; }
+[ -n "${UPLINK:-}" ] || { log "no default route - nothing to tune"; exit 0; }
+
+MAXQ=$(ethtool -l "$UPLINK" 2>/dev/null | awk '/^Combined:/{print $2; exit}')
+if [ -n "${MAXQ:-}" ] && [ "$MAXQ" -gt 0 ] 2>/dev/null; then
+    [ "$WANT" -gt "$MAXQ" ] && WANT="$MAXQ"
+    ethtool -L "$UPLINK" combined "$WANT" 2>/dev/null \
+        && log "$UPLINK combined queues -> $WANT (max $MAXQ)" \
+        || log "could not set combined queues on $UPLINK"
+else
+    log "$UPLINK does not report combined queues"
+fi
+
+ethtool -K "$UPLINK" {{ vpn_client_nic_offloads }} 2>/dev/null \
+    && log "offloads: {{ vpn_client_nic_offloads }}" || log "some offloads unsupported"
+exit 0

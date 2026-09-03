@@ -1,0 +1,335 @@
+#!/bin/bash
+# Managed by Ansible - {{ inventory_hostname }}
+#
+# Single source of truth for every link, route, rule and mark this gateway
+# needs. Called by the Ansible play AND by vpn-network.service, so live state
+# and boot state cannot drift.
+#
+# Usage: vpn-network.sh {up|down}
+set -u
+
+UPLINK="{{ vpn_primary_iface }}"
+LOCAL_IP="{{ vpn_local_gw_ip }}"
+XFRM_MTU="{{ vpn_xfrm_mtu }}"
+
+{# ---------- Jinja-side derivations ---------- #}
+{%- if vpn_tunnels | length == 1 -%}
+{%- set XFRM_NH = 'dev ' ~ vpn_tunnels[0].xfrm_iface -%}
+{%- else -%}
+{%- set XFRM_NH = vpn_tunnels | map(attribute='xfrm_iface')
+      | map('regex_replace', '^(.*)$', 'nexthop dev \\1 weight 1') | join(' ') -%}
+{%- endif -%}
+{%- set gre_devs = [] -%}
+{%- if vpn_transport == 'gre_fou' -%}
+{%- for p in range(vpn_fou_port_count | int) -%}
+{%- set _ = gre_devs.append({
+      'dev':  'gre-vpn' if (vpn_fou_port_count | int) == 1 else 'gre-vpn' ~ p,
+      'port': (vpn_fou_port | int) + p,
+      'key':  (vpn_gre_key  | int) + p}) -%}
+{%- endfor -%}
+{%- endif -%}
+{%- if gre_devs | length == 1 -%}
+{%- set GRE_NH = 'dev ' ~ gre_devs[0].dev -%}
+{%- elif gre_devs | length > 1 -%}
+{%- set GRE_NH = gre_devs | map(attribute='dev')
+      | map('regex_replace', '^(.*)$', 'nexthop dev \\1 weight 1') | join(' ') -%}
+{%- else -%}
+{%- set GRE_NH = '' -%}
+{%- endif -%}
+{%- set MSS_ARG = '--set-mss ' ~ (vpn_mss_effective | trim) %}
+
+# transport = {{ vpn_transport }}, tunnels = {{ vpn_tunnels | length }}, bgp = {{ vpn_bgp_enabled | bool }}
+{% for t in vpn_tunnels %}
+#   tunnel {{ t.index }}: {{ t.xfrm_iface }} if_id {{ t.if_id }} on {{ t.local_iface }}, {{ t.local_addr }} -> {{ t.remote_addr }}
+{% endfor %}
+
+# ===========================================================================
+# up
+# ===========================================================================
+
+up_xfrm() {
+    # Purge stale xfrm interfaces AND their routing rules, left behind when the
+    # tunnel count SHRINKS - reconfiguring a 5-tunnel mesh down to the 2 an
+    # Azure peer allows, for instance. Two reasons this matters:
+    #   * an "iif" rule OUTLIVES its device, showing as "iif xfrmN [detached]"
+    #   * fib_rules_lookup walks every rule for every packet, and that showed
+    #     up as a real per-packet cost in a perf profile of the receive path
+    _keep=" {% for t in vpn_tunnels %}{{ t.xfrm_iface }} {% endfor %}"
+    # Rules first, deleted by PREFERENCE NUMBER: "ip rule del iif <dev>" fails
+    # once the device is gone, and iproute2 prints such rules as
+    # "iif xfrmN [detached] lookup 100" - the optional "[detached]" is matched
+    # here so exactly that case is caught.
+    ip rule show 2>/dev/null \
+      | sed -n 's/^\([0-9]*\):[[:space:]]*from all iif \([^ ]*\)\( \[detached\]\)\{0,1\} lookup {{ vpn_rt_table }}.*/\1 \2/p' \
+      | while read -r _prio _dev; do
+            case "$_keep" in *" $_dev "*) continue ;; esac
+            ip rule del pref "$_prio" 2>/dev/null || true
+        done
+    # Then every XFRM-type device not in the keep list, WHATEVER its name -
+    # keying on the name prefix would leave a device from an older
+    # configuration (different prefix) holding an if_id. A VPN gateway is a
+    # dedicated VM, so any other xfrm interface on it is stale by definition.
+    for _d in $(ip -o link show type xfrm 2>/dev/null | awk -F': ' '{print $2}' \
+                | sed 's/@.*//'); do
+        case "$_keep" in *" $_d "*) continue ;; esac
+        ip link del "$_d" 2>/dev/null || true
+    done
+{% for t in vpn_tunnels %}
+    ip link del {{ t.xfrm_iface }} 2>/dev/null || true
+    ip link add {{ t.xfrm_iface }} type xfrm dev {{ t.local_iface }} if_id {{ t.if_id }}
+    ip link set {{ t.xfrm_iface }} mtu "$XFRM_MTU"
+    ip link set {{ t.xfrm_iface }} up
+{% endfor %}
+}
+
+# Per-uplink source routing. Without this every tunnel's ESP would egress the
+# primary NIC regardless of its source address, and extra vNICs carry nothing.
+up_source_routing() {
+{% set srcrt = vpn_tunnels | rejectattr('local_iface', 'equalto', vpn_primary_iface)
+                           | rejectattr('local_addr', 'equalto', '%any') | list %}
+{% if srcrt | length == 0 %}
+    :   # single uplink - nothing to do
+{% else %}
+{% for t in srcrt %}
+    GW="{{ t.local_gateway }}"
+    [ -n "$GW" ] || GW=$(ip -4 route show default dev {{ t.local_iface }} 2>/dev/null | awk '{print $3; exit}')
+    if [ -n "$GW" ]; then
+        ip route replace default via "$GW" dev {{ t.local_iface }} table {{ t.srcrt_table }}
+        ip rule del from {{ t.local_addr }} lookup {{ t.srcrt_table }} 2>/dev/null || true
+        ip rule add from {{ t.local_addr }} lookup {{ t.srcrt_table }}
+    else
+        echo "WARN: no next hop found for {{ t.local_iface }} - tunnel {{ t.index }} may egress the wrong NIC" >&2
+    fi
+{% endfor %}
+{% endif %}
+}
+
+up_routes() {
+{% if vpn_bgp_enabled | bool %}
+    # BGP owns the data prefixes. All this script installs is a host route per
+    # BGP peer, which is what pins each session to its own tunnel - without
+    # these the sessions never establish, because both children negotiate
+    # identical traffic selectors.
+{% for t in vpn_tunnels if t.bgp_peer %}
+    ip route replace {{ t.bgp_peer }}/32 dev {{ t.xfrm_iface }}
+{% endfor %}
+{% else %}
+{% if vpn_remote_subnet != "0.0.0.0/0" %}
+    ip route replace {{ vpn_remote_subnet }} {{ XFRM_NH }}
+{% else %}
+    :   # full tunnel - the mark table carries it, see up_mark_routing
+{% endif %}
+{% endif %}
+}
+
+{% if vpn_transport == 'gre_fou' %}
+up_gre() {
+    modprobe fou 2>/dev/null || true
+{% if vpn_fou_disable_gro | bool %}
+    # GRO on the physical NIC coalesces inbound FOU/UDP packets. The
+    # coalesced packet cannot be re-encapsulated on egress and is dropped,
+    # which destroys TCP while leaving UDP and ICMP looking perfect.
+    # Correctness, not tuning - so it runs unconditionally here.
+    ethtool -K "$UPLINK" gro off 2>/dev/null || true
+{% endif %}
+    # Purge EVERY gre-vpn* device, not just the ones we are about to create.
+    # Changing the gateway count renames the devices (gre-vpn <-> gre-vpn0,1..),
+    # and a leftover device with the same local/remote/key blocks the new one.
+    for _d in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' \
+                | sed 's/@.*//' | grep -E '^gre-vpn[0-9]*$'); do
+        ip link del "$_d" 2>/dev/null || true
+        ip tunnel del "$_d" 2>/dev/null || true
+    done
+{% for g in gre_devs %}
+    ip fou del port {{ g.port }} 2>/dev/null || true
+{% endfor %}
+    sleep 1
+{% for g in gre_devs %}
+    ip fou add port {{ g.port }} ipproto 47
+    ip link add name {{ g.dev }} type gre local "$LOCAL_IP" key {{ g.key }} ttl 255 \
+        encap fou encap-sport {{ 'auto' if vpn_fou_sport_auto | bool else g.port }} encap-dport {{ g.port }}
+    ip link set {{ g.dev }} mtu {{ vpn_gre_mtu }}
+    ip link set {{ g.dev }} up
+{% endfor %}
+}
+
+# Multipoint GRE has no signalling, so the neighbour table is pre-populated
+# across the whole client CIDR. New VMs and K8s nodes are then covered without
+# touching the gateway.
+up_gre_neighbours() {
+    # One `ip` process for the whole CIDR, not one per host: a /20 is 4094
+    # entries, and per-host spawning turns that into minutes.
+    python3 - <<'PYEOF' | ip -batch -
+import ipaddress, sys
+gw = "{{ vpn_local_gw_ip }}"
+devs = [{% for g in gre_devs %}"{{ g.dev }}"{{ "," if not loop.last }}{% endfor %}]
+net = ipaddress.ip_network("{{ vpn_client_cidr }}", strict=False)
+n = 0
+for ip in net.hosts():
+    s = str(ip)
+    if s == gw:
+        continue
+    for d in devs:
+        print(f"neigh replace {s} lladdr {s} dev {d} nud permanent")
+    n += 1
+print(f"populated {n} GRE neighbour entries for {net} "
+      f"across {len(devs)} device(s)", file=sys.stderr)
+PYEOF
+}
+
+# Traffic arriving from IPsec has to reach the overlay, not the main table.
+up_overlay_routing() {
+{% for t in vpn_tunnels %}
+    ip rule del iif {{ t.xfrm_iface }} lookup {{ vpn_rt_table }} 2>/dev/null || true
+    ip rule add iif {{ t.xfrm_iface }} lookup {{ vpn_rt_table }}
+{% endfor %}
+    ip route replace {{ vpn_client_cidr }} {{ GRE_NH }} table {{ vpn_rt_table }}
+}
+{% endif %}
+
+{% if vpn_serves_clients | bool %}
+# Client traffic may be destined anywhere (full tunnel), so mark it and route
+# it through a dedicated table. The gateway's own default route is untouched.
+up_mark_routing() {
+{% if vpn_transport == 'gre_fou' %}
+{% for g in gre_devs %}
+    iptables -t mangle -D PREROUTING -i {{ g.dev }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
+    iptables -t mangle -A PREROUTING -i {{ g.dev }} -j MARK --set-mark {{ vpn_fwmark }}
+{% endfor %}
+{% else %}
+    # route transport: match client traffic on the uplink, but never traffic
+    # that stays inside the local subnet (that includes this gateway's own IP).
+    iptables -t mangle -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} ! -d {{ vpn_client_cidr }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
+    iptables -t mangle -A PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} ! -d {{ vpn_client_cidr }} -j MARK --set-mark {{ vpn_fwmark }}
+{% endif %}
+    ip rule del fwmark {{ vpn_fwmark }} lookup {{ vpn_mark_table }} 2>/dev/null || true
+    ip rule add fwmark {{ vpn_fwmark }} lookup {{ vpn_mark_table }}
+    ip route replace default {{ XFRM_NH }} table {{ vpn_mark_table }}
+}
+{% endif %}
+
+{% if vpn_mss_clamp | bool %}
+up_mss_clamp() {
+    # Delete EVERY existing TCPMSS rule, not just the one we are about to add.
+    # Deleting only the exact rule leaves an older rule with a different MSS
+    # in place, and the stale one matches first - so a corrected value never
+    # takes effect. This bit us live: a stale --set-mss 1350 kept blackholing
+    # full-size segments after the value was fixed to 1320.
+    while iptables -t mangle -S FORWARD 2>/dev/null | grep -q -- '-j TCPMSS'; do
+        rule=$(iptables -t mangle -S FORWARD | grep -m1 -- '-j TCPMSS' | sed 's/^-A FORWARD //')
+        # shellcheck disable=SC2086
+        iptables -t mangle -D FORWARD $rule 2>/dev/null || break
+    done
+    iptables -t mangle -A FORWARD -p tcp --syn -j TCPMSS {{ MSS_ARG }}
+}
+{% endif %}
+
+{% if vpn_disable_conntrack | bool %}
+# Nothing here needs conntrack. NOTRACK removes its per-packet cost and, more
+# importantly, enforces the statelessness that multi-gateway ECMP depends on:
+# a reply may legitimately return through a DIFFERENT gateway.
+up_notrack() {
+{% if vpn_transport == 'route' %}
+    iptables -t raw -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} -j NOTRACK 2>/dev/null || true
+    iptables -t raw -A PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} -j NOTRACK
+{% endif %}
+{% for g in gre_devs %}
+    iptables -t raw -D PREROUTING -i {{ g.dev }} -j NOTRACK 2>/dev/null || true
+    iptables -t raw -A PREROUTING -i {{ g.dev }} -j NOTRACK
+{% endfor %}
+{% for t in vpn_tunnels %}
+    iptables -t raw -D PREROUTING -i {{ t.xfrm_iface }} -j NOTRACK 2>/dev/null || true
+    iptables -t raw -A PREROUTING -i {{ t.xfrm_iface }} -j NOTRACK
+{% endfor %}
+}
+{% endif %}
+
+do_up() {
+    # The health timer remembers the last nexthop set it installed and only
+    # rewrites the route when that set changes. The full route is about to be
+    # reinstalled underneath it, so forget the memo: the first tick after an
+    # (re)deploy or service restart must reconcile against reality.
+    rm -f /run/vpn-ecmp-health.state 2>/dev/null || true
+    up_xfrm
+    up_source_routing
+    up_routes
+{% if vpn_transport == 'gre_fou' %}
+    up_gre
+    up_gre_neighbours
+    up_overlay_routing
+{% endif %}
+{% if vpn_serves_clients | bool %}
+    up_mark_routing
+{% endif %}
+{% if vpn_mss_clamp | bool %}
+    up_mss_clamp
+{% endif %}
+{% if vpn_disable_conntrack | bool %}
+    up_notrack
+{% endif %}
+{% if vpn_perf_tuning | bool %}
+    [ -x /usr/local/sbin/vpn-perf-tuning.sh ] && /usr/local/sbin/vpn-perf-tuning.sh || true
+{% endif %}
+    echo "vpn-network up: {{ vpn_tunnels | length }} tunnel(s), transport {{ vpn_transport }}"
+}
+
+# ===========================================================================
+# down
+# ===========================================================================
+
+do_down() {
+{% if vpn_mss_clamp | bool %}
+    while iptables -t mangle -S FORWARD 2>/dev/null | grep -q -- '-j TCPMSS'; do
+        rule=$(iptables -t mangle -S FORWARD | grep -m1 -- '-j TCPMSS' | sed 's/^-A FORWARD //')
+        # shellcheck disable=SC2086
+        iptables -t mangle -D FORWARD $rule 2>/dev/null || break
+    done
+{% endif %}
+{% if vpn_disable_conntrack | bool %}
+{% if vpn_transport == 'route' %}
+    iptables -t raw -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} -j NOTRACK 2>/dev/null || true
+{% endif %}
+{% for g in gre_devs %}
+    iptables -t raw -D PREROUTING -i {{ g.dev }} -j NOTRACK 2>/dev/null || true
+{% endfor %}
+{% for t in vpn_tunnels %}
+    iptables -t raw -D PREROUTING -i {{ t.xfrm_iface }} -j NOTRACK 2>/dev/null || true
+{% endfor %}
+{% endif %}
+{% if vpn_serves_clients | bool %}
+{% if vpn_transport == 'gre_fou' %}
+{% for g in gre_devs %}
+    iptables -t mangle -D PREROUTING -i {{ g.dev }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
+{% endfor %}
+{% else %}
+    iptables -t mangle -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} ! -d {{ vpn_client_cidr }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
+{% endif %}
+    ip rule del fwmark {{ vpn_fwmark }} lookup {{ vpn_mark_table }} 2>/dev/null || true
+    ip route flush table {{ vpn_mark_table }} 2>/dev/null || true
+{% endif %}
+{% if vpn_transport == 'gre_fou' %}
+{% for t in vpn_tunnels %}
+    ip rule del iif {{ t.xfrm_iface }} lookup {{ vpn_rt_table }} 2>/dev/null || true
+{% endfor %}
+    ip route flush table {{ vpn_rt_table }} 2>/dev/null || true
+{% for g in gre_devs %}
+    ip link del {{ g.dev }} 2>/dev/null || true
+    ip tunnel del {{ g.dev }} 2>/dev/null || true
+    ip fou del port {{ g.port }} 2>/dev/null || true
+{% endfor %}
+{% endif %}
+{% for t in vpn_tunnels %}
+{% if t.local_addr != '%any' and t.local_iface != vpn_primary_iface %}
+    ip rule del from {{ t.local_addr }} lookup {{ t.srcrt_table }} 2>/dev/null || true
+    ip route flush table {{ t.srcrt_table }} 2>/dev/null || true
+{% endif %}
+    ip link del {{ t.xfrm_iface }} 2>/dev/null || true
+{% endfor %}
+    echo "vpn-network down"
+}
+
+case "${1:-up}" in
+    up)   do_up ;;
+    down) do_down ;;
+    *)    echo "usage: $0 {up|down}" >&2; exit 2 ;;
+esac

@@ -1,0 +1,105 @@
+{#-
+  Derive the tunnel list for this gateway. Rendered by tasks/main.yml via
+  lookup('template') and parsed with from_json, so all the fiddly derivation
+  lives in one readable place instead of a chain of set_fact expressions.
+
+  Backward compatibility is load bearing here: with vpn_tunnel_count == 1 the
+  output must reproduce today's names exactly - connection "site-vpn", child
+  "site-tunnel", interface vpn_xfrm_iface, if_id vpn_xfrm_if_id, local_addrs
+  "%any", and the identities straight from vpn_local_id / vpn_remote_id.
+
+  See README.md, "Multiple tunnels and multiple gateways".
+-#}
+{%- if vpn_tunnels_override | length > 0 -%}
+{{ vpn_tunnels_override | to_json }}
+{%- else -%}
+{#- vpn_tunnel_count_effective resolves 0 (auto) to the number of remote
+    outer addresses; see tasks/main.yml. Clamped to at least 1 HERE as well,
+    not just in the task: a count of 0 renders an empty up_xfrm() bash
+    function, which is a syntax error, and this template is the single source
+    of truth for anything that reads the tunnel list. -#}
+{%- set count = [ (vpn_tunnel_count_effective | default(vpn_tunnel_count) | int), 1 ] | max -%}
+
+{#- normalise vpn_local_addrs into dicts -#}
+{%- set locals_ = [] -%}
+{%- for a in vpn_local_addrs -%}
+  {%- if a is mapping -%}
+    {%- set _ = locals_.append({
+          'addr':    a.addr,
+          'public':  a.public  | default(a.addr),
+          'iface':   a.iface   | default(vpn_primary_iface),
+          'gateway': a.gateway | default('')}) -%}
+  {%- else -%}
+    {%- set _ = locals_.append({
+          'addr': a, 'public': a,
+          'iface': vpn_primary_iface, 'gateway': ''}) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- if locals_ | length == 0 -%}
+  {#- No explicit local addresses: bind anywhere. Correct on Crusoe, where a
+      VM has one IP and the public address is 1:1 NAT'd to it. -#}
+  {%- set locals_ = [{'addr': '%any', 'public': '',
+                      'iface': vpn_primary_iface, 'gateway': ''}] -%}
+{%- endif -%}
+
+{%- set remotes = vpn_remote_addrs if (vpn_remote_addrs | length > 0)
+                  else [vpn_remote_gw_ip] -%}
+
+{#- identity style -#}
+{%- if vpn_id_style -%}
+  {%- set style = vpn_id_style -%}
+{%- elif count == 1 -%}
+  {%- set style = 'fixed' -%}
+{%- elif vpn_local_addrs | length > 0 or remotes | length > 1 -%}
+  {#- Distinct remote outer IPs, one per tunnel: identify by address. This is
+      the Azure active-active case, where the peer matches on IP and the
+      "indexed" style would mangle an IP into "20.0.0.1-1". -#}
+  {%- set style = 'address' -%}
+{%- else -%}
+  {%- set style = 'indexed' -%}
+{%- endif -%}
+
+{%- set tunnels = [] -%}
+{%- for i in range(count) -%}
+  {%- set l = locals_[i % (locals_ | length)] -%}
+  {%- set r = remotes[i % (remotes | length)] -%}
+
+  {%- if style == 'address' -%}
+    {%- set lid = l.public if l.public else vpn_local_id -%}
+    {%- set rid = r -%}
+  {%- elif style == 'indexed' -%}
+    {#- The LOCAL identity is NOT indexed: this gateway is one machine and must
+        present the same identity on every tunnel, or the peer's remote-id match
+        fails. Only the REMOTE identity is indexed, because each tunnel goes to
+        a different peer gateway (site-b-gw-1, -2, -3 ...). -#}
+    {%- set lid = vpn_local_id -%}
+    {#- Only a name-style identity ("site-b-gw@x") can be indexed. The default
+        identity is now an IP address, and "20.1.2.3-1" is not one, so an IP
+        passes through untouched. -#}
+    {%- set rid = (vpn_remote_id | regex_replace('^([^@]+)', '\\1-' ~ (i + 1)))
+                  if '@' in (vpn_remote_id | string) else vpn_remote_id -%}
+  {%- else -%}
+    {%- set lid = vpn_local_id -%}
+    {%- set rid = vpn_remote_id -%}
+  {%- endif -%}
+
+  {%- set _ = tunnels.append({
+      'index':         i,
+      'name':          'site-vpn'    if count == 1 else 'site-vpn-'    ~ (i + 1),
+      'child':         'site-tunnel' if count == 1 else 'site-tunnel-' ~ (i + 1),
+      'xfrm_iface':    vpn_xfrm_iface if count == 1
+                       else vpn_xfrm_iface_prefix ~ i,
+      'if_id':         (vpn_xfrm_if_id | int) + i,
+      'local_addr':    l.addr,
+      'local_public':  l.public,
+      'local_iface':   l.iface,
+      'local_gateway': l.gateway,
+      'remote_addr':   r,
+      'local_id':      lid,
+      'remote_id':     rid,
+      'bgp_peer':      vpn_bgp_peer_addrs[i]
+                       if (vpn_bgp_peer_addrs | length) > i else '',
+      'srcrt_table':   (vpn_srcrt_table_base | int) + i }) -%}
+{%- endfor -%}
+{{ tunnels | to_json }}
+{%- endif -%}

@@ -1,0 +1,130 @@
+#!/bin/bash
+# Managed by Ansible - {{ inventory_hostname }}
+#
+# Brings up this client's path(s) to the VPN gateway(s) and installs one ECMP
+# route per remote CIDR across them. Called by the Ansible play AND by
+# vpn-client.service, so live state and boot state cannot drift.
+#
+# Usage: vpn-client.sh {up|down}
+set -u
+
+{#- ECMP nexthop spec: device list for gre_fou, via-IP list for route. #}
+{%- if vpn_transport == 'route' -%}
+{%- set NH = vpn_client_paths | map(attribute='gateway_ip')
+      | map('regex_replace', '^(.*)$', 'nexthop via \\1 weight 1') | join(' ') -%}
+{%- if vpn_client_paths | length == 1 -%}
+{%- set NH = 'via ' ~ vpn_client_paths[0].gateway_ip -%}
+{%- endif -%}
+{%- set MTU_ARG = 'mtu ' ~ vpn_client_route_mtu if vpn_client_route_mtu else '' -%}
+{%- else -%}
+{%- set NH = vpn_client_paths | map(attribute='dev')
+      | map('regex_replace', '^(.*)$', 'nexthop dev \\1 weight 1') | join(' ') -%}
+{%- if vpn_client_paths | length == 1 -%}
+{%- set NH = 'dev ' ~ vpn_client_paths[0].dev -%}
+{%- endif -%}
+{%- set MTU_ARG = '' -%}
+{%- endif %}
+
+# transport = {{ vpn_transport }}, paths = {{ vpn_client_paths | length }}
+{% for p in vpn_client_paths %}
+#   path {{ p.index }}: {{ p.gateway_host }} ({{ p.gateway_ip }}){% if vpn_transport == 'gre_fou' %} via {{ p.dev }} on UDP {{ p.fou_port }}{% endif %}
+
+{% endfor %}
+REMOTE_CIDRS="{{ vpn_client_remote_cidrs | join(' ') }}"
+
+{% if vpn_transport == 'gre_fou' %}
+up_tunnels() {
+    modprobe fou 2>/dev/null || true
+{% if vpn_fou_disable_gro | bool %}
+    # GRO on the physical NIC breaks GRE-over-FOU for TCP - see the
+    # vpn_gateway role's defaults. Applied unconditionally.
+    UPLINK=$(ip -o -4 route show default | awk '{print $5; exit}')
+    [ -n "${UPLINK:-}" ] && ethtool -K "$UPLINK" gro off 2>/dev/null || true
+{% endif %}
+    # The local address is read at runtime, not baked in, so the unit survives
+    # a DHCP change across reboots.
+    LOCAL_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
+    if [ -z "${LOCAL_IP:-}" ]; then
+        echo "ERROR: could not determine the local IP" >&2
+        exit 1
+    fi
+    # Purge EVERY gre-vpn* device, not just the ones we are about to create.
+    # Changing the gateway count renames the devices (gre-vpn <-> gre-vpn0,1..),
+    # and a leftover device with the same local/remote/key blocks the new one.
+    for _d in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' \
+                | sed 's/@.*//' | grep -E '^gre-vpn[0-9]*$'); do
+        ip link del "$_d" 2>/dev/null || true
+        ip tunnel del "$_d" 2>/dev/null || true
+    done
+{% for port in vpn_client_fou_ports %}
+    ip fou del port {{ port }} 2>/dev/null || true
+{% endfor %}
+    sleep 1
+{% for port in vpn_client_fou_ports %}
+    ip fou add port {{ port }} ipproto 47
+{% endfor %}
+{% for p in vpn_client_paths %}
+    ip link add name {{ p.dev }} type gre \
+        local "$LOCAL_IP" remote {{ p.gateway_ip }} key {{ p.gre_key }} ttl 255 \
+        encap fou encap-sport {{ 'auto' if vpn_fou_sport_auto | bool else p.fou_port }} encap-dport {{ p.fou_port }}
+    ip link set {{ p.dev }} mtu {{ vpn_gre_mtu }}
+    ip link set {{ p.dev }} up
+{% endfor %}
+{% for port in vpn_client_fou_ports %}
+{% for gw in vpn_client_paths | map(attribute='gateway_ip') | unique %}
+    iptables -C INPUT -p udp --dport {{ port }} -s {{ gw }} -j ACCEPT 2>/dev/null \
+        || iptables -I INPUT 1 -p udp --dport {{ port }} -s {{ gw }} -j ACCEPT
+{% endfor %}
+{% endfor %}
+}
+{% endif %}
+
+# One ECMP route per remote CIDR. Which gateway a flow uses is decided by the
+# kernel's 5-tuple hash, so a given flow is stable but different flows spread.
+# Requires net.ipv4.fib_multipath_hash_policy = 1 - without it every flow
+# takes the same nexthop.
+up_routes() {
+    for cidr in $REMOTE_CIDRS; do
+        # shellcheck disable=SC2086
+        ip route replace "$cidr" {{ NH }} {{ MTU_ARG }}
+    done
+}
+
+do_up() {
+    # The health timer remembers the last gateway set it routed through and
+    # only rewrites the ECMP route when that set changes. The full route is
+    # about to be reinstalled, so forget the memo and let the first tick
+    # reconcile against reality.
+    rm -f /run/vpn-client-health.state 2>/dev/null || true
+{% if vpn_transport == 'gre_fou' %}
+    up_tunnels
+{% endif %}
+    up_routes
+    echo "vpn-client up: {{ vpn_client_paths | length }} path(s), transport {{ vpn_transport }}"
+}
+
+do_down() {
+    for cidr in $REMOTE_CIDRS; do
+        ip route del "$cidr" 2>/dev/null || true
+    done
+{% if vpn_transport == 'gre_fou' %}
+    # Purge EVERY gre-vpn* device, not just the ones we are about to create.
+    # Changing the gateway count renames the devices (gre-vpn <-> gre-vpn0,1..),
+    # and a leftover device with the same local/remote/key blocks the new one.
+    for _d in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' \
+                | sed 's/@.*//' | grep -E '^gre-vpn[0-9]*$'); do
+        ip link del "$_d" 2>/dev/null || true
+        ip tunnel del "$_d" 2>/dev/null || true
+    done
+{% for port in vpn_client_fou_ports %}
+    ip fou del port {{ port }} 2>/dev/null || true
+{% endfor %}
+{% endif %}
+    echo "vpn-client down"
+}
+
+case "${1:-up}" in
+    up)   do_up ;;
+    down) do_down ;;
+    *)    echo "usage: $0 {up|down}" >&2; exit 2 ;;
+esac

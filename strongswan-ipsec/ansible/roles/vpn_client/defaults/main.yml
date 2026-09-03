@@ -1,4 +1,115 @@
 ---
-vpn_gre_mtu: 1360
+# ===========================================================================
+# vpn_client role defaults
+#
+# Configures a Crusoe VM to reach the remote site through one or more VPN
+# gateways. With one gateway and no new variables set, this behaves exactly
+# as the single-gateway version always did.
+#
+# Design: README.md, "Multiple tunnels and multiple gateways"
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Which gateways to use
+# ---------------------------------------------------------------------------
+# List of gateway inventory hostnames. Traffic to the remote subnets is
+# ECMP'd across all of them, hashed per flow.
+#
+# The single-gateway spelling vpn_gateway_host still works and is treated as
+# a one-element list.
+#
+# Each gateway's private IP comes from its own vpn_local_gw_ip, which the
+# vpn_gateway role sets as a fact. That means the gateways play must run
+# first - which site.yml does. To configure clients on their own (e.g.
+# "--limit vpn_clients"), set it explicitly per gateway in the inventory:
+#   gw-1  ansible_host=<public-ip>  vpn_local_gw_ip=<private-ip>
+#
+# DEFAULT: every host in the inventory's vpn_gateways group. Adding a gateway
+# to the inventory is therefore the only step needed to ECMP across it - the
+# customer never maintains this list by hand.
+#
+# That default assumes every gateway faces the SAME peer, which is the normal
+# case (one Crusoe site talking to Azure/GCP/AWS). In a Crusoe-to-Crusoe
+# deployment it is wrong - site-A clients must not route through site-B's
+# gateways - so split the inventory per site and set this explicitly there.
+vpn_gateway_hosts: "{{ groups['vpn_gateways'] | default([]) }}"
+
+# vpn_remote_subnets is NOT defaulted here on purpose: tasks/main.yml falls
+# back to [vpn_remote_subnet], the same value the gateways already need, so
+# the customer states the remote CIDR exactly once.
+
+# ---------------------------------------------------------------------------
+# Transport - must match the gateway
+# ---------------------------------------------------------------------------
+#   gre_fou  GRE-over-FOU overlay (default)
+#   route    plain static routes via the gateway's private IP. Requires
+#            Crusoe port security to be DISABLED on the GATEWAY's vNIC.
+# "" = inherit from the first gateway's own configuration, which is the safe
+# default because a mismatch silently breaks the datapath.
+vpn_client_transport: ""
+
+# GRE-over-FOU - must match the gateway
+# Must match the gateway. See the vpn_gateway role for the MTU maths: the
+# binding constraint is vpn_xfrm_mtu (1400), not the 1500-byte uplink.
+vpn_gre_mtu: 1400
 vpn_gre_key: 100
 vpn_fou_port: 9473
+vpn_fou_sport_auto: false
+vpn_fou_port_count: 1
+
+# route transport: MTU applied to the ECMP route so TCP shrinks without
+# relying on PMTUD. Azure's documented tunnel MTU is 1400.
+vpn_client_route_mtu: 1400
+
+# ---------------------------------------------------------------------------
+# Health - clients do not run BGP, so they probe instead
+# ---------------------------------------------------------------------------
+# Probe each gateway and rebuild the ECMP route from the ones that answer.
+# The gateway stops answering ICMP when it has no established SA, so this
+# catches a live VM with a dead tunnel as well as a dead VM.
+vpn_client_healthcheck: "{{ (vpn_gateway_hosts | length) > 1 }}"
+vpn_client_healthcheck_interval: "15s"
+vpn_client_probe_timeout: 1
+
+# ---------------------------------------------------------------------------
+# Performance - see README.md and AZURE-10G-GUIDE.md
+# ---------------------------------------------------------------------------
+# ECMP across the gateways. 0 (kernel default) hashes src/dst IP only, so
+# every flow between the same pair of hosts takes ONE gateway and the rest
+# sit idle. The single most missable line on the client side.
+vpn_multipath_hash_policy: 1
+
+# route transport: skip a nexthop whose neighbour entry is unreachable. Free
+# dead-gateway detection, no agent involved.
+vpn_multipath_use_neigh: 1
+
+# With ECMP the reply may arrive from a different gateway than the request
+# left through, which strict reverse-path filtering rejects.
+vpn_rp_filter: 2
+
+# --- long-fat-pipe TCP. The biggest client-side win. ---
+# Bandwidth-delay product decides single-flow throughput. At 50 ms RTT,
+# 10 Gbps needs ~62 MB in flight, but the distro default caps the receive
+# buffer at 6 MB - roughly 1 Gbps per flow, no matter how many tunnels
+# exist underneath. ON by default because it is purely corrective.
+vpn_client_tcp_tuning: true
+vpn_tcp_rmem: "4096 131072 134217728"
+vpn_tcp_wmem: "4096 65536 134217728"
+vpn_rmem_max: 268435456
+vpn_wmem_max: 268435456
+# CUBIC collapses its window on a public-internet path with even light loss
+# and never recovers the pipe. BBR does not. Needs fq for pacing.
+vpn_congestion_control: "bbr"
+vpn_default_qdisc: "fq"
+
+# --- NIC queues and offloads. This is where extra queues actually pay off,
+# --- because client traffic is real application flows.
+vpn_client_perf_tuning: true
+vpn_client_rx_queues: ""            # "" = one combined queue per vCPU
+# See vpn_fou_disable_gro in the vpn_gateway role: GRO on the physical NIC
+# breaks GRE-over-FOU for TCP (measured 3.65 Mbps vs 4590 Mbps). Clients
+# receive FOU too, so they need it off as well.
+vpn_fou_disable_gro: true
+vpn_client_nic_offloads: "gso on tso on"
+vpn_client_netdev_budget: 600
+vpn_client_netdev_budget_usecs: 8000

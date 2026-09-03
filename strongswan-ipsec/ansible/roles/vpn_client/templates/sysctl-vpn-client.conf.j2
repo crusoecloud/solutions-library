@@ -1,0 +1,40 @@
+# Managed by Ansible - vpn_client role
+#
+# --- ECMP across the VPN gateways ---
+# 0 (kernel default) hashes source/destination IP only, so every flow between
+# the same pair of hosts takes ONE gateway and the others sit idle. The setup
+# looks correct and performs like a single gateway.
+net.ipv4.fib_multipath_hash_policy = {{ vpn_multipath_hash_policy }}
+{% if vpn_transport == 'route' %}
+
+# Skip a nexthop whose neighbour entry has gone unreachable. Free dead-gateway
+# detection for route transport (a GRE device stays UP regardless, which is why
+# gre_fou needs the probe instead).
+net.ipv4.fib_multipath_use_neigh = {{ vpn_multipath_use_neigh }}
+{% endif %}
+
+# The reply may arrive from a different gateway than the request left through.
+net.ipv4.conf.all.rp_filter = {{ vpn_rp_filter }}
+net.ipv4.conf.default.rp_filter = {{ vpn_rp_filter }}
+{% if vpn_client_tcp_tuning | bool %}
+
+# --- long-fat-pipe TCP ---
+# 10 Gbps at 50 ms RTT needs ~62 MB in flight. The 6 MB distro default caps a
+# single flow near 1 Gbps regardless of how many tunnels are underneath.
+net.core.rmem_max = {{ vpn_rmem_max }}
+net.core.wmem_max = {{ vpn_wmem_max }}
+net.ipv4.tcp_rmem = {{ vpn_tcp_rmem }}
+net.ipv4.tcp_wmem = {{ vpn_tcp_wmem }}
+net.ipv4.tcp_window_scaling = 1
+
+# CUBIC gives up the window on a lossy internet path and does not get it back.
+net.core.default_qdisc = {{ vpn_default_qdisc }}
+net.ipv4.tcp_congestion_control = {{ vpn_congestion_control }}
+{% endif %}
+{% if vpn_client_perf_tuning | bool %}
+
+# --- softirq headroom ---
+net.core.netdev_max_backlog = 250000
+net.core.netdev_budget = {{ vpn_client_netdev_budget }}
+net.core.netdev_budget_usecs = {{ vpn_client_netdev_budget_usecs }}
+{% endif %}

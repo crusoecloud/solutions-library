@@ -1,11 +1,83 @@
 ---
-# 1. Configure gateways (IPsec + conditional FOU)
-# 2. Configure Crusoe client VMs (FOU tunnel + route)
-#    Remote cloud VMs (Azure/GCP/AWS) need nothing.
+# =============================================================================
+# Deploy the whole thing.
+#
+#   ansible-playbook -i inventory.ini site.yml
+#
+# You edit two files: inventory.ini (who) and group_vars/all.yml (what).
+# Everything else is already correct for a managed cloud peer.
+#
+# Four plays, in this order for a reason:
+#
+#   1. PREFLIGHT  nothing is configured until every check passes on every
+#                 host: the five required values, an apt-based OS with
+#                 reachable mirrors, the kernel modules the datapath needs, a
+#                 1500-byte uplink, every client VM inside vpn_client_cidr,
+#                 and UDP 500 + 4500 open in BOTH directions between the
+#                 gateways in this run. any_errors_fatal, so one bad host
+#                 stops the run before anything has been touched. Skipped for
+#                 --tags teardown, which must work on a broken deployment.
+#   2. KERNEL     install a VAES-capable kernel if the running one predates
+#                 6.11, and reboot - but ONLY a host with no VPN on it yet. On
+#                 a first deploy that is before any config exists, so nothing
+#                 is interrupted. On a host that already carries tunnels the
+#                 kernel is installed and the reboot is left to you (or to
+#                 -e vpn_kernel_reboot_live=true). Never reboots a host that
+#                 is already running the requested kernel.
+#   3. GATEWAYS   IPsec, XFRM interfaces, ECMP, firewall, host tuning.
+#   4. CLIENTS    routes from the Crusoe VMs into the overlay.
+#
+# Play 4 reads each gateway's resolved private IP from that gateway's facts,
+# so plays 3 and 4 cannot be reordered or run in isolation. If you must limit
+# to clients, set vpn_local_gw_ip per gateway in the inventory.
+#
+# Remote cloud VMs (Azure/GCP/AWS) need nothing - their cloud route tables
+# already point at the VPN gateway.
+# =============================================================================
+
+- name: Preflight
+  hosts: vpn_gateways:vpn_clients
+  become: true
+  # One failure anywhere stops the whole run. A half-configured VPN is worse
+  # than an unconfigured one.
+  any_errors_fatal: true
+  # The UDP probe is three tasks (listen, send, check) that rely on every host
+  # finishing one before any host starts the next. That is the linear
+  # strategy's guarantee; pin it so a free-strategy ansible.cfg cannot break it.
+  strategy: linear
+  # Facts are gathered INSIDE the role, after the placeholder check. assert and
+  # set_fact are controller-side actions that need no connection, so a fresh
+  # clone with placeholder IPs gets the "fill in these five values" message
+  # instead of an SSH timeout.
+  gather_facts: false
+  tasks:
+    - name: Run every preflight check
+      ansible.builtin.include_role:
+        name: vpn_gateway
+        tasks_from: preflight.yml
+      # Runs for every path except teardown: a deployment you are removing may
+      # have exactly the broken firewall or dead mirror that preflight exists
+      # to catch, and must still be removable.
+      when:
+        - vpn_preflight | default(true) | bool
+        - "'teardown' not in (ansible_run_tags | default([]))"
+      tags: [preflight, setup, verify, kernel]
+
+- name: Ensure gateways have fast AES-GCM
+  hosts: vpn_gateways
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Install, and where safe boot, a VAES-capable kernel
+      ansible.builtin.include_role:
+        name: vpn_gateway
+        tasks_from: kernel.yml
+      tags: [kernel, setup]
 
 - name: Configure VPN gateways
   hosts: vpn_gateways
   become: true
+  any_errors_fatal: true
   roles:
     - vpn_gateway
 

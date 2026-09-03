@@ -2,20 +2,281 @@
 # =============================================================================
 # vpn_gateway role
 #
-# Two modes controlled by vpn_use_gre:
-#   true  (Crusoe):          Multipoint GRE tunnel + CIDR-based neighbor table
-#   false (Azure/GCP/AWS):   Standard IP forwarding via cloud NIC-level flag
+# Terminates N IPsec tunnels to a remote site and delivers traffic to local
+# Crusoe clients. Three client transports, selected by vpn_client_transport:
+#
+#   gre_fou  GRE-over-FOU overlay (default; == the old vpn_use_gre: true)
+#   route    plain static routes - needs Crusoe port security DISABLED
+#   none     no local clients; forward this gateway's own LAN subnet
+#
+# With every new variable at its default this behaves exactly as the
+# single-tunnel version always did. See README.md, and AZURE-10G-GUIDE.md for
+# the recipe that reaches 10 Gbps with the fewest VMs.
 # =============================================================================
 
-# ---------- Detect environment ----------
+# ---------------------------------------------------------------------------
+# Detect environment and derive the shape of this deployment
+# ---------------------------------------------------------------------------
 
 - name: Detect primary network interface and local IP
   ansible.builtin.set_fact:
     vpn_primary_iface: "{{ ansible_default_ipv4.interface }}"
     vpn_local_gw_ip: "{{ ansible_default_ipv4.address }}"
-  tags: [setup, teardown]
+  tags: [setup, teardown, verify]
 
-# ---------- Install ----------
+# Precedence: vpn_client_transport, then the deprecated vpn_use_gre, then the
+# gre_fou default. vpn_use_gre is only consulted when it was EXPLICITLY set -
+# so "vpn_use_gre: false" still selects the "none" transport instead of being
+# silently overridden by the default.
+- name: Resolve client transport
+  ansible.builtin.set_fact:
+    vpn_transport: >-
+      {{ vpn_client_transport if vpn_client_transport
+         else ('none' if (vpn_use_gre is defined and not (vpn_use_gre | bool))
+               else 'gre_fou') }}
+  tags: [setup, teardown, verify]
+
+- name: Derive transport booleans and traffic selectors
+  ansible.builtin.set_fact:
+    vpn_serves_clients: "{{ vpn_transport in ['gre_fou', 'route'] }}"
+    vpn_child_local_ts: >-
+      {{ '0.0.0.0/0' if (vpn_traffic_selectors_any | bool) else vpn_local_subnet }}
+    vpn_child_remote_ts: >-
+      {{ '0.0.0.0/0' if (vpn_traffic_selectors_any | bool) else vpn_remote_subnet }}
+  tags: [setup, teardown, verify]
+
+# vpn_tunnel_count 0 means "one tunnel per remote outer address". An Azure
+# active-active gateway publishes two public IPs, so listing both in
+# vpn_remote_addrs yields two tunnels with nothing else to set. Two tunnels to
+# the SAME address share one outer 4-tuple, one RX queue and one CPU, so they
+# would buy nothing - hence counting addresses rather than hardcoding 2.
+- name: Derive the effective tunnel count
+  ansible.builtin.set_fact:
+    vpn_tunnel_count_effective: >-
+      {{ (vpn_tunnel_count | int) if (vpn_tunnel_count | int) > 0
+         else ([(vpn_remote_addrs | length), 1] | max) }}
+  tags: [setup, teardown, verify]
+
+- name: Build the tunnel list
+  ansible.builtin.set_fact:
+    vpn_tunnels: "{{ lookup('template', 'tunnels.json.j2') | from_json }}"
+  tags: [setup, teardown, verify]
+
+# TCPMSS --set-mss RAISES an MSS as readily as it lowers one, so a value
+# larger than the client path can carry is a silent TCP blackhole.
+- name: Validate the GRE overlay MTU against both constraints
+  ansible.builtin.assert:
+    that:
+      - (vpn_gre_mtu | int) <= (vpn_xfrm_mtu | int)
+      - (vpn_gre_mtu | int) + 36 <= (ansible_facts[vpn_primary_iface].mtu | int)
+    fail_msg: >-
+      vpn_gre_mtu={{ vpn_gre_mtu }} does not fit. It must be <=
+      vpn_xfrm_mtu ({{ vpn_xfrm_mtu }}), because the gateway strips the GRE
+      wrapper before encrypting and the original packet then has to pass the
+      XFRM interface; and <= uplink MTU
+      ({{ ansible_facts[vpn_primary_iface].mtu }}) minus 36 bytes of
+      IP+UDP+GRE, because the wrapped packet has to cross the local fabric.
+  when: vpn_transport == 'gre_fou'
+  tags: [setup, verify]
+
+- name: Derive the safe MSS for this transport
+  ansible.builtin.set_fact:
+    vpn_mss_max: >-
+      {{ ((vpn_gre_mtu | int) if vpn_transport == 'gre_fou'
+          else (vpn_xfrm_mtu | int)) - 40 }}
+  tags: [setup, verify]
+
+- name: Set the effective MSS
+  ansible.builtin.set_fact:
+    vpn_mss_effective: >-
+      {{ vpn_mss_clamp_value if vpn_mss_clamp_value else vpn_mss_max }}
+  tags: [setup, verify]
+
+- name: Refuse an MSS larger than the path can carry
+  ansible.builtin.assert:
+    that: (vpn_mss_effective | int) <= (vpn_mss_max | int)
+    fail_msg: >-
+      vpn_mss_clamp_value={{ vpn_mss_clamp_value }} exceeds the largest MSS
+      this path can carry ({{ vpn_mss_max }} for transport {{ vpn_transport }}).
+      iptables TCPMSS --set-mss would RAISE the MSS to that value and every
+      full-size segment would be dropped: ICMP keeps working, TCP collapses.
+      Leave vpn_mss_clamp_value empty to derive it.
+  when: vpn_mss_clamp | bool
+  tags: [setup, verify]
+
+- name: Decide whether the ECMP health timer runs
+  ansible.builtin.set_fact:
+    vpn_ecmp_healthcheck_effective: >-
+      {{ vpn_ecmp_healthcheck if (vpn_ecmp_healthcheck | string) != ''
+         else ((vpn_tunnels | length) > 1 or (vpn_serves_clients | bool)) }}
+  tags: [setup, verify]
+
+- name: Derive per-deployment strongSwan behaviour
+  ansible.builtin.set_fact:
+    # "trap" defers the SA until the first matching packet, so tunnels come
+    # up one at a time as traffic hashes to them - and the triggering flows
+    # are dropped meanwhile. Anything serving clients, or with more than one
+    # tunnel, wants them up front.
+    vpn_start_action_effective: >-
+      {{ vpn_start_action if vpn_start_action
+         else ('start' if ((vpn_tunnels | length) > 1 or (vpn_serves_clients | bool))
+               else 'trap') }}
+  tags: [setup, verify]
+
+# ---------------------------------------------------------------------------
+# Validate - turn silent misconfiguration into a loud failure
+# ---------------------------------------------------------------------------
+
+- name: Validate configuration
+  ansible.builtin.assert:
+    that:
+      - (vpn_tunnel_count_effective | int) >= 1
+      - (vpn_tunnel_count_effective | int) <= 32
+      - vpn_transport in ['gre_fou', 'route', 'none']
+      - not (vpn_serves_clients | bool) or (vpn_client_cidr is defined)
+      - vpn_route_return in ['port_security_disabled', 'snat']
+      - vpn_crypto_profile in vpn_crypto_profiles
+    fail_msg: >-
+      Invalid vpn_gateway configuration. tunnel_count must be 1-32,
+      vpn_client_transport must be gre_fou/route/none, vpn_client_cidr is
+      required for gre_fou and route, and vpn_crypto_profile must be one of
+      {{ vpn_crypto_profiles.keys() | list }}.
+  tags: [setup, verify]
+
+# A replay window the kernel refuses leaves the SA uninstalled and the tunnel
+# permanently down, which is much worse than a window that is merely small.
+# 1024 is measured good; 32768 is measured to fail outright.
+- name: Validate the ESP anti-replay window
+  ansible.builtin.assert:
+    that:
+      - (vpn_replay_window | int) >= 0
+      - (vpn_replay_window | int) <= 4096
+    fail_msg: >-
+      vpn_replay_window must be 0-4096. Measured on Crusoe: 1024 installs and
+      works, 32768 makes the SA fail to install so the tunnel never comes up.
+      0 disables anti-replay entirely, which is a real security reduction on a
+      public-internet tunnel - do not use it to chase throughput. Prefer
+      vpn_disable_rfs=true, which removes the reordering at its source.
+  tags: [setup, verify]
+
+# These three combinations each produce a datapath that looks configured and
+# silently drops traffic, so they are hard failures rather than warnings.
+- name: Validate the conntrack / SNAT interlocks
+  ansible.builtin.assert:
+    that:
+      - not (vpn_disable_conntrack | bool) or not (vpn_stateful_forward_rule | bool)
+      - not (vpn_disable_conntrack | bool) or not (vpn_snat_internet_egress | bool)
+      - not (vpn_route_return == 'snat') or not (vpn_disable_conntrack | bool)
+    fail_msg: >-
+      Conntrack interlock violated. NOTRACK'd packets can never match a
+      ctstate rule and can never be SNAT'd, so vpn_disable_conntrack=true
+      requires vpn_stateful_forward_rule=false, vpn_snat_internet_egress=false
+      and vpn_route_return != snat. Note also that SNAT is stateful, so it
+      cannot be combined with multi-gateway ECMP at all - see the
+      "Known limitations" section of README.md.
+  tags: [setup, verify]
+
+- name: Validate BGP configuration
+  ansible.builtin.assert:
+    that:
+      - vpn_bgp_advertise | length > 0
+      - vpn_bgp_accept | length > 0
+      - (vpn_bgp_peer_addrs | length) >= (vpn_tunnels | length)
+    fail_msg: >-
+      vpn_bgp_enabled requires vpn_bgp_advertise (prefixes to announce -
+      IDENTICAL on every gateway), vpn_bgp_accept (prefixes to accept), and
+      one entry in vpn_bgp_peer_addrs per tunnel ({{ vpn_tunnels | length }}
+      needed, {{ vpn_bgp_peer_addrs | length }} given). Read Azure's peer
+      addresses from the gateway's bgpSettings.bgpPeeringAddresses.
+  when: vpn_bgp_enabled | bool
+  tags: [setup, verify]
+
+# The failure this catches looks like success: N tunnels, all established, all
+# hashing to the same outer flow, so one RX queue and no more throughput.
+- name: "WARNING: tunnel fan-out with no outer flow entropy"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ vpn_tunnel_count_effective }} tunnels requested but both
+      vpn_local_addrs and vpn_remote_addrs resolve to a single address. With
+      NAT-T both UDP ports are pinned to 4500, so every tunnel will share one
+      outer 4-tuple, land on one RX queue, and perform exactly like a single
+      tunnel. For an Azure peer in active-active mode, set vpn_remote_addrs to
+      BOTH gateway instance public IPs.
+  when:
+    - (vpn_tunnel_count_effective | int) > 1
+    - (vpn_local_addrs | length) <= 1
+    - (vpn_remote_addrs | length) <= 1
+  tags: [setup, verify]
+
+- name: "WARNING: route transport needs port security disabled"
+  ansible.builtin.debug:
+    msg: >-
+      vpn_client_transport=route forwards decrypted packets whose source is a
+      REMOTE private IP out of this gateway's vNIC. Crusoe port security drops
+      those. Confirm NetEng has disabled port security on this VM's vNIC (or
+      added allowed-address-pairs covering {{ vpn_remote_subnet }}) before
+      expecting return traffic to arrive.
+  when: vpn_transport == 'route' and vpn_route_return == 'port_security_disabled'
+  tags: [setup, verify]
+
+# Multipoint GRE has no signalling, so the gateway needs one PERMANENT
+# neighbour entry per host in vpn_client_cidr. That does not scale: a /20 is
+# 4094 entries (fine, ~seconds), a /16 is 65534 (exceeds the neighbour table
+# and takes minutes). This is a real limit of the gre_fou transport.
+- name: Size the GRE neighbour table
+  ansible.builtin.set_fact:
+    vpn_neigh_needed: >-
+      {{ (2 ** (32 - (vpn_client_cidr | regex_replace('^.*/', '') | int))) - 2 }}
+  when: vpn_transport == 'gre_fou'
+  tags: [setup, verify]
+
+- name: Refuse a client CIDR too large for the neighbour table
+  ansible.builtin.assert:
+    that: (vpn_neigh_needed | int) < (vpn_neigh_gc_thresh3 | int)
+    fail_msg: >-
+      vpn_client_cidr {{ vpn_client_cidr }} needs {{ vpn_neigh_needed }}
+      permanent GRE neighbour entries, which exceeds
+      net.ipv4.neigh.default.gc_thresh3 ({{ vpn_neigh_gc_thresh3 }}). The table
+      would overflow and an arbitrary subset of clients would silently never
+      work. Either narrow vpn_client_cidr to the range that actually holds
+      clients, raise vpn_neigh_gc_thresh1/2/3, or switch to
+      vpn_client_transport=route, which needs no neighbour table at all.
+  when: vpn_transport == 'gre_fou'
+  tags: [setup, verify]
+
+- name: "WARNING: large GRE neighbour table"
+  ansible.builtin.debug:
+    msg: >-
+      vpn_client_cidr {{ vpn_client_cidr }} means {{ vpn_neigh_needed }}
+      permanent neighbour entries on every gateway. That works, but it adds
+      deploy time and memory on each gateway. The route transport needs none
+      of it.
+  when:
+    - vpn_transport == 'gre_fou'
+    - (vpn_neigh_needed | int) > 8000
+  tags: [setup, verify]
+
+- name: Check the CPU has AES-NI
+  ansible.builtin.command: grep -qw aes /proc/cpuinfo
+  register: vpn_aesni
+  changed_when: false
+  failed_when: false
+  tags: [setup, verify]
+
+- name: Require AES-NI
+  ansible.builtin.assert:
+    that: vpn_aesni.rc == 0
+    fail_msg: >-
+      This CPU reports no AES-NI. AES-GCM will fall back to a generic
+      implementation roughly an order of magnitude slower, and the throughput
+      targets in AZURE-10G-GUIDE.md are unreachable. Set
+      vpn_assert_aes_ni=false to proceed anyway.
+  when: vpn_assert_aes_ni | bool
+  tags: [setup, verify]
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
 
 - name: Install strongSwan (Debian/Ubuntu)
   ansible.builtin.apt:
@@ -24,8 +285,12 @@
       - strongswan-swanctl
       - charon-systemd
       - libcharon-extra-plugins
+      # GCM lives here on Debian/Ubuntu. Without it the gcmaes256 profiles
+      # fail with NO_PROPOSAL_CHOSEN and nothing says why.
+      - libstrongswan-standard-plugins
       - iptables
       - iproute2
+      - python3
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -34,13 +299,28 @@
 
 - name: Install strongSwan (RHEL/Fedora)
   ansible.builtin.dnf:
-    name: [strongswan, iptables, iproute]
+    name: [strongswan, iptables, iproute, python3]
     state: present
   when: ansible_os_family == "RedHat"
   tags: [setup]
 
-# Stop strongswan-starter immediately after install — it auto-starts
-# charon on package install and conflicts with charon-systemd.
+- name: Install FRR
+  ansible.builtin.package:
+    name: frr
+    state: present
+  when: vpn_bgp_enabled | bool
+  tags: [setup]
+
+- name: Install tuning and diagnostic tools
+  ansible.builtin.package:
+    name: [ethtool, sysstat, conntrack]
+    state: present
+  failed_when: false
+  when: vpn_perf_tuning | bool
+  tags: [setup]
+
+# Stop strongswan-starter immediately after install - it auto-starts charon on
+# package install and conflicts with charon-systemd.
 - name: Disable strongswan-starter (conflicts with charon-systemd)
   ansible.builtin.systemd:
     name: strongswan-starter
@@ -49,9 +329,11 @@
   failed_when: false
   tags: [setup]
 
-# ---------- Kernel parameters ----------
+# ---------------------------------------------------------------------------
+# Kernel parameters
+# ---------------------------------------------------------------------------
 
-- name: Configure sysctl (ip_forward, no redirects)
+- name: Configure sysctl
   ansible.builtin.template:
     src: sysctl-vpn.conf.j2
     dest: /etc/sysctl.d/99-vpn-gateway.conf
@@ -59,127 +341,148 @@
   notify: reload sysctl
   tags: [setup]
 
+# "sysctl --system" applies /etc/sysctl.conf LAST, after everything in
+# /etc/sysctl.d/ - and many cloud images ship a tuned /etc/sysctl.conf. So our
+# drop-in is applied and then silently overridden in the running system, while
+# at boot (systemd-sysctl, lexical order) it wins. Re-applying our own file
+# last makes the running state match both our intent and the post-reboot state.
 - name: Apply sysctl now
-  ansible.builtin.command: sysctl --system
+  ansible.builtin.shell: |
+    sysctl --system >/dev/null
+    sysctl -p /etc/sysctl.d/99-vpn-gateway.conf >/dev/null
   changed_when: false
   tags: [setup]
 
-# ---------- XFRM interface (IPsec) ----------
+- name: Read back the sysctls that ECMP depends on
+  ansible.builtin.shell: |
+    set -e
+    echo "forward=$(sysctl -n net.ipv4.ip_forward)"
+    echo "hash=$(sysctl -n net.ipv4.fib_multipath_hash_policy)"
+    echo "rpf=$(sysctl -n net.ipv4.conf.all.rp_filter)"
+  register: vpn_sysctl_live
+  changed_when: false
+  tags: [setup, verify]
 
-- name: Remove stale XFRM interface
-  ansible.builtin.command: ip link del {{ vpn_xfrm_iface }}
-  changed_when: true
+- name: Assert the critical sysctls actually took effect
+  ansible.builtin.assert:
+    that:
+      - "'forward=1' in vpn_sysctl_live.stdout"
+      - "'hash=' ~ (vpn_multipath_hash_policy | string) in vpn_sysctl_live.stdout"
+      - "'rpf=' ~ (vpn_rp_filter | string) in vpn_sysctl_live.stdout"
+    fail_msg: >-
+      A sysctl this design depends on did not take effect. Live values:
+      {{ vpn_sysctl_live.stdout_lines }}. Something applied later is
+      overriding /etc/sysctl.d/99-vpn-gateway.conf - check /etc/sysctl.conf,
+      which "sysctl --system" applies last.
+  tags: [setup, verify]
+
+# ---------------------------------------------------------------------------
+# Network setup - one rendered script, used by the play AND by systemd
+# ---------------------------------------------------------------------------
+
+- name: Install host tuning script
+  ansible.builtin.template:
+    src: perf-tuning.sh.j2
+    dest: /usr/local/sbin/vpn-perf-tuning.sh
+    mode: "0755"
+  when: vpn_perf_tuning | bool
+  tags: [setup]
+
+# ---------------------------------------------------------------------------
+# Kernel AES-GCM implementation
+# ---------------------------------------------------------------------------
+# The kernel binds the highest-priority driver registered for
+# rfc4106(gcm(aes)). Kernels before 6.11 ship only the 2010-era AES-NI code.
+#
+# Measured: one tunnel, same two VMs, same WAN path (9.01 Gbps raw control).
+#   6.8.0-78    rfc4106-gcm-aesni           4.67 Gbps mean   decrypt core 83%
+#   6.11.0-29   rfc4106-gcm-vaes-avx10_512  5.75 Gbps mean   decrypt core 62%
+#
+# A kernel change needs a reboot, so this reports rather than acts.
+- name: Detect the kernel AES-GCM implementation
+  ansible.builtin.shell: |
+    modprobe aesni_intel 2>/dev/null || true
+    # /proc/crypto also lists internal instances ("__rfc4106(...)") and
+    # wrappers ("seqiv(rfc4106(...))"). Anchoring the name selects the entry
+    # consumers actually bind. sed BRE treats "(" literally, so no escaping.
+    drv=$(sed -n "/^name .*: rfc4106(gcm(aes))$/,+1p" /proc/crypto \
+          | sed -n "s/^driver *: *//p" | head -1)
+    vaes=no; grep -qw vaes /proc/cpuinfo && vaes=yes
+    echo "${drv:-unknown}|${vaes}|$(uname -r)"
+  register: vpn_gcm_probe
+  changed_when: false
   failed_when: false
+  when: vpn_check_crypto_accel | bool
+  tags: [setup, verify]
+
+- name: Parse the AES-GCM probe
+  ansible.builtin.set_fact:
+    vpn_gcm_driver: "{{ (vpn_gcm_probe.stdout | trim).split('|')[0] }}"
+    vpn_cpu_has_vaes: "{{ (vpn_gcm_probe.stdout | trim).split('|')[1] == 'yes' }}"
+    vpn_running_kernel: "{{ (vpn_gcm_probe.stdout | trim).split('|')[2] }}"
+  when:
+    - vpn_check_crypto_accel | bool
+    - vpn_gcm_probe.stdout is defined
+    - "'|' in (vpn_gcm_probe.stdout | default(''))"
+  tags: [setup, verify]
+
+- name: Report the AES-GCM implementation
+  ansible.builtin.debug:
+    msg: >-
+      AES-GCM driver={{ vpn_gcm_driver }} kernel={{ vpn_running_kernel }}
+      {% if 'vaes' in vpn_gcm_driver %}
+      - VAES fast path, nothing to do.
+      {% elif vpn_cpu_has_vaes | bool %}
+      - SLOW PATH. This CPU supports VAES but kernel {{ vpn_running_kernel }}
+      has no VAES AES-GCM driver (added in 6.11). Measured +23% per tunnel
+      after upgrading. Install linux-image-generic-6.11 (or 6.14) and reboot;
+      see AZURE-10G-GUIDE.md. Do NOT jump to 7.0 without measuring - it
+      regressed 2.4x on this hardware.
+      {% else %}
+      - this CPU has no VAES, so the AES-NI driver is the best available.
+      {% endif %}
+  when:
+    - vpn_check_crypto_accel | bool
+    - vpn_gcm_driver is defined
+  tags: [setup, verify]
+
+- name: Require VAES AES-GCM
+  ansible.builtin.assert:
+    that: "'vaes' in vpn_gcm_driver"
+    fail_msg: >-
+      vpn_require_crypto_accel=true but the kernel AES-GCM driver is
+      {{ vpn_gcm_driver }} on kernel {{ vpn_running_kernel }}. Install
+      linux-image-generic-6.11 (or 6.14) and reboot, or set
+      vpn_require_crypto_accel=false to proceed on the slow path.
+  when:
+    - vpn_require_crypto_accel | bool
+    - vpn_gcm_driver is defined
+  tags: [setup, verify]
+
+- name: Install vpn-network script
+  ansible.builtin.template:
+    src: vpn-network.sh.j2
+    dest: /usr/local/sbin/vpn-network.sh
+    mode: "0755"
   tags: [setup]
 
-- name: Create XFRM interface
-  ansible.builtin.shell: |
-    ip link add {{ vpn_xfrm_iface }} type xfrm dev {{ vpn_primary_iface }} if_id {{ vpn_xfrm_if_id }}
-    ip link set {{ vpn_xfrm_iface }} mtu {{ vpn_xfrm_mtu }}
-    ip link set {{ vpn_xfrm_iface }} up
+- name: Bring up XFRM interfaces, routes, marks
+  ansible.builtin.command: /usr/local/sbin/vpn-network.sh up
+  register: vpn_network_up
   changed_when: true
   tags: [setup]
 
-- name: Route remote subnet through XFRM
-  ansible.builtin.command: ip route replace {{ vpn_remote_subnet }} dev {{ vpn_xfrm_iface }}
-  changed_when: true
-  when: vpn_remote_subnet != "0.0.0.0/0"
+- name: Show vpn-network output
+  ansible.builtin.debug:
+    var: vpn_network_up.stdout_lines
   tags: [setup]
 
-# ==========================================================================
-# GRE-over-FOU mode (Crusoe): GRE encapsulated in UDP so it passes through
-# firewalls that block raw GRE (IP protocol 47).
-# ==========================================================================
-
-- name: Load FOU kernel module
-  community.general.modprobe:
-    name: fou
-    state: present
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Create GRE-over-FOU tunnel
-  ansible.builtin.shell: |
-    ip link del gre-vpn 2>/dev/null || true
-    ip tunnel del gre-vpn 2>/dev/null || true
-    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
-    sleep 1
-    ip fou add port {{ vpn_fou_port }} ipproto 47
-    ip link add name gre-vpn type gre local {{ vpn_local_gw_ip }} key {{ vpn_gre_key }} ttl 255 \
-        encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}
-    ip link set gre-vpn mtu {{ vpn_gre_mtu }}
-    ip link set gre-vpn up
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Populate GRE neighbor table from client CIDR
-  ansible.builtin.shell: |
-    python3 -c "
-    import ipaddress, subprocess, sys
-    gw = '{{ vpn_local_gw_ip }}'
-    net = ipaddress.ip_network('{{ vpn_client_cidr }}', strict=False)
-    for ip in net.hosts():
-        s = str(ip)
-        if s == gw:
-            continue
-        subprocess.run(
-            ['ip', 'neigh', 'replace', s, 'lladdr', s, 'dev', 'gre-vpn', 'nud', 'permanent'],
-            check=True
-        )
-    print(f'Populated {net.num_addresses - 2} neighbor entries for {net}')
-    "
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Add ip rule for xfrm0 → GRE policy routing
-  ansible.builtin.shell: |
-    ip rule del iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }} 2>/dev/null || true
-    ip rule add iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }}
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Route client CIDR through GRE in policy table
-  ansible.builtin.command: >
-    ip route replace {{ vpn_client_cidr }} dev gre-vpn table {{ vpn_rt_table }}
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-# --- Mark-based routing: GRE traffic → xfrm0 ---
-# For full tunnel (vpn_remote_subnet = 0.0.0.0/0), traffic arriving on
-# gre-vpn may be destined for any IP (not just the datacenter CIDR).
-# We mark it and route via a separate table through xfrm0, so the
-# gateway's own default route is unaffected.
-
-- name: Mark GRE-inbound traffic for IPsec
-  ansible.builtin.shell: |
-    iptables -t mangle -D PREROUTING -i gre-vpn -j MARK --set-mark 0x64 2>/dev/null || true
-    iptables -t mangle -A PREROUTING -i gre-vpn -j MARK --set-mark 0x64
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Add ip rule for marked traffic → xfrm0
-  ansible.builtin.shell: |
-    ip rule del fwmark 0x64 lookup 200 2>/dev/null || true
-    ip rule add fwmark 0x64 lookup 200
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-- name: Route all traffic through xfrm0 in mark table
-  ansible.builtin.command: >
-    ip route replace default dev {{ vpn_xfrm_iface }} table 200
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [setup]
-
-# ==========================================================================
+# ---------------------------------------------------------------------------
 # Firewall
-# ==========================================================================
+#
+# Interface wildcards ("xfrm+", "gre-vpn+") keep the rule count flat no matter
+# how many tunnels or FOU ports are configured.
+# ---------------------------------------------------------------------------
 
 - name: Flush FORWARD chain
   ansible.builtin.iptables:
@@ -193,50 +496,79 @@
     policy: DROP
   tags: [setup]
 
-# --- GRE mode: forward between GRE and XFRM ---
-- name: "Allow forwarding: GRE → XFRM"
+- name: "Allow forwarding: client overlay <-> IPsec"
   ansible.builtin.iptables:
     chain: FORWARD
-    in_interface: "gre-vpn"
-    out_interface: "{{ vpn_xfrm_iface }}"
+    in_interface: "{{ item.i }}"
+    out_interface: "{{ item.o }}"
     jump: ACCEPT
-    comment: "VPN: client GRE -> IPsec"
-  when: vpn_use_gre | default(false)
+    comment: "{{ item.c }}"
+  loop:
+    - { i: "gre-vpn+", o: "xfrm+", c: "VPN: client GRE -> IPsec" }
+    - { i: "xfrm+", o: "gre-vpn+", c: "VPN: IPsec -> client GRE" }
+  when: vpn_transport == 'gre_fou'
   tags: [setup]
 
-- name: "Allow forwarding: XFRM → GRE"
+# Covers route transport in both directions, and internet egress for
+# full-tunnel mode, without needing per-tunnel rules.
+- name: "Allow forwarding: LAN <-> IPsec"
   ansible.builtin.iptables:
     chain: FORWARD
-    in_interface: "{{ vpn_xfrm_iface }}"
-    out_interface: "gre-vpn"
+    in_interface: "{{ item.i }}"
+    out_interface: "{{ item.o }}"
     jump: ACCEPT
-    comment: "VPN: IPsec -> client GRE"
-  when: vpn_use_gre | default(false)
+    comment: "{{ item.c }}"
+  loop:
+    - { i: "xfrm+", o: "{{ vpn_primary_iface }}", c: "VPN: IPsec -> LAN/internet" }
+    - { i: "{{ vpn_primary_iface }}", o: "xfrm+", c: "VPN: LAN/internet -> IPsec" }
   tags: [setup]
 
-# --- Internet egress: forward decrypted traffic to LAN/internet ---
-- name: "Allow forwarding: XFRM → LAN (internet egress)"
+# Narrower duplicates of the pair above, kept for the direct-forwarding mode
+# this role has always shipped.
+- name: "Allow forwarding: local subnet <-> IPsec (direct mode)"
   ansible.builtin.iptables:
     chain: FORWARD
-    in_interface: "{{ vpn_xfrm_iface }}"
+    in_interface: "{{ item.i }}"
+    out_interface: "{{ item.o }}"
+    source: "{{ item.s }}"
+    destination: "{{ item.d }}"
+    jump: ACCEPT
+    comment: "{{ item.c }}"
+  loop:
+    - { i: "{{ vpn_primary_iface }}", o: "xfrm+", s: "{{ vpn_local_subnet }}",
+        d: "{{ vpn_remote_subnet }}", c: "VPN: local subnet -> IPsec" }
+    - { i: "xfrm+", o: "{{ vpn_primary_iface }}", s: "{{ vpn_remote_subnet }}",
+        d: "{{ vpn_local_subnet }}", c: "VPN: IPsec -> local subnet" }
+  when: vpn_transport == 'none'
+  tags: [setup]
+
+# The internet-egress SNAT below matches "source = remote subnet, out = uplink".
+# In route transport, traffic heading BACK to local clients also leaves via the
+# uplink with a remote source address, so it would match and be NAT'd - which
+# both hides the real remote IPs and makes the path stateful, breaking
+# multi-gateway ECMP. This RETURN exempts client-bound traffic, and must be
+# added BEFORE the SNAT rule.
+- name: "Exempt client-bound traffic from the internet SNAT"
+  ansible.builtin.iptables:
+    table: nat
+    chain: POSTROUTING
     out_interface: "{{ vpn_primary_iface }}"
-    jump: ACCEPT
-    comment: "VPN: IPsec -> internet"
+    source: "{{ vpn_remote_subnet }}"
+    destination: "{{ vpn_client_cidr }}"
+    jump: RETURN
+    comment: "VPN: never SNAT traffic destined for local clients"
+  when:
+    - vpn_snat_internet_egress | bool
+    - vpn_serves_clients | bool
   tags: [setup]
 
-- name: "Allow forwarding: LAN → XFRM (internet return)"
-  ansible.builtin.iptables:
-    chain: FORWARD
-    in_interface: "{{ vpn_primary_iface }}"
-    out_interface: "{{ vpn_xfrm_iface }}"
-    jump: ACCEPT
-    comment: "VPN: internet -> IPsec"
-  tags: [setup]
-
-# --- SNAT for internet-bound traffic from VPN clients ---
-# MASQUERADE doesn't work here because XFRM bypasses conntrack for
-# forwarded packets. Explicit SNAT with source match is reliable.
-- name: "SNAT decrypted VPN traffic going to internet"
+# MASQUERADE does not work here because XFRM bypasses conntrack for forwarded
+# packets. Explicit SNAT with a source match is reliable.
+#
+# NOTE: SNAT is STATEFUL. A deployment with several gateway VMs sharing the
+# ECMP load cannot use it, because the reply may return through a different
+# gateway which has no matching conntrack entry.
+- name: "SNAT decrypted VPN traffic going to the internet"
   ansible.builtin.iptables:
     table: nat
     chain: POSTROUTING
@@ -245,73 +577,88 @@
     jump: SNAT
     to_source: "{{ vpn_local_gw_ip }}"
     comment: "VPN: SNAT for internet egress"
+  when: vpn_snat_internet_egress | bool
   tags: [setup]
 
-# --- Direct mode (Azure/GCP/AWS): forward between LAN and XFRM ---
-- name: "Allow forwarding: LAN → XFRM"
+- name: "SNAT remote traffic towards clients (route transport fallback)"
   ansible.builtin.iptables:
-    chain: FORWARD
-    in_interface: "{{ vpn_primary_iface }}"
-    out_interface: "{{ vpn_xfrm_iface }}"
-    source: "{{ vpn_local_subnet }}"
-    destination: "{{ vpn_remote_subnet }}"
-    jump: ACCEPT
-    comment: "VPN: local subnet -> IPsec"
-  when: not (vpn_use_gre | default(false))
-  tags: [setup]
-
-- name: "Allow forwarding: XFRM → LAN"
-  ansible.builtin.iptables:
-    chain: FORWARD
-    in_interface: "{{ vpn_xfrm_iface }}"
+    table: nat
+    chain: POSTROUTING
     out_interface: "{{ vpn_primary_iface }}"
     source: "{{ vpn_remote_subnet }}"
-    destination: "{{ vpn_local_subnet }}"
-    jump: ACCEPT
-    comment: "VPN: IPsec -> local subnet"
-  when: not (vpn_use_gre | default(false))
+    destination: "{{ vpn_client_cidr }}"
+    jump: SNAT
+    to_source: "{{ vpn_local_gw_ip }}"
+    comment: "VPN: SNAT return traffic past port security"
+  when: vpn_transport == 'route' and vpn_route_return == 'snat'
   tags: [setup]
 
-# --- Common rules ---
 - name: Allow established/related forwarding
   ansible.builtin.iptables:
     chain: FORWARD
     ctstate: [ESTABLISHED, RELATED]
     jump: ACCEPT
+  when: vpn_stateful_forward_rule | bool
   tags: [setup]
 
-- name: Allow IKE and ESP from remote gateway
+- name: Allow IKE and ESP from every remote gateway
   ansible.builtin.iptables:
     chain: INPUT
-    protocol: "{{ item.proto }}"
-    destination_port: "{{ item.port | default(omit) }}"
-    source: "{{ vpn_remote_gw_ip }}"
+    protocol: "{{ item.1.proto }}"
+    destination_port: "{{ item.1.port | default(omit) }}"
+    source: "{{ item.0 }}"
     jump: ACCEPT
-  loop:
-    - { proto: udp, port: "500" }
-    - { proto: udp, port: "4500" }
-    - { proto: esp }
+    comment: "VPN: IKE/ESP from {{ item.0 }}"
+  loop: "{{ (vpn_tunnels | map(attribute='remote_addr') | unique | list) | product(vpn_ike_ports) | list }}"
+  vars:
+    vpn_ike_ports:
+      - { proto: udp, port: "500" }
+      - { proto: udp, port: "4500" }
+      - { proto: esp }
   tags: [setup]
 
-- name: Allow FOU (UDP {{ vpn_fou_port }}) from client CIDR
+- name: Allow FOU from the client CIDR
   ansible.builtin.iptables:
     chain: INPUT
     protocol: udp
-    destination_port: "{{ vpn_fou_port }}"
+    destination_port: "{{ (vpn_fou_port | int) + item }}"
     source: "{{ vpn_client_cidr }}"
     jump: ACCEPT
-  when: vpn_use_gre | default(false)
+    comment: "VPN: GRE-over-FOU from clients"
+  loop: "{{ range(vpn_fou_port_count | int) | list }}"
+  when: vpn_transport == 'gre_fou'
   tags: [setup]
 
-# ==========================================================================
+- name: Allow BGP from the peer addresses
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "179"
+    source: "{{ item }}"
+    jump: ACCEPT
+    comment: "VPN: BGP from {{ item }}"
+  loop: "{{ vpn_tunnels | map(attribute='bgp_peer') | reject('equalto', '') | unique | list }}"
+  when: vpn_bgp_enabled | bool
+  tags: [setup]
+
+# ---------------------------------------------------------------------------
 # strongSwan
-# ==========================================================================
+# ---------------------------------------------------------------------------
 
 - name: Ensure swanctl conf directory exists
   ansible.builtin.file:
     path: /etc/swanctl/conf.d
     state: directory
     mode: "0755"
+  tags: [setup]
+
+- name: Configure charon
+  ansible.builtin.template:
+    src: strongswan-vpn.conf.j2
+    dest: /etc/strongswan.d/99-vpn.conf
+    mode: "0644"
+  notify: restart strongswan
+  failed_when: false
   tags: [setup]
 
 - name: Write swanctl configuration
@@ -331,21 +678,80 @@
   failed_when: false
   tags: [setup]
 
+- name: Flush handlers so strongSwan reloads before verification
+  ansible.builtin.meta: flush_handlers
+  tags: [setup]
+
 - name: Load swanctl configuration
   ansible.builtin.command: swanctl --load-all
   changed_when: false
   failed_when: false
   tags: [setup]
 
-# ==========================================================================
+- name: Check strongSwan can do AES-GCM
+  ansible.builtin.shell: >-
+    swanctl --list-algs 2>/dev/null | grep -qi gcm
+    || ipsec listalgs 2>/dev/null | grep -qi gcm
+  register: vpn_gcm_check
+  changed_when: false
+  failed_when: false
+  tags: [setup, verify]
+
+- name: "WARNING: no AES-GCM in strongSwan"
+  ansible.builtin.debug:
+    msg: >-
+      Could not confirm AES-GCM support in strongSwan. The gcmaes256 crypto
+      profiles will fail to negotiate. Install libstrongswan-standard-plugins
+      (Debian/Ubuntu) or the equivalent gcm/openssl plugin.
+  when:
+    - vpn_assert_gcm_plugin | bool
+    - vpn_gcm_check.rc != 0
+  tags: [setup, verify]
+
+# ---------------------------------------------------------------------------
+# BGP (FRR)
+# ---------------------------------------------------------------------------
+
+- name: Enable only zebra and bgpd
+  ansible.builtin.template:
+    src: frr-daemons.j2
+    dest: /etc/frr/daemons
+    mode: "0640"
+    owner: frr
+    group: frr
+  when: vpn_bgp_enabled | bool
+  notify: restart frr
+  tags: [setup]
+
+- name: Write FRR configuration
+  ansible.builtin.template:
+    src: frr.conf.j2
+    dest: /etc/frr/frr.conf
+    mode: "0640"
+    owner: frr
+    group: frr
+  when: vpn_bgp_enabled | bool
+  notify: restart frr
+  tags: [setup]
+
+- name: Enable and start FRR
+  ansible.builtin.systemd:
+    name: frr
+    state: started
+    enabled: true
+  when: vpn_bgp_enabled | bool
+  tags: [setup]
+
+# ---------------------------------------------------------------------------
 # Persistence
-# ==========================================================================
+# ---------------------------------------------------------------------------
 
 - name: Write vpn-network systemd unit
   ansible.builtin.template:
     src: vpn-network.service.j2
     dest: /etc/systemd/system/vpn-network.service
     mode: "0644"
+  notify: reload systemd
   tags: [setup]
 
 - name: Enable vpn-network service
@@ -355,95 +761,199 @@
     daemon_reload: true
   tags: [setup]
 
-# ==========================================================================
-# Verify
-# ==========================================================================
+- name: Install ECMP health script
+  ansible.builtin.template:
+    src: ecmp-health.sh.j2
+    dest: /usr/local/sbin/vpn-ecmp-health.sh
+    mode: "0755"
+  when: vpn_ecmp_healthcheck_effective | bool
+  tags: [setup]
 
-- name: Verify XFRM interface is up
-  ansible.builtin.shell: ip link show {{ vpn_xfrm_iface }} | grep -qE 'UP|UNKNOWN'
+- name: Write ECMP health unit and timer
+  ansible.builtin.template:
+    src: "ecmp-health.{{ item }}.j2"
+    dest: "/etc/systemd/system/vpn-ecmp-health.{{ item }}"
+    mode: "0644"
+  loop: [service, timer]
+  when: vpn_ecmp_healthcheck_effective | bool
+  notify: reload systemd
+  tags: [setup]
+
+- name: Enable ECMP health timer
+  ansible.builtin.systemd:
+    name: vpn-ecmp-health.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: vpn_ecmp_healthcheck_effective | bool
+  tags: [setup]
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+- name: Verify every XFRM interface is up
+  ansible.builtin.shell: >-
+    ip link show {{ item.xfrm_iface }} | grep -qE 'UP|UNKNOWN'
+  loop: "{{ vpn_tunnels }}"
+  loop_control:
+    label: "{{ item.xfrm_iface }}"
   changed_when: false
   tags: [setup, verify]
 
-- name: Count GRE neighbor entries (GRE mode)
-  ansible.builtin.shell: ip neigh show dev gre-vpn nud permanent | wc -l
-  register: neigh_count
+- name: Verify GRO is off on the uplink (GRE-over-FOU correctness)
+  ansible.builtin.shell: >-
+    ethtool -k {{ vpn_primary_iface }} | awk '/generic-receive-offload/{print $2}'
+  register: vpn_gro_state
   changed_when: false
-  when: vpn_use_gre | default(false)
+  failed_when: false
+  when: vpn_transport == 'gre_fou' and (vpn_fou_disable_gro | bool)
+  tags: [setup, verify]
+
+- name: "WARNING: GRO is still on and will destroy TCP"
+  ansible.builtin.debug:
+    msg: >-
+      GRO is still ON for {{ vpn_primary_iface }}. It coalesces inbound
+      FOU/UDP packets that then cannot be re-encapsulated, so they are
+      dropped. UDP and ICMP keep working while TCP collapses - measured
+      3.65 Mbps instead of 4590 Mbps. Run
+      "ethtool -K {{ vpn_primary_iface }} gro off" and find out what turned
+      it back on (a NetworkManager or netplan hook is the usual culprit).
+  when:
+    - vpn_transport == 'gre_fou'
+    - vpn_fou_disable_gro | bool
+    - (vpn_gro_state.stdout | default('') | trim) == 'on'
+  tags: [setup, verify]
+
+- name: Verify the ECMP hash policy took
+  ansible.builtin.command: sysctl -n net.ipv4.fib_multipath_hash_policy
+  register: vpn_hash_policy
+  changed_when: false
+  tags: [setup, verify]
+
+- name: "WARNING: ECMP hash policy is L3-only"
+  ansible.builtin.debug:
+    msg: >-
+      net.ipv4.fib_multipath_hash_policy is
+      {{ vpn_hash_policy.stdout | trim }}, not 1. Every flow between the same
+      pair of hosts will take ONE tunnel and the others will sit idle. The
+      setup will look correct and perform like a single tunnel.
+  when:
+    - (vpn_tunnels | length) > 1
+    - vpn_hash_policy.stdout | trim != '1'
+  tags: [setup, verify]
+
+- name: Count established SAs
+  ansible.builtin.shell: swanctl --list-sas 2>/dev/null | grep -c ESTABLISHED
+  register: vpn_sa_count
+  changed_when: false
+  failed_when: false
+  tags: [setup, verify]
+
+- name: "WARNING: fewer established SAs than tunnels"
+  ansible.builtin.debug:
+    msg: >-
+      Only {{ vpn_sa_count.stdout | default('0') | trim }} of
+      {{ vpn_tunnels | length }} tunnel(s) are ESTABLISHED. With
+      start_action={{ vpn_start_action_effective }} they should all come up at
+      deploy time. A tunnel that is down still has an UP xfrm interface, so it
+      keeps attracting its share of ECMP traffic and blackholes it. Check
+      "journalctl -u strongswan" and that UDP 500/4500 reaches
+      {{ vpn_tunnels | map(attribute='remote_addr') | unique | join(', ') }}.
+  when: (vpn_sa_count.stdout | default('0') | trim | int) < (vpn_tunnels | length)
+  tags: [setup, verify]
+
+- name: Check the negotiated ESP proposal is AEAD
+  ansible.builtin.shell: swanctl --list-sas 2>/dev/null | grep -oiE 'AES_GCM[_A-Z0-9]*' | head -1
+  register: vpn_negotiated_esp
+  changed_when: false
+  failed_when: false
+  when: vpn_assert_negotiated_esp | bool
+  tags: [setup, verify]
+
+- name: "WARNING: live SAs are not using AES-GCM"
+  ansible.builtin.debug:
+    msg: >-
+      No AES-GCM found in the live SAs. Azure's own numbers are 2.3 Gbps per
+      tunnel with GCMAES256 versus 700 Mbps with AES256+SHA256, so this is
+      worth roughly 3x. Set vpn_crypto_profile=gcmaes256 here AND a matching
+      custom IPsec/IKE policy on the peer connection.
+  when:
+    - vpn_assert_negotiated_esp | bool
+    - (vpn_sa_count.stdout | default('0') | int) > 0
+    - (vpn_negotiated_esp.stdout | default('')) == ''
+  tags: [setup, verify]
+
+- name: Check BGP sessions
+  ansible.builtin.command: vtysh -c "show ip bgp summary"
+  register: vpn_bgp_summary
+  changed_when: false
+  failed_when: false
+  when: vpn_bgp_enabled | bool
   tags: [setup, verify]
 
 - name: Report status
   ansible.builtin.debug:
     msg: >-
-      Gateway {{ inventory_hostname }} ready
-      (mode={{ 'GRE' if vpn_use_gre | default(false) else 'direct' }})
-      {% if vpn_use_gre | default(false) %}
-      — {{ neigh_count.stdout | default('0') | trim }} GRE neighbors for {{ vpn_client_cidr }}
-      {% endif %}
-      — IPsec peer {{ vpn_remote_gw_ip }}
-      — protecting {{ vpn_local_subnet }} ↔ {{ vpn_remote_subnet }}
+      Gateway {{ inventory_hostname }}:
+      {{ vpn_tunnels | length }} tunnel(s)
+      [{{ vpn_tunnels | map(attribute='xfrm_iface') | join(', ') }}]
+      -> {{ vpn_tunnels | map(attribute='remote_addr') | unique | join(', ') }}
+      | transport={{ vpn_transport }}
+      | crypto={{ vpn_crypto_profile }} (esp={{ vpn_esp_proposals }})
+      | established SAs={{ vpn_sa_count.stdout | default('?') | trim }}
+      | bgp={{ 'on' if vpn_bgp_enabled | bool else 'off' }}
+      | perf_tuning={{ vpn_perf_tuning | bool }}
+      | protecting {{ vpn_child_local_ts }} <-> {{ vpn_child_remote_ts }}
   tags: [setup, verify]
 
-# ==========================================================================
+# ---------------------------------------------------------------------------
 # Teardown
-# ==========================================================================
+# ---------------------------------------------------------------------------
 
 - name: "Teardown: stop services"
   ansible.builtin.systemd:
     name: "{{ item }}"
     state: stopped
     enabled: false
-  loop: [vpn-network, strongswan]
+  loop: [vpn-ecmp-health.timer, vpn-network, frr, strongswan]
   failed_when: false
   tags: [teardown, never]
 
-- name: "Teardown: remove systemd unit"
-  ansible.builtin.file:
-    path: /etc/systemd/system/vpn-network.service
-    state: absent
-  tags: [teardown, never]
-
-- name: "Teardown: remove ip rule (GRE mode)"
-  ansible.builtin.command: ip rule del iif {{ vpn_xfrm_iface }} lookup {{ vpn_rt_table }}
-  failed_when: false
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [teardown, never]
-
-- name: "Teardown: flush policy table (GRE mode)"
-  ansible.builtin.command: ip route flush table {{ vpn_rt_table }}
-  failed_when: false
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [teardown, never]
-
-- name: "Teardown: remove GRE tunnel and FOU port"
-  ansible.builtin.shell: |
-    ip link del gre-vpn 2>/dev/null || true
-    ip tunnel del gre-vpn 2>/dev/null || true
-    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
-  failed_when: false
-  changed_when: true
-  when: vpn_use_gre | default(false)
-  tags: [teardown, never]
-
-- name: "Teardown: remove XFRM interface"
-  ansible.builtin.command: ip link del {{ vpn_xfrm_iface }}
+- name: "Teardown: tear down the network"
+  ansible.builtin.command: /usr/local/sbin/vpn-network.sh down
   failed_when: false
   changed_when: true
   tags: [teardown, never]
 
-- name: "Teardown: remove configs"
+- name: "Teardown: remove units, scripts and configs"
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
+    - /etc/systemd/system/vpn-network.service
+    - /etc/systemd/system/vpn-ecmp-health.service
+    - /etc/systemd/system/vpn-ecmp-health.timer
+    - /usr/local/sbin/vpn-network.sh
+    - /usr/local/sbin/vpn-ecmp-health.sh
+    - /usr/local/sbin/vpn-perf-tuning.sh
     - /etc/swanctl/conf.d/site-vpn.conf
     - /etc/sysctl.d/99-vpn-gateway.conf
+    - /etc/strongswan.d/99-vpn.conf
   tags: [teardown, never]
 
 - name: "Teardown: reset iptables"
   ansible.builtin.shell: |
     iptables -F FORWARD
     iptables -P FORWARD ACCEPT
+    iptables -t mangle -F PREROUTING
+    iptables -t mangle -F FORWARD
+    iptables -t raw -F PREROUTING
   changed_when: true
+  failed_when: false
+  tags: [teardown, never]
+
+- name: "Teardown: reload systemd"
+  ansible.builtin.systemd:
+    daemon_reload: true
   tags: [teardown, never]

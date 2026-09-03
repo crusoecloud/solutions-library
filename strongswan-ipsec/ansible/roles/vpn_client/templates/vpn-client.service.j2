@@ -1,6 +1,6 @@
-# Managed by Ansible — {{ inventory_hostname }}
+# Managed by Ansible - {{ inventory_hostname }}
 [Unit]
-Description=VPN Client GRE-over-FOU Tunnel
+Description=VPN Client path(s) to the VPN gateway(s)
 After=network-online.target
 Wants=network-online.target
 
@@ -9,26 +9,8 @@ Type=oneshot
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=5
-ExecStart=/bin/bash -c '\
-    modprobe fou; \
-    LOCAL_IP=$(ip -4 route get 1.1.1.1 | awk "/src/{print \$$7; exit}"); \
-    ip link del gre-vpn 2>/dev/null || true; \
-    ip tunnel del gre-vpn 2>/dev/null || true; \
-    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true; \
-    ip fou add port {{ vpn_fou_port }} ipproto 47; \
-    ip link add name gre-vpn type gre \
-        local $LOCAL_IP remote {{ vpn_gateway_ip }} key {{ vpn_gre_key }} ttl 255 \
-        encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}; \
-    ip link set gre-vpn mtu {{ vpn_gre_mtu }}; \
-    ip link set gre-vpn up; \
-{% for subnet in vpn_remote_subnets | default([vpn_remote_subnet]) %}
-    ip route replace {{ subnet }} dev gre-vpn; \
-{% endfor %}
-    echo "VPN client tunnel ready ($LOCAL_IP -> {{ vpn_gateway_ip }})"'
-ExecStop=/bin/bash -c '\
-    ip link del gre-vpn 2>/dev/null || true; \
-    ip tunnel del gre-vpn 2>/dev/null || true; \
-    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true'
+ExecStart=/usr/local/sbin/vpn-client.sh up
+ExecStop=/usr/local/sbin/vpn-client.sh down
 
 [Install]
 WantedBy=multi-user.target

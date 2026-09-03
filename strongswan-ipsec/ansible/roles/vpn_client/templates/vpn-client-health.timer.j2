@@ -1,0 +1,11 @@
+# Managed by Ansible - {{ inventory_hostname }}
+[Unit]
+Description=Run VPN client gateway health every {{ vpn_client_healthcheck_interval }}
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec={{ vpn_client_healthcheck_interval }}
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

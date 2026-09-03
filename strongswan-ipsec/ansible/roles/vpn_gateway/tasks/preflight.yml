@@ -1,0 +1,411 @@
+---
+# =============================================================================
+# Preflight - runs as the FIRST play in site.yml, with any_errors_fatal.
+#
+# Nothing is configured until every check here passes on every host. This
+# replaces the old scripts/preflight.sh: same checks, but it cannot be
+# forgotten, it reads the real inventory instead of two hand-typed SSH
+# targets, and it covers the client VMs too.
+#
+# Four groups of checks:
+#   1. configuration   are the five required values actually filled in
+#   2. host readiness   can this machine run the role at all
+#   3. overlay sanity   do the client VMs fall inside vpn_client_cidr
+#   4. reachability     does UDP 500/4500 pass BOTH ways between gateways
+#
+# Check 4 is the one that saves the most time. IPsec needs both ports in both
+# directions, and a one-way block looks exactly like a broken config: IKE
+# times out and the log says nothing useful. It can only run between gateways
+# that are hosts in this inventory AND in this run - a managed cloud peer has
+# nothing to run a listener on, and a peer excluded by --limit cannot start
+# one either.
+# =============================================================================
+
+- name: "Preflight: derive roles for this host"
+  ansible.builtin.set_fact:
+    vpn_pf_is_gateway: "{{ inventory_hostname in (groups['vpn_gateways'] | default([])) }}"
+    vpn_pf_is_client: "{{ inventory_hostname in (groups['vpn_clients'] | default([])) }}"
+  tags: [preflight, always]
+
+# ---------------------------------------------------------------------------
+# 1. Configuration
+# ---------------------------------------------------------------------------
+# The "<" test catches every "<something-public-ip>" placeholder the examples
+# ship with, which is the failure a first-time deploy actually hits.
+- name: "Preflight: the values only you can know"
+  ansible.builtin.assert:
+    that:
+      - vpn_psk is defined and (vpn_psk | length) > 8 and '<' not in vpn_psk
+      # Counting addresses is not enough - the shipped example has TWO and
+      # both are placeholders.
+      - (vpn_remote_addrs | default([]) | select('search', '<') | list | length) == 0
+      - (vpn_remote_addrs | default([]) | length) > 0
+        or (vpn_remote_gw_ip is defined and '<' not in (vpn_remote_gw_ip | string))
+      - vpn_local_subnet is defined and '<' not in (vpn_local_subnet | string)
+      - vpn_remote_subnet is defined and '<' not in (vpn_remote_subnet | string)
+      - vpn_client_cidr is defined and '<' not in (vpn_client_cidr | string)
+    fail_msg: >-
+      group_vars/all.yml still has placeholders. Five values are required:
+      vpn_psk (openssl rand -base64 48, and the same string on the peer),
+      vpn_remote_addrs (the peer's public IPs - list BOTH of an Azure
+      active-active gateway's addresses to get two tunnels), vpn_local_subnet
+      (your Crusoe CIDR), vpn_remote_subnet (the peer's CIDR) and
+      vpn_client_cidr (which Crusoe IPs join the overlay).
+      If you set these in your OWN inventory's group_vars/all.yml, note that
+      this playbook's group_vars/all.yml outranks it - see the precedence note
+      at the top of that file.
+    success_msg: "Configuration is complete."
+  when: vpn_pf_is_gateway | bool
+  tags: [preflight, always]
+
+# The IKE identity a cloud peer matches on is this gateway's PUBLIC IP, and it
+# is derived from ansible_host. A DNS name there would become an FQDN
+# identity that Azure/AWS/GCP silently fail to match. Only checked when the
+# identity was not overridden by hand.
+- name: "Preflight: the gateway's ansible_host is an IP address, not a name"
+  ansible.builtin.assert:
+    that: vpn_local_outer_ip is match('^([0-9]{1,3}\.){3}[0-9]{1,3}$')
+    fail_msg: >-
+      {{ inventory_hostname }} has ansible_host={{ vpn_local_outer_ip }},
+      which is not an IPv4 address. The IKE local identity is derived from it,
+      and a managed cloud peer identifies this device by its public IP, so the
+      tunnel would never match. Put the gateway's public IP in inventory.ini,
+      or set vpn_local_id explicitly.
+  when:
+    - vpn_pf_is_gateway | bool
+    - vpn_local_id == vpn_local_outer_ip
+  tags: [preflight, always]
+
+# ---------------------------------------------------------------------------
+# 2. Host readiness
+# ---------------------------------------------------------------------------
+# First contact with the hosts. Everything above is controller-side, so a
+# fresh clone with placeholder IPs fails with the message above rather than
+# an SSH timeout.
+- name: "Preflight: gather facts"
+  ansible.builtin.setup:
+  tags: [preflight, always]
+
+- name: "Preflight: probe host readiness"
+  ansible.builtin.shell:
+    cmd: |
+      set -u
+      aes=no;  grep -qw aes  /proc/cpuinfo && aes=yes
+      vaes=no; grep -qw vaes /proc/cpuinfo && vaes=yes
+      # Modules the datapath needs. Built-in counts, so check /proc/modules
+      # and the module database, not just the loaded list.
+      miss=""
+      for m in xfrm_interface fou ip_gre esp4; do
+          modinfo "$m" >/dev/null 2>&1 && continue
+          grep -qw "$m" /proc/modules 2>/dev/null && continue
+          miss="$miss $m"
+      done
+      # strongSwan and the kernel both come from apt, so unreachable mirrors
+      # are a hard stop on a GATEWAY - and a much clearer one here than
+      # mid-install. A fresh VM often holds the apt lock for a minute
+      # (unattended-upgrades), so retry rather than misreport that as
+      # "unreachable".
+      apt=unreachable
+      n=0
+      while [ "$n" -lt 3 ]; do
+          if timeout 60 apt-get -qq update >/dev/null 2>&1; then apt=ok; break; fi
+          if fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+              apt=locked
+          else
+              apt=unreachable
+          fi
+          n=$((n + 1)); sleep 10
+      done
+      printf '{"aes":"%s","vaes":"%s","missing":"%s","apt":"%s"}\n' \
+             "$aes" "$vaes" "${miss# }" "$apt"
+  register: vpn_pf_host
+  changed_when: false
+  check_mode: false
+  tags: [preflight, always]
+
+- name: "Preflight: record host readiness"
+  ansible.builtin.set_fact:
+    vpn_pf: "{{ vpn_pf_host.stdout | trim | from_json }}"
+  tags: [preflight, always]
+
+- name: "Preflight: this machine can run the role"
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Debian'
+      - (not (vpn_pf_is_gateway | bool)) or vpn_pf.apt == 'ok'
+      - vpn_pf.missing | length == 0
+      - (ansible_facts[ansible_facts.default_ipv4.interface].mtu | int) >= 1500
+    fail_msg: >-
+      {{ inventory_hostname }} is not ready.
+      os_family={{ ansible_facts.os_family }} (this role installs with apt, so
+      Debian or Ubuntu is required).
+      apt={{ vpn_pf.apt }} (gateways install strongSwan and the kernel from
+      apt; "locked" means another apt process held the lock for the whole
+      retry window - wait for unattended-upgrades to finish and re-run).
+      missing kernel modules='{{ vpn_pf.missing }}' (the datapath needs
+      xfrm_interface, fou, ip_gre and esp4).
+      uplink {{ ansible_facts.default_ipv4.interface }}
+      mtu={{ ansible_facts[ansible_facts.default_ipv4.interface].mtu }} - below
+      1500 the GRE overlay will not fit, so lower vpn_gre_mtu and vpn_xfrm_mtu
+      to match, or use a network with a normal MTU.
+    success_msg: >-
+      {{ inventory_hostname }} ready: {{ ansible_facts.distribution }}
+      {{ ansible_facts.distribution_version }}, uplink
+      {{ ansible_facts.default_ipv4.interface }} mtu
+      {{ ansible_facts[ansible_facts.default_ipv4.interface].mtu }},
+      aes-ni={{ vpn_pf.aes }}, apt={{ vpn_pf.apt }}
+  tags: [preflight, always]
+
+# Clients install nothing, so apt trouble there is worth a line, not a stop.
+- name: "Preflight: note apt trouble on a client"
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: apt={{ vpn_pf.apt }}. The client role installs
+      no packages, so this does not block the deployment - but the host will
+      not be able to install anything else until it is resolved.
+  when:
+    - vpn_pf_is_client | bool
+    - not (vpn_pf_is_gateway | bool)
+    - vpn_pf.apt != 'ok'
+  tags: [preflight, always]
+
+# AES-NI is not strictly required, but without it GCM is roughly an order of
+# magnitude slower, which is worth saying out loud rather than discovering
+# from a throughput test.
+- name: "Preflight: warn when the CPU has no AES-NI"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ inventory_hostname }} reports no AES-NI. AES-GCM will be
+      roughly 10x slower in software. Check the instance type.
+  when: vpn_pf.aes != 'yes'
+  tags: [preflight, always]
+
+- name: "Preflight: note the crypto acceleration on offer"
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} has VAES, so the kernel play will move it to
+      {{ vpn_kernel_package }} if the running kernel predates 6.11. Measured
+      +23% per tunnel. On a host that already carries a VPN the kernel is
+      installed but the reboot is left to you (vpn_kernel_reboot_live).
+  when:
+    - vpn_pf_is_gateway | bool
+    - vpn_pf.vaes == 'yes'
+    - vpn_kernel_upgrade | bool
+  tags: [preflight, always]
+
+# ---------------------------------------------------------------------------
+# 3. Overlay sanity
+# ---------------------------------------------------------------------------
+# A client VM outside every gateway's vpn_client_cidr gets no GRE neighbour
+# entry and no mark rule, so its traffic silently never enters the tunnel.
+# Cheap to check here, very annoying to diagnose later.
+- name: "Preflight: collect every gateway's client CIDR"
+  ansible.builtin.set_fact:
+    vpn_pf_cidrs: >-
+      {{ groups['vpn_gateways'] | default([])
+         | map('extract', hostvars, 'vpn_client_cidr')
+         | select('defined') | reject('equalto', None) | list }}
+  tags: [preflight, always]
+
+- name: "Preflight: this client is inside the overlay"
+  ansible.builtin.shell:
+    cmd: |
+      python3 - <<'PYEOF'
+      import ipaddress as ipa
+      me = ipa.ip_address("{{ ansible_facts.default_ipv4.address }}")
+      nets = {{ vpn_pf_cidrs | to_json }}
+      hits = [n for n in nets if me in ipa.ip_network(n, strict=False)]
+      print("IN " + hits[0] if hits else "OUT")
+      PYEOF
+  register: vpn_pf_inside
+  changed_when: false
+  check_mode: false
+  when:
+    - vpn_pf_is_client | bool
+    - vpn_pf_cidrs | length > 0
+  tags: [preflight, always]
+
+- name: "Preflight: refuse a client outside every client CIDR"
+  ansible.builtin.assert:
+    that: vpn_pf_inside.stdout is search('^IN ')
+    fail_msg: >-
+      {{ inventory_hostname }} has private IP
+      {{ ansible_facts.default_ipv4.address }}, which is outside every
+      gateway's vpn_client_cidr ({{ vpn_pf_cidrs | join(', ') }}). It would get
+      no GRE neighbour entry and no mark rule, so its traffic would never enter
+      the tunnel - silently. Widen vpn_client_cidr, or drop this host from the
+      vpn_clients group.
+    success_msg: "{{ inventory_hostname }} {{ vpn_pf_inside.stdout | trim }}"
+  when:
+    - vpn_pf_is_client | bool
+    - vpn_pf_cidrs | length > 0
+  tags: [preflight, always]
+
+# ---------------------------------------------------------------------------
+# 4. Reachability: UDP 500 and 4500, both directions
+# ---------------------------------------------------------------------------
+# Only possible when the peer is a gateway in THIS inventory AND in THIS run.
+# A managed cloud gateway has nothing to run a listener on, and a peer left
+# out by --limit cannot start one, so both cases skip with an explanation.
+# For a cloud peer the proof is the SA establishing - the role asserts that.
+
+- name: "Preflight: find the peer among the gateways in this run"
+  vars:
+    _addrs: >-
+      {{ (vpn_remote_addrs | default([]))
+         + ([vpn_remote_gw_ip] if vpn_remote_gw_ip is defined else []) }}
+    _in_inventory: >-
+      {{ groups['vpn_gateways'] | default([])
+         | select('ne', inventory_hostname)
+         | map('extract', hostvars)
+         | selectattr('ansible_host', 'defined')
+         | selectattr('ansible_host', 'in', _addrs)
+         | map(attribute='inventory_hostname') | list }}
+  ansible.builtin.set_fact:
+    vpn_pf_peer_in_inventory: "{{ _in_inventory | first | default('') }}"
+    vpn_pf_peer: >-
+      {{ _in_inventory | select('in', ansible_play_hosts_all | default([]))
+         | list | first | default('') }}
+  when: vpn_pf_is_gateway | bool
+  tags: [preflight, always]
+
+- name: "Preflight: is a tunnel already established?"
+  ansible.builtin.shell:
+    cmd: |
+      command -v swanctl >/dev/null 2>&1 || { echo 0; exit 0; }
+      swanctl --list-sas 2>/dev/null | grep -c INSTALLED || echo 0
+  register: vpn_pf_sas
+  changed_when: false
+  check_mode: false
+  when: vpn_pf_is_gateway | bool
+  tags: [preflight, always]
+
+- name: "Preflight: install the UDP probe"
+  ansible.builtin.template:
+    src: preflight-probe.sh.j2
+    dest: /usr/local/sbin/vpn-preflight-probe.sh
+    mode: "0755"
+  when:
+    - vpn_pf_is_gateway | bool
+    - vpn_preflight_udp_test | bool
+  tags: [preflight, always]
+
+- name: "Preflight: decide whether the UDP probe is needed"
+  ansible.builtin.set_fact:
+    # Skip when the peer is not ours to instrument, when it is not in this
+    # run, or when a tunnel is already up - an established SA is stronger
+    # evidence than any probe.
+    vpn_pf_probe: >-
+      {{ (vpn_preflight_udp_test | bool)
+         and (vpn_pf_peer | default('') | length) > 0
+         and ((vpn_pf_sas.stdout | default('0') | trim | int) == 0) }}
+  when: vpn_pf_is_gateway | bool
+  tags: [preflight, always]
+
+- name: "Preflight: explain what the reachability check will do"
+  ansible.builtin.debug:
+    msg: >-
+      {% if vpn_pf_probe | bool %}
+      {{ inventory_hostname }}: probing UDP 500 and 4500 to and from
+      {{ vpn_pf_peer }}.
+      {% elif (vpn_pf_sas.stdout | default('0') | trim | int) > 0 %}
+      {{ inventory_hostname }}: {{ vpn_pf_sas.stdout | trim }} SA(s) already
+      established, so UDP 500/4500 demonstrably works. Skipping the probe.
+      {% elif (vpn_pf_peer_in_inventory | default('') | length) > 0 %}
+      {{ inventory_hostname }}: the peer {{ vpn_pf_peer_in_inventory }} is in
+      the inventory but not in this run (--limit), so no listener can be
+      started on it. Skipping the probe; run without --limit to test both
+      directions.
+      {% elif not (vpn_preflight_udp_test | bool) %}
+      {{ inventory_hostname }}: UDP probe disabled by vpn_preflight_udp_test.
+      {% else %}
+      {{ inventory_hostname }}: the peer is not a host in this inventory (a
+      managed cloud gateway), so there is nothing to run a listener on. UDP
+      500/4500 in both directions is still REQUIRED - the role asserts the SA
+      comes up, and an IKE timeout there almost always means one direction is
+      blocked.
+      {% endif %}
+  when: vpn_pf_is_gateway | bool
+  tags: [preflight, always]
+
+# These three tasks must stay in this order and in this play, and the play
+# pins strategy: linear. Ansible then finishes each task on every host before
+# starting the next, which is exactly the barrier the probe needs - every
+# listener is up before any probe is sent.
+- name: "Preflight: start UDP listeners on every gateway"
+  ansible.builtin.command:
+    cmd: /usr/local/sbin/vpn-preflight-probe.sh listen
+  register: vpn_pf_listen
+  changed_when: false
+  when: vpn_pf_probe | default(false) | bool
+  tags: [preflight, always]
+
+- name: "Preflight: send probes to the peer"
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/sbin/vpn-preflight-probe.sh send
+      {{ hostvars[vpn_pf_peer].ansible_host }}
+      vpnpf-{{ inventory_hostname }}
+  register: vpn_pf_send
+  changed_when: false
+  when: vpn_pf_probe | default(false) | bool
+  tags: [preflight, always]
+
+- name: "Preflight: check what arrived"
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/sbin/vpn-preflight-probe.sh check
+      vpnpf-{{ hostvars[vpn_pf_peer].inventory_hostname }}
+  register: vpn_pf_check
+  changed_when: false
+  when: vpn_pf_probe | default(false) | bool
+  tags: [preflight, always]
+
+- name: "Preflight: refuse to deploy through a one-way UDP block"
+  ansible.builtin.assert:
+    that:
+      - "'BLOCKED' not in vpn_pf_check.stdout"
+      - "'no-result' not in vpn_pf_check.stdout"
+    fail_msg: >-
+      UDP from {{ vpn_pf_peer }} to {{ inventory_hostname }} is BLOCKED.
+      Per-port result: {{ vpn_pf_check.stdout_lines | join('; ') }}.
+      IPsec needs UDP 500 AND 4500 open in BOTH directions between every
+      gateway public IP. Open them in the Crusoe VPC firewall (and on the peer
+      side) and re-run. Deploying now would present as an IKE timeout with
+      nothing useful in the strongSwan log.
+    success_msg: >-
+      UDP {{ vpn_pf_peer }} -> {{ inventory_hostname }}:
+      {{ vpn_pf_check.stdout_lines | join('; ') }}
+  when: vpn_pf_probe | default(false) | bool
+  tags: [preflight, always]
+
+- name: "Preflight: stop the listeners"
+  ansible.builtin.shell:
+    cmd: |
+      # Remove the state FIRST, so nothing below can prevent it.
+      rm -rf /run/vpn-preflight 2>/dev/null || true
+      # Then the listeners. Their command line is "python3 - <port>
+      # /run/vpn-preflight/<port> <secs>", so match the state path with a
+      # digit after the slash. The "[0-9]" is load-bearing: pkill -f tests
+      # every process's command line INCLUDING this shell's, and this text
+      # contains "/run/vpn-preflight" followed by a space or a quote, never a
+      # digit - so the pattern cannot match itself. A pattern that appears
+      # literally in its own command (or in a comment next to it) kills the
+      # shell running it, the task dies with rc -15, and failed_when hides it.
+      pkill -f '/run/vpn-preflight/[0-9]' 2>/dev/null || true
+      exit 0
+  changed_when: false
+  # Cleanup must never fail a deployment. The listeners also carry their own
+  # timeout, so they exit on their own even if the kill does nothing.
+  failed_when: false
+  when:
+    - vpn_pf_is_gateway | bool
+    - vpn_preflight_udp_test | bool
+  tags: [preflight, always]
+
+- name: "Preflight: passed"
+  ansible.builtin.debug:
+    msg: >-
+      Preflight passed on {{ inventory_hostname }}. Continuing to the kernel
+      and configuration plays.
+  tags: [preflight, always]

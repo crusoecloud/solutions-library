@@ -1,0 +1,58 @@
+! Managed by Ansible - {{ inventory_hostname }}
+!
+! One BGP session per IPsec tunnel. Azure REQUIRES BGP whenever several
+! on-premises devices advertise the same prefixes to one VPN gateway - static
+! routing cannot express it. Every gateway advertises the SAME prefixes, which
+! is what makes the peer ECMP back across all of them.
+!
+frr defaults traditional
+hostname {{ inventory_hostname }}
+log syslog informational
+service integrated-vtysh-config
+!
+router bgp {{ vpn_bgp_local_asn }}
+ bgp router-id {{ vpn_local_gw_ip }}
+ no bgp default ipv4-unicast
+ neighbor PEER peer-group
+ neighbor PEER remote-as {{ vpn_bgp_peer_asn }}
+ ! The peer is reached across the tunnel via a host route, not a connected
+ ! subnet, so multihop is required or the session never establishes.
+ neighbor PEER ebgp-multihop {{ vpn_bgp_ebgp_multihop }}
+ ! Must match the BgpPeerIpAddress configured on this gateway's Azure Local
+ ! Network Gateway, exactly.
+ neighbor PEER update-source {{ vpn_local_gw_ip }}
+ neighbor PEER timers {{ vpn_bgp_keepalive }} {{ vpn_bgp_holdtime }}
+{% for t in vpn_tunnels if t.bgp_peer %}
+ neighbor {{ t.bgp_peer }} peer-group PEER
+{% endfor %}
+ !
+ address-family ipv4 unicast
+{% for p in vpn_bgp_advertise %}
+  network {{ p }}
+{% endfor %}
+  maximum-paths {{ vpn_bgp_maximum_paths }}
+  neighbor PEER activate
+  neighbor PEER soft-reconfiguration inbound
+  neighbor PEER route-map PEER-IN in
+  neighbor PEER route-map PEER-OUT out
+ exit-address-family
+!
+{% for p in vpn_bgp_advertise %}
+ip prefix-list ADVERTISE seq {{ loop.index * 5 }} permit {{ p }}
+{% endfor %}
+{% for p in vpn_bgp_accept %}
+ip prefix-list ACCEPT seq {{ loop.index * 5 }} permit {{ p }} le 32
+{% endfor %}
+!
+! Filters in BOTH directions are not optional hygiene. Without an outbound
+! filter a gateway can leak a default route to the peer; without an inbound
+! one the peer can install a route that swallows this gateway's own
+! management path.
+route-map PEER-OUT permit 10
+ match ip address prefix-list ADVERTISE
+!
+route-map PEER-IN permit 10
+ match ip address prefix-list ACCEPT
+!
+line vty
+!

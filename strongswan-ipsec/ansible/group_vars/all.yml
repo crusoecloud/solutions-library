@@ -1,0 +1,124 @@
+---
+# =============================================================================
+# THE ONLY FILE YOU EDIT (besides inventory.ini)
+#
+# Five values. Everything else in this solution is already set correctly for a
+# managed cloud VPN peer: GCMAES256, one tunnel per peer address, GRE-over-FOU
+# to your VMs, a stateless datapath, every measured host tweak, and a
+# VAES-capable kernel installed and booted if the running one predates 6.11.
+#
+# Then:  ansible-playbook -i inventory.ini site.yml
+#
+# ---------------------------------------------------------------------------
+# IF YOU KEEP YOUR INVENTORY SOMEWHERE ELSE, READ THIS
+# ---------------------------------------------------------------------------
+# This file sits next to site.yml, and Ansible ranks a PLAYBOOK-adjacent
+# group_vars/all ABOVE an INVENTORY-adjacent one. So if you build your own
+# inventory tree with its own group_vars/all.yml, the placeholders below win
+# and the deployment refuses to start.
+#
+# Three ways out, any is fine:
+#   * edit THIS file (the intended flow - nothing else to think about)
+#   * put your values in an inventory group_vars/<group>.yml instead of
+#     all.yml; a group file outranks a playbook-adjacent all.yml
+#   * pass them last:  ansible-playbook ... -e @my-vars.yml
+# =============================================================================
+
+# --- 1. The shared secret ------------------------------------------------
+# Generate:  openssl rand -base64 48
+# This exact string also goes into the Azure Connection's "Shared key".
+#
+# ENCRYPT IT BEFORE COMMITTING:
+#   ansible-vault encrypt_string --stdin-name vpn_psk
+# and paste the result here in place of the plain string.
+vpn_psk: "<pre-shared-key>"
+
+# --- 2. The peer's public IPs -------------------------------------------
+# LIST BOTH addresses of an Azure gateway in active-active mode. You get one
+# tunnel per address automatically, and two tunnels is the most Azure allows
+# a single on-premises device.
+#
+# Azure portal: Virtual Network Gateway > Properties > the two public IPs.
+# Or:  az network vnet-gateway show -g <rg> -n <gw> \
+#        --query "bgpSettings.bgpPeeringAddresses[].tunnelIpAddresses" -o tsv
+#
+# One address is fine too - you simply get one tunnel.
+vpn_remote_addrs:
+  - "<peer-public-ip-1>"
+  - "<peer-public-ip-2>"
+
+# --- 3. Your Crusoe subnet ----------------------------------------------
+# The CIDR your Crusoe VMs live in. Announced to the peer as the local
+# traffic selector.
+vpn_local_subnet: "<your-crusoe-subnet-cidr>"
+
+# --- 4. The peer's subnet -----------------------------------------------
+# The CIDR on the far side - your Azure VNet address space. Your client VMs
+# get a route to this through the VPN.
+#
+# For a full tunnel (send ALL internet traffic through the peer) use
+# "0.0.0.0/0" here and read the "Full Tunnel Mode" section of the README
+# first: the peer needs a SNAT rule and internet access.
+vpn_remote_subnet: "<peer-subnet-cidr>"
+
+# --- 5. Which Crusoe IPs join the overlay -------------------------------
+# Every client VM listed in inventory.ini must fall inside this CIDR. It sizes
+# the GRE neighbour table, the mark rules and the firewall.
+#
+# Usually identical to vpn_local_subnet. Keep it no larger than a /20: the
+# overlay pre-populates one permanent neighbour entry per address, and the
+# role refuses a CIDR big enough to overflow the kernel's neighbour table.
+vpn_client_cidr: "<your-crusoe-subnet-cidr>"
+
+
+# =============================================================================
+# Below here: only if the defaults do not suit you.
+# =============================================================================
+
+# --- More than one gateway VM -------------------------------------------
+# Add gateway VMs to inventory.ini and they are used automatically - clients
+# ECMP across every host in the vpn_gateways group with no list to maintain.
+#
+# AZURE REQUIRES BGP FOR THIS. Azure will not spread return traffic across
+# several on-premises devices without it: it wants one Local Network Gateway
+# per device, each with a unique public IP, ASN and BGP peer address.
+# Two Crusoe sites you own need no BGP at all - that was validated live with
+# up to five gateways per side using static routes.
+#
+# NOT VALIDATED against a real Azure peer. See the README's limitations.
+# vpn_bgp_enabled: true
+# vpn_bgp_peer_asn: 65515                 # Azure's default
+# vpn_bgp_advertise: ["<your-crusoe-subnet-cidr>"]   # same on every gateway
+# vpn_bgp_accept: ["<peer-subnet-cidr>"]
+# (vpn_bgp_local_asn and vpn_bgp_peer_addrs are per gateway - see host_vars)
+
+# --- Dropping GRE ---------------------------------------------------------
+# "route" removes the GRE overlay: no GRO constraint, and no per-host
+# neighbour entry, so client CIDRs larger than a /20 become possible.
+#
+# PREREQUISITE NO PLAYBOOK CAN MEET: Crusoe NetEng must DISABLE PORT SECURITY
+# on every gateway VM's vNIC. Without it the decrypted return traffic is
+# dropped by the fabric and the tunnel looks healthy while nothing arrives.
+# That manual step is why gre_fou is the default.
+# vpn_client_transport: "route"
+
+# --- Kernel upgrade -------------------------------------------------------
+# ON by default. It installs linux-image-generic-6.11 and reboots, but only
+# when the CPU advertises "vaes" AND the running kernel is not already using
+# a VAES AES-GCM driver. Worth ~23% per tunnel (measured 4.67 -> 5.75 Gbps).
+# On a first deploy it fires once, before any VPN config exists. On a host that
+# already carries tunnels it installs the kernel and waits for you to reboot -
+# it never drops live traffic on its own, and never reboots a host that is
+# already running the requested kernel.
+#
+# vpn_kernel_upgrade: false      # skip it entirely
+# vpn_kernel_reboot: false       # install it, reboot yourself later
+# vpn_kernel_reboot_live: true   # allow the reboot on a gateway with live tunnels
+# vpn_kernel_package: "linux-image-generic-6.14"
+#
+# Do NOT point this at 7.0. Measured on the same hardware it kept the fast
+# crypto and was still 2.4x slower end to end.
+
+# --- Connection settings --------------------------------------------------
+# Uncomment and set if your SSH user or key differ from the inventory's.
+# ansible_user: ubuntu

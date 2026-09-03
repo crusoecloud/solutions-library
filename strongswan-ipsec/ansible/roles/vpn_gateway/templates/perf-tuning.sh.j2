@@ -1,0 +1,171 @@
+#!/bin/bash
+# Managed by Ansible - {{ inventory_hostname }}
+#
+# Host tuning that cannot live in sysctl.d: NIC queues, offloads, RPS/RFS,
+# IRQ affinity, CPU governor. Idempotent; safe to re-run.
+#
+# None of this raises the Azure-side ceiling. It stops the Crusoe side from
+# falling short of it. Every value here was measured; see the role defaults
+# for the numbers and AZURE-10G-GUIDE.md for the deployment recipe.
+set -u
+
+UPLINK="{{ vpn_primary_iface }}"
+NCPU=$(nproc)
+{% if vpn_rx_queues %}
+WANT_QUEUES={{ vpn_rx_queues }}
+{% else %}
+WANT_QUEUES="$NCPU"
+{% endif %}
+
+log() { echo "perf-tuning: $*"; }
+
+# ---------- combined queues ----------
+# Queue count is not the independent variable - FLOW count is. RSS hashes
+# flows into queues, so extra queues only help when there are extra flows.
+# Raised anyway, because it costs nothing and the clients do have many flows.
+MAXQ=$(ethtool -l "$UPLINK" 2>/dev/null | awk '/^Combined:/{print $2; exit}')
+if [ -n "${MAXQ:-}" ] && [ "$MAXQ" -gt 0 ] 2>/dev/null; then
+    [ "$WANT_QUEUES" -gt "$MAXQ" ] && WANT_QUEUES="$MAXQ"
+    ethtool -L "$UPLINK" combined "$WANT_QUEUES" 2>/dev/null \
+        && log "combined queues -> $WANT_QUEUES (NIC max $MAXQ)" \
+        || log "could not set combined queues (often fixed by the hypervisor)"
+else
+    log "NIC does not report combined queues - skipping"
+fi
+
+{% if vpn_nic_rings | int > 0 %}
+# ---------- ring sizes ----------
+# Explicitly requested. Measured NEGATIVE on Crusoe mlx5 (rx/tx 8192 gave
+# 4.24 Gbps against a 4.67 Gbps default-ring baseline, -9.1%): a deeper ring
+# widens reordering, which feeds ESP anti-replay drops. Measure before
+# keeping this.
+ethtool -G "$UPLINK" rx {{ vpn_nic_rings }} tx {{ vpn_nic_rings }} 2>/dev/null \
+    && log "rings -> {{ vpn_nic_rings }} rx/tx (measured negative here - verify)" \
+    || log "could not set ring sizes"
+{% endif %}
+
+# ---------- offloads ----------
+# ESP GSO/GRO lets the stack hand large segments to the crypto layer instead
+# of paying per-packet cost. Saves CPU; does not change the wire packet rate.
+ethtool -K "$UPLINK" {{ vpn_nic_offloads }} 2>/dev/null \
+    && log "offloads: {{ vpn_nic_offloads }}" || log "some offloads unsupported"
+ethtool -k "$UPLINK" 2>/dev/null | grep -i esp | sed 's/^/perf-tuning: esp-offload: /' || true
+{% if vpn_adaptive_rx | bool and vpn_rx_usecs | int == 0 %}
+# Skipped when vpn_rx_usecs is set: that asks for FIXED coalescing instead.
+ethtool -C "$UPLINK" adaptive-rx on 2>/dev/null && log "adaptive-rx on" || true
+{% endif %}
+
+{% if vpn_enable_rps | bool %}
+# ---------- RPS / RFS ----------
+# Re-queues packets to other CPUs early in netif_receive_skb, BEFORE the XFRM
+# input path - so ESP decrypt spreads across cores even on a single RX queue.
+# This is the fallback that works regardless of how the hypervisor hashes.
+MASK=$(python3 -c "print(format((1 << $NCPU) - 1, 'x'))")
+for q in /sys/class/net/"$UPLINK"/queues/rx-*; do
+    [ -e "$q/rps_cpus" ] && echo "$MASK" > "$q/rps_cpus" 2>/dev/null || true
+{% if not vpn_disable_rfs | bool %}
+    # Only when RFS is explicitly wanted; it reorders a single SA's packets.
+    [ -e "$q/rps_flow_cnt" ] && echo 4096 > "$q/rps_flow_cnt" 2>/dev/null || true
+{% endif %}
+done
+log "RPS enabled across $NCPU CPUs"
+{% endif %}
+
+{% if vpn_disable_rfs | bool %}
+# ---------- disable RFS ----------
+# RFS steers a packet to the CPU where the consuming socket last ran. For a
+# single IPsec tunnel that hands the SA's packets between CPUs, so they reach
+# xfrm_input out of order and the anti-replay window rejects the stragglers.
+# The tunnel stays up and ping stays clean while TCP retransmits.
+#
+# Measured, one tunnel, 16 flows, 54 ms RTT:
+#   rps_flow_cnt 4096  ->  4.67 Gbps, 18,624 retransmits
+#   rps_flow_cnt 0     ->  4.86 Gbps,    106 retransmits
+n=0
+for q in /sys/class/net/"$UPLINK"/queues/rx-*; do
+    [ -e "$q/rps_flow_cnt" ] || continue
+    echo 0 > "$q/rps_flow_cnt" 2>/dev/null && n=$(( n + 1 )) || true
+done
+log "RFS disabled on $n RX queues (rps_flow_cnt=0)"
+# Global flow table too, so nothing re-populates it.
+sysctl -qw net.core.rps_sock_flow_entries=0 2>/dev/null || true
+{% endif %}
+
+{% if vpn_rx_usecs | int > 0 %}
+# ---------- fixed interrupt coalescing ----------
+# Batches more packets per NAPI poll. Measured +2.6% at 64 us; 128 us
+# measured -2.0%, so 64 is the useful setting and higher is not.
+ethtool -C "$UPLINK" adaptive-rx off rx-usecs {{ vpn_rx_usecs }} rx-frames 128 \
+    2>/dev/null && log "coalescing -> fixed, rx-usecs {{ vpn_rx_usecs }}" \
+    || log "could not set fixed coalescing"
+{% endif %}
+
+{% if vpn_gro_normal_batch | int > 0 %}
+# ---------- GRO batch ----------
+sysctl -qw net.core.gro_normal_batch={{ vpn_gro_normal_batch }} 2>/dev/null \
+    && log "gro_normal_batch -> {{ vpn_gro_normal_batch }}" || true
+{% endif %}
+
+{% if vpn_irq_affinity | bool %}
+# ---------- IRQ affinity + XPS ----------
+# Keeps a flow's receive and transmit work on one core. irqbalance moving NIC
+# IRQs around costs cache locality, so it is stopped rather than fought.
+systemctl stop irqbalance 2>/dev/null || true
+systemctl disable irqbalance 2>/dev/null || true
+i=0
+for irq in $(grep -i "$UPLINK" /proc/interrupts | awk -F: '{print $1}' | tr -d ' '); do
+    cpu=$(( i % NCPU ))
+    echo "$cpu" > "/proc/irq/$irq/smp_affinity_list" 2>/dev/null || true
+    i=$(( i + 1 ))
+done
+log "pinned $i NIC IRQs across $NCPU CPUs"
+i=0
+for q in /sys/class/net/"$UPLINK"/queues/tx-*; do
+    [ -e "$q/xps_cpus" ] || continue
+    printf '%x\n' $(( 1 << (i % NCPU) )) > "$q/xps_cpus" 2>/dev/null || true
+    i=$(( i + 1 ))
+done
+log "set xps_cpus on $i TX queues"
+{% endif %}
+
+{% if vpn_cpu_governor %}
+# ---------- CPU governor ----------
+# Crypto-heavy softirq work is exactly what frequency scaling handles badly.
+if command -v cpupower >/dev/null 2>&1; then
+    cpupower frequency-set -g {{ vpn_cpu_governor }} >/dev/null 2>&1 \
+        && log "governor -> {{ vpn_cpu_governor }}" || true
+else
+    for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        [ -e "$g" ] && echo {{ vpn_cpu_governor }} > "$g" 2>/dev/null || true
+    done
+fi
+{% endif %}
+
+# ---------- report: which AES-GCM implementation is actually bound ----------
+# The kernel binds the highest-priority driver registered for
+# rfc4106(gcm(aes)). Before 6.11 that is only the 2010-era AES-NI code.
+# 6.11+ adds a VAES/AVX-512 one worth ~+23% per tunnel on Zen 4/5.
+grep -qw aes /proc/cpuinfo \
+    && log "CPU reports AES-NI" \
+    || log "WARNING: no AES-NI - GCM will be an order of magnitude slower"
+
+# modprobe so the drivers are registered before we look.
+modprobe aesni_intel 2>/dev/null || true
+# /proc/crypto also lists internal instances ("__rfc4106(...)") and wrappers
+# ("seqiv(rfc4106(...))"). Anchoring the name picks the entry consumers bind.
+DRV=$(sed -n "/^name .*: rfc4106(gcm(aes))\$/,+1p" /proc/crypto 2>/dev/null \
+      | sed -n "s/^driver *: *//p" | head -1)
+if [ -n "${DRV:-}" ]; then
+    log "kernel AES-GCM driver: $DRV"
+    case "$DRV" in
+        *vaes*) log "  VAES/AVX-512 in use - this is the fast path" ;;
+        *)      log "  SLOW PATH: no VAES driver. Kernel $(uname -r) predates it."
+                log "  Measured +23% per tunnel on 6.11 vs 6.8. See AZURE-10G-GUIDE.md." ;;
+    esac
+    if grep -qw vaes /proc/cpuinfo && [ "${DRV#*vaes}" = "$DRV" ]; then
+        log "  NOTE: this CPU HAS vaes but the kernel is not using it."
+    fi
+else
+    log "note: rfc4106(gcm(aes)) not registered yet (bound on first SA)"
+fi
+exit 0

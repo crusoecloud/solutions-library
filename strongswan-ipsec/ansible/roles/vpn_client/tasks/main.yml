@@ -1,71 +1,188 @@
 ---
 # =============================================================================
-# vpn_client role — GRE-over-FOU tunnel to the local Crusoe gateway
+# vpn_client role
+#
+# Points a Crusoe VM at one or more VPN gateways. Traffic to the remote CIDRs
+# is ECMP'd across every gateway, hashed per flow by the kernel.
+#
+# Nothing in this path is stateful - no NAT, no conntrack - which is what lets
+# a reply come back through a DIFFERENT gateway than the request left through.
+# See README.md, "Rules that come with ECMP".
 # =============================================================================
 
-- name: Resolve gateway private IP from inventory
-  ansible.builtin.set_fact:
-    vpn_gateway_ip: "{{ hostvars[vpn_gateway_host]['vpn_local_gw_ip'] | default(hostvars[vpn_gateway_host]['ansible_default_ipv4']['address']) }}"
-  tags: [setup, teardown]
+# ---------------------------------------------------------------------------
+# Resolve gateways and transport
+# ---------------------------------------------------------------------------
 
-- name: Detect local private IP
+# vpn_gateway_host (singular) is the old spelling and is treated as a
+# one-element list, so existing group_vars keep working unchanged.
+- name: Resolve the gateway list
+  ansible.builtin.set_fact:
+    vpn_gateway_host_list: >-
+      {{ vpn_gateway_hosts if (vpn_gateway_hosts | length) > 0
+         else ([vpn_gateway_host] if (vpn_gateway_host | default('')) else []) }}
+  tags: [setup, teardown, verify]
+
+- name: Require at least one gateway
+  ansible.builtin.assert:
+    that: (vpn_gateway_host_list | length) > 0
+    fail_msg: >-
+      Set vpn_gateway_hosts (a list of gateway inventory hostnames) or the
+      older vpn_gateway_host (a single hostname).
+  tags: [setup, verify]
+
+- name: Detect the local private IP
   ansible.builtin.set_fact:
     vpn_local_ip: "{{ ansible_default_ipv4.address }}"
+  tags: [setup, verify]
+
+# Transport must match the gateway, and a mismatch breaks the datapath
+# silently, so it is inherited from the gateway unless overridden here.
+- name: Resolve the transport
+  vars:
+    _gw: "{{ vpn_gateway_host_list[0] }}"
+    _from_gateway: >-
+      {{ hostvars[_gw].vpn_transport
+         | default(hostvars[_gw].vpn_client_transport | default('', true), true) }}
+  ansible.builtin.set_fact:
+    vpn_transport: >-
+      {{ vpn_client_transport if vpn_client_transport
+         else (_from_gateway if _from_gateway
+               else ('gre_fou'
+                     if (hostvars[_gw].vpn_use_gre | default(true) | bool)
+                     else 'route')) }}
+  tags: [setup, teardown, verify]
+
+- name: Resolve the remote CIDRs
+  ansible.builtin.set_fact:
+    vpn_client_remote_cidrs: >-
+      {{ vpn_remote_subnets | default([vpn_remote_subnet]) }}
+    vpn_client_fou_ports: >-
+      {{ range(vpn_fou_port | int, (vpn_fou_port | int) + (vpn_fou_port_count | int)) | list }}
+  tags: [setup, teardown, verify]
+
+- name: Build the client path list
+  ansible.builtin.set_fact:
+    vpn_client_paths: "{{ lookup('template', 'client-paths.json.j2') | from_json }}"
+  tags: [setup, teardown, verify]
+
+- name: Validate configuration
+  ansible.builtin.assert:
+    that:
+      - vpn_transport in ['gre_fou', 'route']
+      - vpn_client_remote_cidrs | length > 0
+      - vpn_client_paths | rejectattr('gateway_ip') | list | length == 0
+    fail_msg: >-
+      Could not resolve every gateway's private IP. The client role reads it
+      from each gateway's vpn_local_gw_ip, which the vpn_gateway role sets as
+      a fact - so running the gateways play first (as site.yml does) is
+      enough. If you want to configure clients on their own, for example with
+      "--limit vpn_clients", set vpn_local_gw_ip explicitly on each gateway
+      host in the inventory or host_vars:
+      "gw-1  ansible_host=<public-ip>  vpn_local_gw_ip=<private-ip>".
+      Also check vpn_client_transport is gre_fou or route and that
+      vpn_remote_subnets is set.
+  tags: [setup, verify]
+
+# ---------------------------------------------------------------------------
+# Kernel parameters
+# ---------------------------------------------------------------------------
+
+- name: Load the BBR module
+  community.general.modprobe:
+    name: tcp_bbr
+    state: present
+  failed_when: false
+  when: vpn_client_tcp_tuning | bool and vpn_congestion_control == 'bbr'
   tags: [setup]
 
-# ---------- FOU + GRE tunnel ----------
+- name: Configure sysctl
+  ansible.builtin.template:
+    src: sysctl-vpn-client.conf.j2
+    dest: /etc/sysctl.d/99-vpn-client.conf
+    mode: "0644"
+  tags: [setup]
 
-- name: Load FOU kernel module
+# See the note in the vpn_gateway role: "sysctl --system" applies
+# /etc/sysctl.conf last, so a drop-in can be silently overridden.
+- name: Apply sysctl now
+  ansible.builtin.shell: |
+    sysctl --system >/dev/null
+    sysctl -p /etc/sysctl.d/99-vpn-client.conf >/dev/null
+  changed_when: false
+  tags: [setup]
+
+- name: Read back the sysctls that ECMP depends on
+  ansible.builtin.shell: |
+    echo "hash=$(sysctl -n net.ipv4.fib_multipath_hash_policy)"
+    echo "rpf=$(sysctl -n net.ipv4.conf.all.rp_filter)"
+    echo "cc=$(sysctl -n net.ipv4.tcp_congestion_control)"
+  register: vpn_client_sysctl_live
+  changed_when: false
+  tags: [setup, verify]
+
+- name: Assert the critical sysctls actually took effect
+  ansible.builtin.assert:
+    that:
+      - "'hash=' ~ (vpn_multipath_hash_policy | string) in vpn_client_sysctl_live.stdout"
+      - "'rpf=' ~ (vpn_rp_filter | string) in vpn_client_sysctl_live.stdout"
+    fail_msg: >-
+      A sysctl this design depends on did not take effect. Live values:
+      {{ vpn_client_sysctl_live.stdout_lines }}. Something applied later is
+      overriding /etc/sysctl.d/99-vpn-client.conf - check /etc/sysctl.conf,
+      which "sysctl --system" applies last.
+  tags: [setup, verify]
+
+- name: "WARNING: congestion control is not what was requested"
+  ansible.builtin.debug:
+    msg: >-
+      Requested {{ vpn_congestion_control }} but the live value is
+      {{ vpn_client_sysctl_live.stdout_lines | select('search', '^cc=') | first | default('?') }}.
+      Over a long internet path this costs real throughput - CUBIC gives up its
+      window on loss and does not recover it.
+  when:
+    - vpn_client_tcp_tuning | bool
+    - "'cc=' ~ vpn_congestion_control not in vpn_client_sysctl_live.stdout"
+  tags: [setup, verify]
+
+# ---------------------------------------------------------------------------
+# Paths and routes - one rendered script, used by the play AND by systemd
+# ---------------------------------------------------------------------------
+
+- name: Load the FOU kernel module
   community.general.modprobe:
     name: fou
     state: present
+  when: vpn_transport == 'gre_fou'
   tags: [setup]
 
-- name: Remove stale tunnel and FOU port
-  ansible.builtin.shell: |
-    ip link del gre-vpn 2>/dev/null || true
-    ip tunnel del gre-vpn 2>/dev/null || true
-    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
+- name: Install NIC tuning script
+  ansible.builtin.template:
+    src: client-perf-tuning.sh.j2
+    dest: /usr/local/sbin/vpn-client-perf-tuning.sh
+    mode: "0755"
+  when: vpn_client_perf_tuning | bool
+  tags: [setup]
+
+- name: Run NIC tuning
+  ansible.builtin.command: /usr/local/sbin/vpn-client-perf-tuning.sh
+  register: vpn_client_tuning
   changed_when: true
-  failed_when: false
+  when: vpn_client_perf_tuning | bool
   tags: [setup]
 
-- name: Create FOU receive endpoint
-  ansible.builtin.command: ip fou add port {{ vpn_fou_port }} ipproto 47
-  changed_when: true
+- name: Install vpn-client script
+  ansible.builtin.template:
+    src: vpn-client.sh.j2
+    dest: /usr/local/sbin/vpn-client.sh
+    mode: "0755"
   tags: [setup]
 
-- name: Create GRE-over-FOU tunnel to gateway
-  ansible.builtin.shell: |
-    ip link add name gre-vpn type gre \
-        local {{ vpn_local_ip }} remote {{ vpn_gateway_ip }} key {{ vpn_gre_key }} ttl 255 \
-        encap fou encap-sport {{ vpn_fou_port }} encap-dport {{ vpn_fou_port }}
-    ip link set gre-vpn mtu {{ vpn_gre_mtu }}
-    ip link set gre-vpn up
-  changed_when: true
-  tags: [setup]
-
-# ---------- Routing ----------
-
-- name: Route remote subnet through FOU tunnel
-  ansible.builtin.command: ip route replace {{ item }} dev gre-vpn
-  loop: "{{ vpn_remote_subnets | default([vpn_remote_subnet]) }}"
+- name: Bring up the path(s) and ECMP route(s)
+  ansible.builtin.command: /usr/local/sbin/vpn-client.sh up
+  register: vpn_client_up
   changed_when: true
   tags: [setup]
-
-# ---------- Firewall ----------
-
-- name: Allow FOU from gateway
-  ansible.builtin.iptables:
-    chain: INPUT
-    protocol: udp
-    destination_port: "{{ vpn_fou_port }}"
-    source: "{{ vpn_gateway_ip }}"
-    jump: ACCEPT
-  failed_when: false
-  tags: [setup]
-
-# ---------- Persistence ----------
 
 - name: Write vpn-client systemd unit
   ansible.builtin.template:
@@ -81,42 +198,149 @@
     daemon_reload: true
   tags: [setup]
 
-# ---------- Verify ----------
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
 
-- name: Verify FOU tunnel is up
-  ansible.builtin.shell: ip link show gre-vpn | grep -qE 'UP|UNKNOWN'
+- name: Install gateway health script
+  ansible.builtin.template:
+    src: vpn-client-health.sh.j2
+    dest: /usr/local/sbin/vpn-client-health.sh
+    mode: "0755"
+  when: vpn_client_healthcheck | bool
+  tags: [setup]
+
+- name: Write gateway health unit and timer
+  ansible.builtin.template:
+    src: "vpn-client-health.{{ item }}.j2"
+    dest: "/etc/systemd/system/vpn-client-health.{{ item }}"
+    mode: "0644"
+  loop: [service, timer]
+  when: vpn_client_healthcheck | bool
+  tags: [setup]
+
+- name: Enable gateway health timer
+  ansible.builtin.systemd:
+    name: vpn-client-health.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: vpn_client_healthcheck | bool
+  tags: [setup]
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+- name: Verify every GRE device is up
+  ansible.builtin.shell: ip link show {{ item.dev }} | grep -qE 'UP|UNKNOWN'
+  loop: "{{ vpn_client_paths }}"
+  loop_control:
+    label: "{{ item.dev }}"
   changed_when: false
+  when: vpn_transport == 'gre_fou'
+  tags: [setup, verify]
+
+- name: Count nexthops on the first remote route
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    ip route show {{ vpn_client_remote_cidrs[0] }} | grep -c nexthop || true
+  args:
+    executable: /bin/bash
+  register: vpn_client_nexthops
+  changed_when: false
+  tags: [setup, verify]
+
+- name: Verify GRO is off on the uplink (GRE-over-FOU correctness)
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    ethtool -k $(ip -o -4 route show default | awk '{print $5; exit}')
+    | awk '/generic-receive-offload/{print $2}'
+  args:
+    executable: /bin/bash
+  register: vpn_client_gro_state
+  changed_when: false
+  failed_when: false
+  when: vpn_transport == 'gre_fou' and (vpn_fou_disable_gro | bool)
+  tags: [setup, verify]
+
+- name: "WARNING: GRO is still on and will destroy TCP"
+  ansible.builtin.debug:
+    msg: >-
+      GRO is still ON for this client's uplink. Inbound FOU packets get
+      coalesced and dropped; UDP and ICMP keep working while TCP collapses
+      (measured 3.65 Mbps vs 4590 Mbps). See the README troubleshooting table.
+  when:
+    - vpn_transport == 'gre_fou'
+    - vpn_fou_disable_gro | bool
+    - (vpn_client_gro_state.stdout | default('') | trim) == 'on'
+  tags: [setup, verify]
+
+- name: Verify the ECMP hash policy took
+  ansible.builtin.command: sysctl -n net.ipv4.fib_multipath_hash_policy
+  register: vpn_client_hash_policy
+  changed_when: false
+  tags: [setup, verify]
+
+- name: "WARNING: ECMP hash policy is L3-only"
+  ansible.builtin.debug:
+    msg: >-
+      net.ipv4.fib_multipath_hash_policy is
+      {{ vpn_client_hash_policy.stdout | trim }}, not 1. Every flow from this
+      client will take ONE gateway and the others will sit idle. The setup will
+      look correct and perform like a single gateway.
+  when:
+    - (vpn_client_paths | length) > 1
+    - vpn_client_hash_policy.stdout | trim != '1'
   tags: [setup, verify]
 
 - name: Report status
   ansible.builtin.debug:
     msg: >-
-      Client {{ inventory_hostname }} ({{ vpn_local_ip }}) ready:
-      FOU tunnel to gateway {{ vpn_gateway_ip }},
-      remote subnets {{ vpn_remote_subnets | default([vpn_remote_subnet]) | join(', ') }} via gre-vpn
+      Client {{ inventory_hostname }} ({{ vpn_local_ip }}):
+      transport={{ vpn_transport }}
+      | {{ vpn_client_paths | length }} path(s) to
+      {{ vpn_client_paths | map(attribute='gateway_ip') | unique | join(', ') }}
+      | ECMP nexthops installed={{ vpn_client_nexthops.stdout | trim }}
+      | remote={{ vpn_client_remote_cidrs | join(', ') }}
+      | tcp_tuning={{ vpn_client_tcp_tuning | bool }} ({{ vpn_congestion_control }})
+      | health={{ vpn_client_healthcheck | bool }}
   tags: [setup, verify]
 
-# ---------- Teardown ----------
+# ---------------------------------------------------------------------------
+# Teardown
+# ---------------------------------------------------------------------------
 
-- name: "Teardown: stop and disable vpn-client service"
+- name: "Teardown: stop services"
   ansible.builtin.systemd:
-    name: vpn-client
+    name: "{{ item }}"
     state: stopped
     enabled: false
+  loop: [vpn-client-health.timer, vpn-client]
   failed_when: false
   tags: [teardown, never]
 
-- name: "Teardown: remove systemd unit"
-  ansible.builtin.file:
-    path: /etc/systemd/system/vpn-client.service
-    state: absent
-  tags: [teardown, never]
-
-- name: "Teardown: remove tunnel and FOU"
-  ansible.builtin.shell: |
-    ip link del gre-vpn 2>/dev/null || true
-    ip tunnel del gre-vpn 2>/dev/null || true
-    ip fou del port {{ vpn_fou_port }} 2>/dev/null || true
+- name: "Teardown: tear down the paths"
+  ansible.builtin.command: /usr/local/sbin/vpn-client.sh down
   failed_when: false
   changed_when: true
+  tags: [teardown, never]
+
+- name: "Teardown: remove units, scripts and configs"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/vpn-client.service
+    - /etc/systemd/system/vpn-client-health.service
+    - /etc/systemd/system/vpn-client-health.timer
+    - /usr/local/sbin/vpn-client.sh
+    - /usr/local/sbin/vpn-client-health.sh
+    - /usr/local/sbin/vpn-client-perf-tuning.sh
+    - /etc/sysctl.d/99-vpn-client.conf
+  tags: [teardown, never]
+
+- name: "Teardown: reload systemd"
+  ansible.builtin.systemd:
+    daemon_reload: true
   tags: [teardown, never]
