@@ -178,7 +178,7 @@ helm install grafana grafana/grafana \
   --values manifests/grafana-values.yaml
 ```
 
-> **Two things to expect from this command.** Helm prints `this chart is deprecated` — the upstream `grafana/grafana` chart is now marked deprecated, but it still installs and is what this solution is built and tested against. The `--version 10.5.15` pin resolves to **Grafana 12.3.1**; pinning matters because Grafana's folder-provisioning behaviour (documented below) differs between 12.3.x and later releases, so an unpinned install can silently change how dashboards are foldered.
+> **Helm deprecation + version pinning.** Helm prints `this chart is deprecated` — the upstream `grafana/grafana` chart is flagged deprecated upstream, but it still installs and is what this solution is built against. The `--version 10.5.15` pin resolves to **Grafana 12.3.1**; the Grafana docs claim nested-folder provisioning for ≥12.4 but it's untested here, so keep the pin.
 
 ### Verify locally before exposing anything
 
@@ -208,7 +208,7 @@ What `grafana-values.yaml` configures:
 | `resources.limits.memory` | `2Gi` | Rendering many dashboards against a multi-thousand-series cluster OOMs at the chart default (512Mi) |
 | `extraContainers.crusoe-public-tls-proxy` | Caddy on `:8443` | Terminates TLS for the LoadBalancer using the `grafana-public-tls` Secret from Step 4.5. The Secret is mounted `optional: true` and the sidecar waits for the cert, so Grafana installs and runs fine before Step 4.5 — when the Secret is created, the sidecar starts serving TLS on its own, with no pod restart |
 
-> **Upgrading an existing grafana-cmk install?** The folder-provisioning keys (`folderAnnotation`, `foldersFromFilesStructure`) were added after the initial release, and the repo's `dashboards/` directory is now a folder tree (`dashboards/Crusoe/…`, `dashboards/Crusoe/Inference/…`). Apply with `helm upgrade grafana grafana/grafana --namespace monitoring --version 10.5.15 --values manifests/grafana-values.yaml`, then re-apply the dashboards with `kubectl apply -k .`, and remember to **delete any legacy-named dashboard ConfigMaps** (e.g. `crusoe-dashboard-gpu-vendor-neutral`) — two ConfigMaps whose dashboards share the same dashboard UID make the Grafana provisioner log `the same UID is used more than once` and block ALL dashboard provisioning writes. Dashboard UIDs are unchanged by this upgrade, so dashboard links keep working; the provisioned folders (`Crusoe`, `Inference`) are recreated with new UIDs and empty old folders left from the original install can be deleted from the Grafana UI afterwards.
+> **Upgrading an existing install?** Re-run Helm with `--version 10.5.15 --values manifests/grafana-values.yaml`, re-apply dashboards with `kubectl apply -k .`, and **delete any legacy-named dashboard ConfigMaps** (e.g. `crusoe-dashboard-gpu-vendor-neutral` or the old combined `crusoe-dashboards`) — duplicate UIDs block all further dashboard writes. Dashboard UIDs are unchanged, so external links keep working.
 
 Wait for the pod to be ready:
 
@@ -477,9 +477,45 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 
 > **Inference dashboard caveats:**
 >
-> 1. **No per-user identity.** vLLM `/metrics` carries no user or API-key label — the endpoint table is the closest available "who is using the server" proxy. True per-user accounting needs an API gateway in front of vLLM (e.g. KServe/llm-d with auth), not this dashboard.
-> 2. **Pods must opt in to scraping.** A vLLM pod shows up only if it carries the label `kserve.io/component=workload` (automatic on KServe LLMInferenceService workloads) or BOTH pod annotations `prometheus.io/scrape: "true"` and `prometheus.io/port: "8000"` (the hand-rolled recipes in crusoe-kserve-example carry them). Scaled-to-zero replicas simply disappear from the panels.
-> 3. **Local retention only.** `prometheus-vllm` is single-replica with 7-day retention and no remote-write — good for SLO watching, not for capacity planning. Export long-term data elsewhere if you need it.
+> 1. **No per-user identity.** vLLM `/metrics` carries no user or API-key label. True per-user accounting needs an API gateway in front of vLLM (e.g. KServe/llm-d with auth), not this dashboard.
+> 2. **Pods must opt in to scraping** — see [Inference metrics via Crusoe Managed Metrics](#inference-metrics-via-crusoe-managed-metrics) for the annotation contract. Scaled-to-zero replicas simply disappear from the panels.
+> 3. **Local retention only.** `prometheus-vllm` is single-replica with 7-day retention and no remote-write. Use Crusoe Managed Metrics (below) to get cluster-wide 30-day retention without running a second Prometheus.
+
+### Inference metrics via Crusoe Managed Metrics
+
+The `prometheus-vllm` Deployment in this solution was the original workaround before Crusoe's managed pipeline supported arbitrary pod scraping. Today the `kubernetes-pods` job inside Crusoe's own `cluster-vmagent-victoria-metrics-agent` (running in `kube-system` on every CMK cluster) **already honors the standard `prometheus.io/{scrape,port,path}` pod annotations** and remote-writes directly into the Crusoe Metrics backend (30-day retention, one query endpoint, no second Prometheus to babysit).
+
+That means the same `vllm:`-series — plus anything SGLang or another OpenAI-compatible server emits on `/metrics` — flows through the same pipeline your GPU/DCGM/IB metrics already use, with no new DaemonSet, no new scrape config, and no seven-day ceiling.
+
+To enroll an inference Deployment (vLLM, SGLang, or any other HTTP server that publishes on `:8000/metrics`), add the annotations to the pod template:
+
+```yaml
+# e.g. examples/inference-annotation-patch.yaml in this repo
+spec:
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+        prometheus.io/path:   "/metrics"
+```
+
+Apply as a patch:
+
+```bash
+kubectl patch deployment <your-inference-deployment> -n <your-namespace> \
+  --type merge \
+  --patch-file examples/inference-annotation-patch.yaml
+```
+
+Within one scrape interval the pod appears as a new `kubernetes-pods` target on `cluster-vmagent-victoria-metrics-agent`, is remote-written into Crusoe Metrics, and becomes queryable from Grafana via the same `crusoe-metrics` datasource you already use.
+
+> **Contract:** the pod must **actually listen on the advertised port and path**. If SGLang listens on 8000 but your container spec sets `prometheus.io/port: "30000"`, vmagent gets a connection-refused and the target stays `down` — the dashboard just shows no rows for that pod.
+>
+> **When to pick which path:**
+>
+> - **Crusoe Managed Metrics via annotations (recommended):** vLLM, SGLang, or any long-running `/metrics` server. No new pods to run, 30-day retention, one datasource for everything.
+> - **Local `prometheus-vllm` (legacy / air-gap):** if your Crusoe project has vmagent remote-write disabled (rare), or you want a private in-cluster scrape that never leaves the VPC even through the mTLS tunnel.
 
 ---
 
@@ -563,15 +599,7 @@ To add a dashboard: drop the JSON under `dashboards/<Folder>/` and add an entry 
 
 The `grafana_folder` annotation is the folder the dashboard is provisioned into. On Grafana 12.3.x a value of `<A>/<B>` yields a **top-level** folder named after the last segment (`<B>`), not a folder nested inside `<A>`.
 
-> **Upgrading from an earlier release?** Older versions of this solution shipped a generated `manifests/grafana-dashboards-configmap.yaml` that embedded a second copy of every dashboard. It has been removed in favour of `kubectl apply -k .`. The generated ConfigMap names are unchanged, so `apply -k` updates the existing ConfigMaps in place — nothing to clean up, and Grafana never notices the switch because the sidecar selects on the label, not the name.
-
-The `grafana_dashboard: "1"` label is what the sidecar watches — without it, the sidecar will not pick up the ConfigMap. The sidecar reloads dashboards within a minute.
-
-> **Migrating from a pre-split deployment?** Earlier releases shipped a single combined ConfigMap named `crusoe-dashboards`. If you were on that, delete it first so the sidecar doesn't load the same dashboards twice:
->
-> ```bash
-> kubectl delete configmap crusoe-dashboards -n monitoring --ignore-not-found
-> ```
+The `grafana_dashboard: "1"` label is what the sidecar watches — the sidecar reloads dashboards within a minute.
 
 ### LoadBalancer service stuck in `<pending>` for external IP
 
