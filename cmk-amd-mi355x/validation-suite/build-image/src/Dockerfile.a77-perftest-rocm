@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1
+# Bundle 2.1 a-77 image + AMD-patched perftest with --enable-rocm --enable-rocm-dmabuf.
+#
+# The stock perftest that ships in the a-77 base has --use_rocm / --use_rocm_dmabuf
+# in its argparse table but the ROCm memory-type backend isn't registered in the
+# binary — every invocation with those flags returns "Unsupported memory type".
+# This image builds AMD's fork from source with the right configure flags so
+# both flags work end-to-end for GPU-direct RDMA.
+#
+# Source: github.com/ROCm/rdma-perftest, branch master-dmabuf-rocm-20250114,
+# commit 2db71141d6a3 "Enable dmabuf to ROCm and hipify changes" (2025-01-16).
+#
+# Build via in-cluster kaniko:
+#   CCR_REPO=<your-registry-name>.<project-short> \
+#     PROJECT_ID=<your-crusoe-project-uuid> \
+#     bash build-kaniko-amdperftest.sh
+#
+# Runtime test:
+#   ib_write_bw -F -b --report_gbits -s 8M -n 5000 -x 1 -q 4 -m 4096 \
+#               --use_rocm=<N> --use_rocm_dmabuf -p <port> [server_ip]
+#
+# The FROM below is the Bundle 2.1 a-77 base image in the DELIVERING PROJECT's
+# CCR. `build-kaniko-amdperftest.sh` doesn't override this (kaniko reads the
+# FROM literally), so you MUST edit this URL to point at your project's CCR
+# path before running the build. See runbook.md for how to obtain the a-77 tag
+# for your project (mirror from mcala-lab or ask your Crusoe SA).
+ARG BASE_IMAGE=registry.us-east2-a.ccr.crusoecloudcompute.com/<your-registry-name>.<your-project-short>/roce-workload:ubuntu24_rocm-7.2_rccl-7.2.0_anp-v1.3.0_ainic-1.117.5-a-77-crusoe
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential autoconf libtool git ca-certificates pkg-config \
+      libibverbs-dev librdmacm-dev libibumad-dev libpci-dev libmnl-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Clone the exact branch + commit that Crusoe engineering used for the 740 Gb/s blog.
+RUN cd /tmp \
+ && git clone --branch master-dmabuf-rocm-20250114 --depth 1 https://github.com/ROCm/rdma-perftest.git \
+ && cd rdma-perftest \
+ && git rev-parse HEAD > /tmp/perftest-commit.txt \
+ && cat /tmp/perftest-commit.txt
+
+# Configure with --enable-rocm --enable-rocm-dmabuf; install into /usr/local/bin so it
+# takes precedence over the stock /usr/bin/ib_write_bw on PATH.
+RUN cd /tmp/rdma-perftest \
+ && ./autogen.sh \
+ && export CFLAGS="-I/opt/rocm/include" \
+ && export LDFLAGS="-L/opt/rocm/lib -L/opt/rocm/lib64 -Wl,-rpath=/opt/rocm/lib -lamdhip64 -lhsa-runtime64 -Wl,--copy-dt-needed-entries" \
+ && ./configure --enable-rocm --enable-rocm-dmabuf --with-rocm=/opt/rocm \
+                --prefix=/usr/local \
+ && make -j$(nproc) \
+ && make install \
+ && ldconfig \
+ && rm -rf /tmp/rdma-perftest
+
+# Sanity guards: fail the build if the new binary doesn't accept the ROCm flags.
+RUN /usr/local/bin/ib_write_bw --help 2>&1 | grep -q "use_rocm" \
+ && echo "OK: /usr/local/bin/ib_write_bw has --use_rocm support"
+
+# Ensure /usr/local/bin comes first in PATH for all shells
+ENV PATH=/usr/local/bin:$PATH

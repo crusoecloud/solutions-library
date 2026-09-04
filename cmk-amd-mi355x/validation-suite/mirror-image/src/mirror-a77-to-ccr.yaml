@@ -1,0 +1,81 @@
+# ============================================================================
+# mirror-a77-to-ccr.yaml
+# ----------------------------------------------------------------------------
+# Skopeo-copy the Bundle 2.1 a-77 roce-workload image between two CCR repos.
+# Runtime ~5-10 min: the image is ~30 GB, but both src and dst live in the
+# same us-east2-a CCR so traffic stays on Crusoe's internal fabric.
+#
+# CCR docker Basic-auth username = the operator's email (not user_id UUID or
+# token_id). Password = the full registry token in the format `<id>$<bcrypt>`
+# from `crusoe registry tokens create --alias <alias>`. This is not currently
+# in Crusoe's public CCR docs; see runbook.md and known-issues.md for the
+# recipe.
+#
+# Envsubst variables required at apply time (rendered before kubectl apply):
+#   ${SRC_URL} — full URL of the source image incl. tag
+#   ${DST_URL} — full URL of the destination image incl. tag
+#
+# Prerequisites:
+#   - ccr-cred-src (docker-registry secret in ${NAMESPACE}) — email + token
+#     with read on the SOURCE repo
+#   - ccr-cred-dst (docker-registry secret in ${NAMESPACE}) — email + token
+#     with write on the DESTINATION repo
+#     (both created by the operator; see runbook.md step 3)
+# ============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mirror-a77-to-ccr
+  namespace: default
+  labels: { app: mi355x-poc, role: image-mirror }
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app: mi355x-poc, role: image-mirror }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: skopeo
+          image: quay.io/skopeo/stable:latest
+          command: ["/bin/bash", "-lc"]
+          env: [{ name: TMPDIR, value: /var/tmp }]
+          args:
+            - |
+              set -euo pipefail
+              SRC=docker://${SRC_URL}
+              DST=docker://${DST_URL}
+              echo "==> mirror"
+              echo "    from $SRC"
+              echo "    to   $DST"
+              skopeo --version
+              echo
+              echo "==> inspect source"
+              skopeo inspect --authfile /auth-src/config.json "$SRC" | head -25
+              echo
+              echo "==> copy (~5-10 min for the 30 GB image)"
+              time skopeo copy --all --retry-times 5 \
+                --src-authfile /auth-src/config.json --dest-authfile /auth-dst/config.json \
+                "$SRC" "$DST"
+              echo
+              echo "==> inspect destination"
+              skopeo inspect --authfile /auth-dst/config.json "$DST" | head -10
+              echo MIRROR_DONE
+          volumeMounts:
+            - { name: ccr-auth-src, mountPath: /auth-src, readOnly: true }
+            - { name: ccr-auth-dst, mountPath: /auth-dst, readOnly: true }
+            - { name: tmp, mountPath: /var/tmp }
+          resources:
+            requests: { cpu: "4", memory: 16Gi }
+      volumes:
+        - name: ccr-auth-src
+          secret:
+            secretName: ccr-cred-src
+            items: [{ key: .dockerconfigjson, path: config.json }]
+        - name: ccr-auth-dst
+          secret:
+            secretName: ccr-cred-dst
+            items: [{ key: .dockerconfigjson, path: config.json }]
+        - name: tmp
+          emptyDir: { sizeLimit: 80Gi }
