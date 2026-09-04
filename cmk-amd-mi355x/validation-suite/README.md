@@ -35,7 +35,6 @@ Each folder ships a `src/` directory with the runnable artifact.
 
 | Folder | Purpose |
 |---|---|
-| [cluster-setup/](cluster-setup/) | CMK cluster + MI355X nodepool provisioning scripts |
 | [env-verify/](env-verify/) | Per-node kernel / driver / GPU / NIC / dmesg dump against Bundle 2.1 spec |
 | [rccl-allreduce/](rccl-allreduce/) | 2-node RCCL `all_reduce_perf` with the Crusoe + mlcommons-tuned NCCL envelope |
 | [gpu-straggler-scan/](gpu-straggler-scan/) | Per-GPU compute burst + sustained GEMM + XGMI mesh + ECC + bad-pages scan |
@@ -92,29 +91,28 @@ customer POC on the same platform.
 
 ## Ordered workflow
 
+> This suite assumes the CMK cluster and MI355X nodepool have **already been provisioned by Crusoe** — you receive a working kubeconfig, and the pre-flight in the Prerequisites section passes (2 × `Ready` nodes, each advertising `amd.com/gpu: 8` and `amd.com/vnic: 8`).
+
 Each step writes its outputs into its own `<test>/logs/` (raw evidence) and
 `<test>/results/` (parsed one-page summary), created on first run.
 
-1. **Provision cluster + nodepool** —
-   fill in the `# EDIT THIS` block at the top of
-   `cluster-setup/src/create-mi355x-cluster-create.sh` and
-   `cluster-setup/src/create-mi355x-nodepool-create.sh`, then run each in turn.
-2. **Install the Kubeflow MPI Operator** — see Prerequisites.
-3. **Create the CCR docker-registry secret** `ccr-cred` — see Prerequisites.
-4. **(Optional) Mirror the Bundle 2.1 base image into your CCR** —
-   `mirror-image/src/mirror-a77-to-ccr.yaml` (or ask your Crusoe SA to
-   run `crusoe registry manifests copy` for you).
-5. **(Optional) Build the AMD-patched perftest image** —
+1. **Install the Kubeflow MPI Operator** — see Prerequisites (one-time setup, needed for the RCCL step).
+2. **Create the CCR docker-registry secret** `ccr-cred` — see Prerequisites (one-time setup, needed for private images).
+3. **(Optional) Mirror the Bundle 2.1 base image into your CCR** —
+   `mirror-image/src/mirror-a77-to-ccr.yaml` (or ask your Crusoe SE contact
+   to run `crusoe registry manifests copy` for you). Skip if you already
+   have the AMD workload image in your CCR.
+4. **(Optional) Build the AMD-patched perftest image** —
    `bash build-image/src/build-kaniko-amdperftest.sh`.
    Only needed if you plan to run the `gpu-to-nic-bw-gpu-direct` check
    with GPU-direct dma-buf. The other checks work against the upstream
    `mirror.gcr.io/rocm/roce-workload:…-a-56` image.
-6. **Environment verification** —
+5. **Environment verification** —
    `bash env-verify/src/env-verify.sh`.
    Produces `env-verify/logs/env-report-<node>-<ts>.txt`. Confirm the
    observed versions match the Bundle 2.1 spec (see table above) and
    that `bad_pages`, ECC counters, and Pollara VF state are clean.
-7. **2-node RCCL all-reduce** —
+6. **2-node RCCL all-reduce** —
 
    ```bash
    IMAGE=<full CCR image ref> PULL_SECRET=ccr-cred N=2 \
@@ -122,16 +120,16 @@ Each step writes its outputs into its own `<test>/logs/` (raw evidence) and
    ```
 
    Reference bar: **≥ 300 GB/s** busbw (dry-run observed 381.88 GB/s).
-8. **Per-GPU compute + straggler scan** —
+7. **Per-GPU compute + straggler scan** —
    `kubectl apply -f gpu-straggler-scan/src/gpu-straggler-scan-mi355x.yaml`
    (edit the nodeSelector line if your nodepool label differs).
-9. **Per-rail host-memory bandwidth baseline** —
+8. **Per-rail host-memory bandwidth baseline** —
    `bash gpu-to-nic-bw-hostmem/src/gpu-to-nic-bw-hostmem.sh`.
    Reference bar: **≥ 500 Gb/s** per rail.
-10. **Per-rail GPU-direct dma-buf bandwidth** —
-    `IMAGE=<CCR image with amd-patched perftest> \
-       bash gpu-to-nic-bw-gpu-direct/src/gpu-to-nic-bw-gpu-direct.sh`.
-    Reference bar: **≥ 700 Gb/s** per rail.
+9. **Per-rail GPU-direct dma-buf bandwidth** —
+   `IMAGE=<CCR image with amd-patched perftest> \
+      bash gpu-to-nic-bw-gpu-direct/src/gpu-to-nic-bw-gpu-direct.sh`.
+   Reference bar: **≥ 700 Gb/s** per rail.
 
 ---
 
@@ -159,17 +157,14 @@ load-bearing settings and their rationale:
 
 ---
 
-## Adapting the suite for a different project or cluster
+## Adapting the suite for a different project
 
 The scripts read all tenant-specific values from environment variables
 and enforce them with `${VAR:?…}` guards. To retarget the suite:
 
 | Variable | Where to find it | Used by |
 |---|---|---|
-| `PROJECT_ID` | `crusoe projects list` | cluster-setup, mirror-image, build-image |
-| `SUBNET_ID` | `crusoe networking vpc-subnets list` | cluster-setup |
-| `PARTITION_ID` | `crusoe networking transport-partitions list` (MI355X ROCE network) | cluster-setup |
-| `CLUSTER_VERSION`, `NP_VERSION` | Bundle 2.1 tags from your Crusoe SE contact | cluster-setup |
+| `PROJECT_ID` | `crusoe projects list` | mirror-image, build-image |
 | `CCR_URL`, `CCR_REPO` (= `<registry>.<project-short>`) | `crusoe registry list` | build-image, mirror-image |
 | `IMAGE` | Full CCR image ref of the AMD workload image | rccl-allreduce, gpu-to-nic-bw-gpu-direct |
 | `PULL_SECRET` | Name of the `docker-registry` secret you created | rccl-allreduce, gpu-to-nic-bw-gpu-direct |
