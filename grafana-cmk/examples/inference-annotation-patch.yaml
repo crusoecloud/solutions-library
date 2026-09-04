@@ -1,0 +1,20 @@
+# Patch a plain (non-KServe) inference Deployment so Crusoe's managed
+# vmagent scrapes /metrics and the series lands in the Crusoe Metrics backend
+# (30-day retention, queryable through the crusoe-metrics datasource already
+# provisioned by this repo).
+#
+# Apply:
+#   kubectl patch deployment <name> -n <namespace> \
+#     --type merge --patch-file inference-annotation-patch.yaml
+#
+# vLLM and SGLang both expose Prometheus-format metrics on port 8000 at
+# /metrics by default, so these annotations are a no-op for them.
+# For engines listening elsewhere, change prometheus.io/port and
+# prometheus.io/path to match.
+spec:
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
