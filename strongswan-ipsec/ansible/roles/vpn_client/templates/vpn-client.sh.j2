@@ -8,26 +8,16 @@
 # Usage: vpn-client.sh {up|down}
 set -u
 
-{#- ECMP nexthop spec: device list for gre_fou, via-IP list for route. #}
-{%- if vpn_transport == 'route' -%}
-{%- set NH = vpn_client_paths | map(attribute='gateway_ip')
-      | map('regex_replace', '^(.*)$', 'nexthop via \\1 weight 1') | join(' ') -%}
-{%- if vpn_client_paths | length == 1 -%}
-{%- set NH = 'via ' ~ vpn_client_paths[0].gateway_ip -%}
-{%- endif -%}
-{%- set MTU_ARG = 'mtu ' ~ vpn_client_route_mtu if vpn_client_route_mtu else '' -%}
-{%- else -%}
+{#- ECMP nexthop spec: one device per gateway path. #}
 {%- set NH = vpn_client_paths | map(attribute='dev')
       | map('regex_replace', '^(.*)$', 'nexthop dev \\1 weight 1') | join(' ') -%}
 {%- if vpn_client_paths | length == 1 -%}
 {%- set NH = 'dev ' ~ vpn_client_paths[0].dev -%}
-{%- endif -%}
-{%- set MTU_ARG = '' -%}
 {%- endif %}
 
-# transport = {{ vpn_transport }}, paths = {{ vpn_client_paths | length }}
+# paths = {{ vpn_client_paths | length }}
 {% for p in vpn_client_paths %}
-#   path {{ p.index }}: {{ p.gateway_host }} ({{ p.gateway_ip }}){% if vpn_transport == 'gre_fou' %} via {{ p.dev }} on UDP {{ p.fou_port }}{% endif %}
+#   path {{ p.index }}: {{ p.gateway_host }} ({{ p.gateway_ip }}) via {{ p.dev }} on UDP {{ p.fou_port }}
 
 {% endfor %}
 REMOTE_CIDRS="{{ vpn_client_remote_cidrs | join(' ') }}"
@@ -86,7 +76,7 @@ up_tunnels() {
 up_routes() {
     for cidr in $REMOTE_CIDRS; do
         # shellcheck disable=SC2086
-        ip route replace "$cidr" {{ NH }} {{ MTU_ARG }}
+        ip route replace "$cidr" {{ NH }}
     done
 }
 
@@ -100,7 +90,7 @@ do_up() {
     up_tunnels
 {% endif %}
     up_routes
-    echo "vpn-client up: {{ vpn_client_paths | length }} path(s), transport {{ vpn_transport }}"
+    echo "vpn-client up: {{ vpn_client_paths | length }} path(s)"
 }
 
 do_down() {

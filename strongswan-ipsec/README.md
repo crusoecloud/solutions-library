@@ -8,8 +8,8 @@ standalone VMs with Ansible and managed Kubernetes nodes with a DaemonSet.
 
 - Subnet-to-subnet routing over encrypted IPsec, plus full-tunnel mode
 - Managed K8s support — the DaemonSet configures nodes, no SSH needed
-- **Selectable client transport** — GRE-over-FOU overlay (default) or plain
-  static routes
+- **GRE-over-FOU overlay** to local Crusoe clients, or a gateway with no local
+  clients that just forwards LAN-to-LAN
 - **Named crypto profiles**, including `gcmaes256`
 - **Multiple tunnels per gateway** with ECMP, for peers that publish more than
   one outer address — most managed cloud VPNs do in their redundant mode
@@ -215,12 +215,6 @@ Scaled out, with several gateway VMs:
 > tell a dead gateway from a live one. It fails safe — leaving routes alone
 > rather than removing them — but you lose automatic failover.
 
-**For `vpn_client_transport: route` only, and no playbook can do it:** Crusoe
-must **disable port security** on every gateway VM's vNIC, or add
-allowed-address-pairs covering `vpn_remote_subnet`. A gateway in `route` mode
-forwards decrypted packets whose source is a *remote* private IP, and the SDN
-drops those by default. The symptom is a healthy tunnel with no return traffic.
-
 ## Quick Start
 
 ### 1. Configure — two files
@@ -310,27 +304,13 @@ To measure throughput, use [bandwidth-test](../bandwidth-test/).
 | Value | Meaning | Prerequisite |
 |---|---|---|
 | `gre_fou` | GRE-over-FOU overlay (**default**) | none |
-| `route` | plain static routes via the gateway's private IP | **port security disabled on each gateway vNIC** |
 | `none` | gateway carries no local clients; forwards its own LAN subnet | none |
 
 `vpn_use_gre: true/false` still works as a deprecated alias.
 
-`gre_fou` stays the default because `route` needs a manual network change no
-playbook can make. Where `route` is allowed it is better:
-
-| | `gre_fou` | `route` |
-|---|---|---|
-| Client devices | N GRE devices + FOU sockets | none |
-| Client MTU | 1400 | 1400 |
-| Gateway setup | FOU module, multipoint GRE, one neighbour entry per host in the CIDR, 2 policy tables | plain FIB forwarding |
-| **GRO on the uplink** | **must be OFF** — see troubleshooting | unaffected |
-| **Client CIDR size** | a `/20` is 4094 neighbour entries; a `/16` is refused | any size |
-| Flow entropy on the fabric | one FOU 4-tuple per client↔gateway pair unless `vpn_fou_sport_auto` | the real client 5-tuples |
-| Dead-gateway detection | needs the ICMP probe | `fib_multipath_use_neigh` handles VM death for free |
-
-On `gre_fou`, set `vpn_fou_sport_auto: true` for better flow spread without the
-port-security change — the kernel then hashes the outer FOU source port per
-inner flow.
+Set `vpn_fou_sport_auto: true` for better flow spread across the fabric — the
+kernel then hashes the outer FOU source port per inner flow instead of pinning
+every client↔gateway pair to one 4-tuple.
 
 ## Crypto profiles
 
@@ -595,7 +575,7 @@ Gateway (`roles/vpn_gateway/defaults/main.yml` documents every one):
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `vpn_psk` | — | IKE pre-shared key |
-| `vpn_client_transport` | `""` → `gre_fou`/`none` | `gre_fou`, `route`, or `none` |
+| `vpn_client_transport` | `""` → `gre_fou` | `gre_fou` or `none` |
 | `vpn_client_cidr` | — | subnet of VMs/nodes behind this gateway |
 | `vpn_local_subnet` / `vpn_remote_subnet` | — | IPsec traffic selectors |
 | `vpn_remote_gw_ip` | — | peer public IP; the fallback when `vpn_remote_addrs` is empty |
@@ -638,10 +618,7 @@ DaemonSet (`k8s/vpn-client.yaml`): `GATEWAY_IPS`, `TRANSPORT`, `REMOTE_CIDRS`,
   per host: a `/20` is 4094, a `/16` is refused by the role.
 - **`gre_fou` requires GRO off on every uplink.** Host-wide setting, affecting
   all traffic on that NIC.
-- **`route` transport needs port security disabled**, and is **the one path not
-  validated live** — it renders and passes static checks, but port security was
-  enabled throughout testing. Treat the first `route` deployment as supervised.
-- **BGP is not validated live** either; it is not needed for a
+- **BGP is not validated live**; it is not needed for a
   Crusoe-to-Crusoe pairing. All Azure figures quoted come from Microsoft's
   published tables, not measurement.
 - **SNAT and multi-gateway ECMP are mutually exclusive.** The role refuses the
@@ -700,7 +677,6 @@ kubectl logs -n kube-system ds/vpn-client
 | **Ping and UDP fine, TCP collapses to a few Mbit/s** | **GRO on the physical NIC.** It coalesces inbound FOU packets that then cannot be re-encapsulated, so they are dropped — measured **3.65 Mbps vs 4590 Mbps**. `ethtool -K <uplink> gro off` on gateways **and** clients; the role does this automatically for `gre_fou`. Look for `UdpInErrors` climbing on the receiving gateway. |
 | TCP stalls only for full-size packets | MSS clamped **above** the path MTU. `iptables --set-mss` raises as well as lowers. Leave `vpn_mss_clamp_value` empty so it is derived. |
 | Tunnel up, no traffic | Routes through xfrm? Mark rules present? (`ip rule show`) |
-| `route` mode: tunnel up, no return traffic | **Port security still enabled on the gateway vNIC.** The usual cause. |
 | N tunnels but no more throughput | `fib_multipath_hash_policy` = 1? Does `vpn_remote_addrs` have more than one address? Are per-SA byte counters even? |
 | Throughput per flow stuck near 1 Gbps | Client TCP buffers. `vpn_client_tcp_tuning` and `tcp_rmem` max ≥ 64 MB. |
 | **Tunnel healthy, ping clean, TCP retransmitting hard** | **Anti-replay is discarding reordered packets.** `grep XfrmInStateSeqError /proc/net/xfrm_stat` — if it climbs, check `cat /sys/class/net/<uplink>/queues/rx-0/rps_flow_cnt`. RFS hands one SA's packets between CPUs so they arrive out of order. Measured 18,624 retransmits with RFS on versus 106 with it off. Keep `vpn_disable_rfs: true`. |

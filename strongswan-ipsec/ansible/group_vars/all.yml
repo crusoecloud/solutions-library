@@ -92,15 +92,10 @@ vpn_client_cidr: "<your-crusoe-subnet-cidr>"
 # vpn_bgp_accept: ["<peer-subnet-cidr>"]
 # (vpn_bgp_local_asn and vpn_bgp_peer_addrs are per gateway - see host_vars)
 
-# --- Dropping GRE ---------------------------------------------------------
-# "route" removes the GRE overlay: no GRO constraint, and no per-host
-# neighbour entry, so client CIDRs larger than a /20 become possible.
-#
-# PREREQUISITE NO PLAYBOOK CAN MEET: Crusoe NetEng must DISABLE PORT SECURITY
-# on every gateway VM's vNIC. Without it the decrypted return traffic is
-# dropped by the fabric and the tunnel looks healthy while nothing arrives.
-# That manual step is why gre_fou is the default.
-# vpn_client_transport: "route"
+# --- No local clients ------------------------------------------------------
+# A gateway with no Crusoe VMs behind it - just LAN-to-LAN forwarding between
+# the two sites, no GRE overlay at all.
+# vpn_client_transport: "none"
 
 # --- Kernel upgrade -------------------------------------------------------
 # ON by default. It installs linux-image-generic-6.11 and reboots, but only

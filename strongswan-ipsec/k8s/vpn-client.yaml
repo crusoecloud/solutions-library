@@ -3,10 +3,7 @@
 # one or more VPN gateways. Same job as the vpn_client Ansible role, for
 # managed clusters where Ansible cannot reach the nodes.
 #
-# Two transports, matching the Ansible role:
-#   gre_fou  GRE-over-FOU overlay (default)
-#   route    plain static routes via the gateway private IPs. Requires Crusoe
-#            port security to be DISABLED on every GATEWAY's vNIC.
+# Reaches the gateways over a GRE-over-FOU overlay, matching the Ansible role.
 #
 # Traffic is ECMP'd across all gateways, hashed per flow. Nothing here is
 # stateful, so a reply may come back through a different gateway - which is
@@ -28,7 +25,6 @@ data:
   # behaviour. Several entries = ECMP across them.
   GATEWAY_IPS: "<gateway-private-ip>"
 
-  # gre_fou | route  - must match the gateways
   TRANSPORT: "gre_fou"
 
   # GRE-over-FOU settings - must match the gateways (vpn_gre_key,
@@ -43,9 +39,6 @@ data:
   FOU_SPORT_AUTO: "false"
   # Extra FOU ports per gateway, for kernels without "encap-sport auto".
   FOU_PORT_COUNT: "1"
-
-  # route transport: MTU on the ECMP route. Azure's documented tunnel MTU.
-  ROUTE_MTU: "1400"
 
   # GRO MUST be off on the node's uplink when using gre_fou. Generic Receive
   # Offload coalesces inbound FOU/UDP packets; the coalesced packet cannot be
@@ -67,8 +60,6 @@ data:
   # every flow takes ONE gateway and the others sit idle. The cluster looks
   # healthy and performs like a single gateway.
   MULTIPATH_HASH_POLICY: "1"
-  # route transport: skip nexthops whose ARP entry has gone unreachable.
-  MULTIPATH_USE_NEIGH: "1"
   RP_FILTER: "2"
 
   # Long-fat-pipe TCP. At 50 ms RTT, 10 Gbps needs ~62 MB in flight, but the
@@ -166,9 +157,6 @@ spec:
                 sysctl -qw "net.ipv4.fib_multipath_hash_policy=${MULTIPATH_HASH_POLICY}" 2>/dev/null || true
                 sysctl -qw "net.ipv4.conf.all.rp_filter=${RP_FILTER}" 2>/dev/null || true
                 sysctl -qw "net.ipv4.conf.default.rp_filter=${RP_FILTER}" 2>/dev/null || true
-                if [ "$TRANSPORT" = "route" ]; then
-                  sysctl -qw "net.ipv4.fib_multipath_use_neigh=${MULTIPATH_USE_NEIGH}" 2>/dev/null || true
-                fi
                 if [ "${TCP_TUNING:-true}" = "true" ]; then
                   modprobe tcp_bbr 2>/dev/null || true
                   sysctl -qw "net.core.rmem_max=${RMEM_MAX}" 2>/dev/null || true
@@ -222,15 +210,11 @@ spec:
               # re-hash: nothing here is stateful, so a flow that moves to
               # another gateway keeps working.
               sync_routes() {
-                local i nh=() up=0 mtu=()
+                local i nh=() up=0
                 for (( i=0; i<${#PATH_DEV[@]}; i++ )); do
                   ping -c 1 -W "${PROBE_TIMEOUT:-1}" -n -q "${PATH_GW[$i]}" >/dev/null 2>&1 || continue
-                  if [ "$TRANSPORT" = "route" ]; then
-                    nh+=(nexthop via "${PATH_GW[$i]}" weight 1)
-                  else
-                    ip link show "${PATH_DEV[$i]}" 2>/dev/null | grep -q UP || continue
-                    nh+=(nexthop dev "${PATH_DEV[$i]}" weight 1)
-                  fi
+                  ip link show "${PATH_DEV[$i]}" 2>/dev/null | grep -q UP || continue
+                  nh+=(nexthop dev "${PATH_DEV[$i]}" weight 1)
                   up=$(( up + 1 ))
                 done
 
@@ -238,7 +222,6 @@ spec:
                   echo "WARNING: no gateway answered - leaving routes alone" >&2
                   return 0
                 fi
-                [ "$TRANSPORT" = "route" ] && [ -n "${ROUTE_MTU:-}" ] && mtu=(mtu "$ROUTE_MTU")
 
                 local desired="${nh[*]}"
                 if [ "$desired" != "${LAST_NH:-}" ]; then
@@ -246,7 +229,7 @@ spec:
                   LAST_NH="$desired"
                 fi
                 for cidr in $REMOTE_CIDRS; do
-                  ip route replace "$cidr" "${nh[@]}" "${mtu[@]}" 2>/dev/null || true
+                  ip route replace "$cidr" "${nh[@]}" 2>/dev/null || true
                 done
               }
 
