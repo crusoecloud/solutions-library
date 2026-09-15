@@ -22,11 +22,7 @@ alive_count=0
 
 {% for p in vpn_client_paths %}
 if ping -c 1 -W "$TIMEOUT" -n -q {{ p.gateway_ip }} >/dev/null 2>&1; then
-{% if vpn_transport == 'route' %}
-    alive+=(nexthop via {{ p.gateway_ip }} weight 1)
-{% else %}
     alive+=(nexthop dev {{ p.dev }} weight 1)
-{% endif %}
     alive_count=$(( alive_count + 1 ))
 fi
 {% endfor %}
@@ -44,7 +40,7 @@ previous=$(cat "$STATE_FILE" 2>/dev/null || true)
 
 for cidr in $REMOTE_CIDRS; do
     # shellcheck disable=SC2086
-    ip route replace "$cidr" "${alive[@]}" {{ 'mtu ' ~ vpn_client_route_mtu if (vpn_transport == 'route' and vpn_client_route_mtu) else '' }}
+    ip route replace "$cidr" "${alive[@]}"
 done
 printf '%s' "$desired" > "$STATE_FILE"
 echo "vpn-client-health: $alive_count/{{ vpn_client_paths | length }} gateway(s) up; routes rebuilt"

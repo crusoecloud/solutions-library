@@ -39,16 +39,8 @@ vpn_gateway_hosts: "{{ groups['vpn_gateways'] | default([]) }}"
 # the customer states the remote CIDR exactly once.
 
 # ---------------------------------------------------------------------------
-# Transport - must match the gateway
-# ---------------------------------------------------------------------------
-#   gre_fou  GRE-over-FOU overlay (default)
-#   route    plain static routes via the gateway's private IP. Requires
-#            Crusoe port security to be DISABLED on the GATEWAY's vNIC.
-# "" = inherit from the first gateway's own configuration, which is the safe
-# default because a mismatch silently breaks the datapath.
-vpn_client_transport: ""
-
 # GRE-over-FOU - must match the gateway
+# ---------------------------------------------------------------------------
 # Must match the gateway. See the vpn_gateway role for the MTU maths: the
 # binding constraint is vpn_xfrm_mtu (1400), not the 1500-byte uplink.
 vpn_gre_mtu: 1400
@@ -56,10 +48,6 @@ vpn_gre_key: 100
 vpn_fou_port: 9473
 vpn_fou_sport_auto: false
 vpn_fou_port_count: 1
-
-# route transport: MTU applied to the ECMP route so TCP shrinks without
-# relying on PMTUD. Azure's documented tunnel MTU is 1400.
-vpn_client_route_mtu: 1400
 
 # ---------------------------------------------------------------------------
 # Health - clients do not run BGP, so they probe instead
@@ -78,10 +66,6 @@ vpn_client_probe_timeout: 1
 # every flow between the same pair of hosts takes ONE gateway and the rest
 # sit idle. The single most missable line on the client side.
 vpn_multipath_hash_policy: 1
-
-# route transport: skip a nexthop whose neighbour entry is unreachable. Free
-# dead-gateway detection, no agent involved.
-vpn_multipath_use_neigh: 1
 
 # With ECMP the reply may arrive from a different gateway than the request
 # left through, which strict reverse-path filtering rejects.

@@ -335,9 +335,6 @@ Stated plainly, so nobody builds on sand.
 - **BGP and FRR were never brought up against a real peer.** Since 10 Gbps
   through Azure requires BGP (§3.1 item 5), that path needs validating on
   first use.
-- **The `route` transport was never validated end to end.** Crusoe port
-  security was on throughout, and a foreign-source packet was confirmed
-  dropped by the fabric. `gre_fou` is the tested path and the default.
 - The Crusoe-to-Crusoe curve in §1 **is measured**, on the shipped playbook,
   1 through 5 gateways per side. An earlier *derived* estimate in this
   document claimed ~8 Gbps per VM and 2 VMs for 10 Gbps; the measurement

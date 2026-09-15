@@ -175,7 +175,7 @@ A hardened, redundant route-based IPsec (IKEv2) VPN terminating on one or two Ub
 
 [StrongSwan Site-to-Site VPN for Crusoe Cloud](./strongswan-ipsec/)
 
-An Ansible-managed, encrypted IPsec site-to-site VPN between a Crusoe Cloud region and a remote site — another Crusoe region, or Azure/GCP/AWS — with VMs on both sides communicating via their real (non-NAT'd) IP addresses over a GRE-over-FOU overlay or plain routes. You fill in an inventory and five values, and one command preflights connectivity, installs a VAES-capable kernel where it pays, and configures gateways and clients with defaults tuned for a managed cloud peer. Measured at 2.4 Gbps with one gateway per side rising to 20.7 Gbps with five, and 8.5 Gbps through a single VM holding two tunnels; also configures managed Kubernetes nodes via a DaemonSet.
+An Ansible-managed, encrypted IPsec site-to-site VPN between a Crusoe Cloud region and a remote site — another Crusoe region, or Azure/GCP/AWS — with VMs on both sides communicating via their real (non-NAT'd) IP addresses over a GRE-over-FOU overlay. You fill in an inventory and five values, and one command preflights connectivity, installs a VAES-capable kernel where it pays, and configures gateways and clients with defaults tuned for a managed cloud peer. Measured at 2.4 Gbps with one gateway per side rising to 20.7 Gbps with five, and 8.5 Gbps through a single VM holding two tunnels; also configures managed Kubernetes nodes via a DaemonSet.
 
 ## Contributing
 

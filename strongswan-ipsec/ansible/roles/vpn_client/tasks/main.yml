@@ -36,21 +36,15 @@
     vpn_local_ip: "{{ ansible_default_ipv4.address }}"
   tags: [setup, verify]
 
-# Transport must match the gateway, and a mismatch breaks the datapath
-# silently, so it is inherited from the gateway unless overridden here.
+# GRE-over-FOU is the only client transport this role supports, but the
+# gateway may be running "none" (no local clients) instead - inherited here
+# rather than assumed, so that mismatch is caught below instead of silently
+# producing a dead GRE device that reports UP regardless of the peer.
 - name: Resolve the transport
   vars:
     _gw: "{{ vpn_gateway_host_list[0] }}"
-    _from_gateway: >-
-      {{ hostvars[_gw].vpn_transport
-         | default(hostvars[_gw].vpn_client_transport | default('', true), true) }}
   ansible.builtin.set_fact:
-    vpn_transport: >-
-      {{ vpn_client_transport if vpn_client_transport
-         else (_from_gateway if _from_gateway
-               else ('gre_fou'
-                     if (hostvars[_gw].vpn_use_gre | default(true) | bool)
-                     else 'route')) }}
+    vpn_transport: "{{ hostvars[_gw].vpn_transport | default('gre_fou', true) }}"
   tags: [setup, teardown, verify]
 
 - name: Resolve the remote CIDRs
@@ -69,19 +63,21 @@
 - name: Validate configuration
   ansible.builtin.assert:
     that:
-      - vpn_transport in ['gre_fou', 'route']
+      - vpn_transport == 'gre_fou'
       - vpn_client_remote_cidrs | length > 0
       - vpn_client_paths | rejectattr('gateway_ip') | list | length == 0
     fail_msg: >-
-      Could not resolve every gateway's private IP. The client role reads it
-      from each gateway's vpn_local_gw_ip, which the vpn_gateway role sets as
-      a fact - so running the gateways play first (as site.yml does) is
-      enough. If you want to configure clients on their own, for example with
-      "--limit vpn_clients", set vpn_local_gw_ip explicitly on each gateway
-      host in the inventory or host_vars:
-      "gw-1  ansible_host=<public-ip>  vpn_local_gw_ip=<private-ip>".
-      Also check vpn_client_transport is gre_fou or route and that
-      vpn_remote_subnets is set.
+      Either the gateway's transport is not gre_fou ({{ vpn_gateway_host_list[0] }}
+      resolved to "{{ vpn_transport }}" - this role has nothing to bring up
+      against a gateway running vpn_client_transport=none, since that gateway
+      serves no local clients), or a gateway's private IP could not be
+      resolved. The client role reads that from each gateway's
+      vpn_local_gw_ip, which the vpn_gateway role sets as a fact - so running
+      the gateways play first (as site.yml does) is enough. If you want to
+      configure clients on their own, for example with "--limit vpn_clients",
+      set vpn_local_gw_ip explicitly on each gateway host in the inventory or
+      host_vars: "gw-1  ansible_host=<public-ip>  vpn_local_gw_ip=<private-ip>".
+      Also check vpn_remote_subnets is set.
   tags: [setup, verify]
 
 # ---------------------------------------------------------------------------
@@ -153,7 +149,6 @@
   community.general.modprobe:
     name: fou
     state: present
-  when: vpn_transport == 'gre_fou'
   tags: [setup]
 
 - name: Install NIC tuning script
@@ -238,7 +233,6 @@
   loop_control:
     label: "{{ item.dev }}"
   changed_when: false
-  when: vpn_transport == 'gre_fou'
   tags: [setup, verify]
 
 - name: Count nexthops on the first remote route
@@ -261,7 +255,7 @@
   register: vpn_client_gro_state
   changed_when: false
   failed_when: false
-  when: vpn_transport == 'gre_fou' and (vpn_fou_disable_gro | bool)
+  when: vpn_fou_disable_gro | bool
   tags: [setup, verify]
 
 - name: "WARNING: GRO is still on and will destroy TCP"
@@ -271,7 +265,6 @@
       coalesced and dropped; UDP and ICMP keep working while TCP collapses
       (measured 3.65 Mbps vs 4590 Mbps). See the README troubleshooting table.
   when:
-    - vpn_transport == 'gre_fou'
     - vpn_fou_disable_gro | bool
     - (vpn_client_gro_state.stdout | default('') | trim) == 'on'
   tags: [setup, verify]
@@ -298,8 +291,7 @@
   ansible.builtin.debug:
     msg: >-
       Client {{ inventory_hostname }} ({{ vpn_local_ip }}):
-      transport={{ vpn_transport }}
-      | {{ vpn_client_paths | length }} path(s) to
+      {{ vpn_client_paths | length }} path(s) to
       {{ vpn_client_paths | map(attribute='gateway_ip') | unique | join(', ') }}
       | ECMP nexthops installed={{ vpn_client_nexthops.stdout | trim }}
       | remote={{ vpn_client_remote_cidrs | join(', ') }}

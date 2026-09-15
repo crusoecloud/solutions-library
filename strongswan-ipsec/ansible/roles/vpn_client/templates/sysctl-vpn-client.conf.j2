@@ -5,13 +5,6 @@
 # the same pair of hosts takes ONE gateway and the others sit idle. The setup
 # looks correct and performs like a single gateway.
 net.ipv4.fib_multipath_hash_policy = {{ vpn_multipath_hash_policy }}
-{% if vpn_transport == 'route' %}
-
-# Skip a nexthop whose neighbour entry has gone unreachable. Free dead-gateway
-# detection for route transport (a GRE device stays UP regardless, which is why
-# gre_fou needs the probe instead).
-net.ipv4.fib_multipath_use_neigh = {{ vpn_multipath_use_neigh }}
-{% endif %}
 
 # The reply may arrive from a different gateway than the request left through.
 net.ipv4.conf.all.rp_filter = {{ vpn_rp_filter }}

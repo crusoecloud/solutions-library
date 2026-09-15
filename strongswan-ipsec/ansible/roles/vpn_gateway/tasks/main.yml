@@ -3,11 +3,11 @@
 # vpn_gateway role
 #
 # Terminates N IPsec tunnels to a remote site and delivers traffic to local
-# Crusoe clients. Three client transports, selected by vpn_client_transport:
+# Crusoe clients. Two client transports, selected by vpn_client_transport:
 #
 #   gre_fou  GRE-over-FOU overlay (default; == the old vpn_use_gre: true)
-#   route    plain static routes - needs Crusoe port security DISABLED
 #   none     no local clients; forward this gateway's own LAN subnet
+#            (== the old vpn_use_gre: false)
 #
 # With every new variable at its default this behaves exactly as the
 # single-tunnel version always did. See README.md, and AZURE-10G-GUIDE.md for
@@ -38,7 +38,7 @@
 
 - name: Derive transport booleans and traffic selectors
   ansible.builtin.set_fact:
-    vpn_serves_clients: "{{ vpn_transport in ['gre_fou', 'route'] }}"
+    vpn_serves_clients: "{{ vpn_transport == 'gre_fou' }}"
     vpn_child_local_ts: >-
       {{ '0.0.0.0/0' if (vpn_traffic_selectors_any | bool) else vpn_local_subnet }}
     vpn_child_remote_ts: >-
@@ -132,14 +132,13 @@
     that:
       - (vpn_tunnel_count_effective | int) >= 1
       - (vpn_tunnel_count_effective | int) <= 32
-      - vpn_transport in ['gre_fou', 'route', 'none']
+      - vpn_transport in ['gre_fou', 'none']
       - not (vpn_serves_clients | bool) or (vpn_client_cidr is defined)
-      - vpn_route_return in ['port_security_disabled', 'snat']
       - vpn_crypto_profile in vpn_crypto_profiles
     fail_msg: >-
       Invalid vpn_gateway configuration. tunnel_count must be 1-32,
-      vpn_client_transport must be gre_fou/route/none, vpn_client_cidr is
-      required for gre_fou and route, and vpn_crypto_profile must be one of
+      vpn_client_transport must be gre_fou/none, vpn_client_cidr is
+      required for gre_fou, and vpn_crypto_profile must be one of
       {{ vpn_crypto_profiles.keys() | list }}.
   tags: [setup, verify]
 
@@ -166,12 +165,11 @@
     that:
       - not (vpn_disable_conntrack | bool) or not (vpn_stateful_forward_rule | bool)
       - not (vpn_disable_conntrack | bool) or not (vpn_snat_internet_egress | bool)
-      - not (vpn_route_return == 'snat') or not (vpn_disable_conntrack | bool)
     fail_msg: >-
       Conntrack interlock violated. NOTRACK'd packets can never match a
       ctstate rule and can never be SNAT'd, so vpn_disable_conntrack=true
-      requires vpn_stateful_forward_rule=false, vpn_snat_internet_egress=false
-      and vpn_route_return != snat. Note also that SNAT is stateful, so it
+      requires vpn_stateful_forward_rule=false and
+      vpn_snat_internet_egress=false. Note also that SNAT is stateful, so it
       cannot be combined with multi-gateway ECMP at all - see the
       "Known limitations" section of README.md.
   tags: [setup, verify]
@@ -208,17 +206,6 @@
     - (vpn_remote_addrs | length) <= 1
   tags: [setup, verify]
 
-- name: "WARNING: route transport needs port security disabled"
-  ansible.builtin.debug:
-    msg: >-
-      vpn_client_transport=route forwards decrypted packets whose source is a
-      REMOTE private IP out of this gateway's vNIC. Crusoe port security drops
-      those. Confirm NetEng has disabled port security on this VM's vNIC (or
-      added allowed-address-pairs covering {{ vpn_remote_subnet }}) before
-      expecting return traffic to arrive.
-  when: vpn_transport == 'route' and vpn_route_return == 'port_security_disabled'
-  tags: [setup, verify]
-
 # Multipoint GRE has no signalling, so the gateway needs one PERMANENT
 # neighbour entry per host in vpn_client_cidr. That does not scale: a /20 is
 # 4094 entries (fine, ~seconds), a /16 is 65534 (exceeds the neighbour table
@@ -239,8 +226,7 @@
       net.ipv4.neigh.default.gc_thresh3 ({{ vpn_neigh_gc_thresh3 }}). The table
       would overflow and an arbitrary subset of clients would silently never
       work. Either narrow vpn_client_cidr to the range that actually holds
-      clients, raise vpn_neigh_gc_thresh1/2/3, or switch to
-      vpn_client_transport=route, which needs no neighbour table at all.
+      clients, or raise vpn_neigh_gc_thresh1/2/3.
   when: vpn_transport == 'gre_fou'
   tags: [setup, verify]
 
@@ -249,8 +235,7 @@
     msg: >-
       vpn_client_cidr {{ vpn_client_cidr }} means {{ vpn_neigh_needed }}
       permanent neighbour entries on every gateway. That works, but it adds
-      deploy time and memory on each gateway. The route transport needs none
-      of it.
+      deploy time and memory on each gateway.
   when:
     - vpn_transport == 'gre_fou'
     - (vpn_neigh_needed | int) > 8000
@@ -509,8 +494,8 @@
   when: vpn_transport == 'gre_fou'
   tags: [setup]
 
-# Covers route transport in both directions, and internet egress for
-# full-tunnel mode, without needing per-tunnel rules.
+# Covers internet egress for full-tunnel mode, without needing per-tunnel
+# rules.
 - name: "Allow forwarding: LAN <-> IPsec"
   ansible.builtin.iptables:
     chain: FORWARD
@@ -543,11 +528,11 @@
   tags: [setup]
 
 # The internet-egress SNAT below matches "source = remote subnet, out = uplink".
-# In route transport, traffic heading BACK to local clients also leaves via the
-# uplink with a remote source address, so it would match and be NAT'd - which
-# both hides the real remote IPs and makes the path stateful, breaking
-# multi-gateway ECMP. This RETURN exempts client-bound traffic, and must be
-# added BEFORE the SNAT rule.
+# Traffic heading BACK to local GRE clients also leaves via the uplink with a
+# remote source address, so it would match and be NAT'd - which both hides the
+# real remote IPs and makes the path stateful, breaking multi-gateway ECMP.
+# This RETURN exempts client-bound traffic, and must be added BEFORE the
+# SNAT rule.
 - name: "Exempt client-bound traffic from the internet SNAT"
   ansible.builtin.iptables:
     table: nat
@@ -578,19 +563,6 @@
     to_source: "{{ vpn_local_gw_ip }}"
     comment: "VPN: SNAT for internet egress"
   when: vpn_snat_internet_egress | bool
-  tags: [setup]
-
-- name: "SNAT remote traffic towards clients (route transport fallback)"
-  ansible.builtin.iptables:
-    table: nat
-    chain: POSTROUTING
-    out_interface: "{{ vpn_primary_iface }}"
-    source: "{{ vpn_remote_subnet }}"
-    destination: "{{ vpn_client_cidr }}"
-    jump: SNAT
-    to_source: "{{ vpn_local_gw_ip }}"
-    comment: "VPN: SNAT return traffic past port security"
-  when: vpn_transport == 'route' and vpn_route_return == 'snat'
   tags: [setup]
 
 - name: Allow established/related forwarding

@@ -150,8 +150,8 @@ vpn_force_encap: true
 # understates throughput and drops real user traffic.
 #
 # Auto now resolves to:
-#   start  whenever this gateway serves clients (gre_fou or route), or has
-#          more than one tunnel - i.e. every case where laziness costs traffic
+#   start  whenever this gateway serves clients (gre_fou), or has more than
+#          one tunnel - i.e. every case where laziness costs traffic
 #   trap   only for a plain point-to-point gateway with no local clients
 vpn_start_action: ""
 
@@ -207,15 +207,9 @@ vpn_replay_window: 1024
 # Client transport (how local Crusoe VMs / K8s nodes reach this gateway)
 # ---------------------------------------------------------------------------
 #   gre_fou  GRE-over-FOU overlay (== the deprecated vpn_use_gre: true)
-#   route    plain static routes, no encapsulation. REQUIRES Crusoe port
-#            security to be DISABLED on this gateway's vNIC (or allowed-
-#            address-pairs covering vpn_remote_subnet). Without that,
-#            decrypted return traffic is dropped by the SDN. See the README.
 #   none     this gateway carries no local clients (== vpn_use_gre: false)
 #
-# "" = gre_fou. That is the default because "route" REQUIRES Crusoe NetEng to
-# disable port security on every gateway vNIC by hand, and no playbook can do
-# that for you.
+# "" = gre_fou.
 #
 # Left as "" rather than the literal "gre_fou" so the deprecated vpn_use_gre
 # spelling stays reachable: hardcoding it here would make "vpn_use_gre: false"
@@ -257,15 +251,6 @@ vpn_fou_sport_auto: true
 # For kernels whose iproute2 lacks "encap-sport auto": N FOU ports.
 # Device name stays exactly "gre-vpn" while this is 1.
 vpn_fou_port_count: 1
-
-# How "route" transport gets decrypted return traffic past the SDN:
-#   port_security_disabled  NetEng disabled port security / added allowed-
-#                           address-pairs. Stateless, scales. Recommended.
-#   snat                    gateway SNATs remote->client traffic to its own
-#                           address. No network-team dependency, but needs
-#                           conntrack per packet and is INCOMPATIBLE with
-#                           multi-gateway ECMP. Not for >10 Gbps.
-vpn_route_return: "port_security_disabled"
 
 # SNAT decrypted traffic heading for the internet. Required for full-tunnel
 # internet egress, but SNAT is stateful, so it CANNOT be combined with
@@ -333,7 +318,7 @@ vpn_rp_filter: 2
 #
 # Derived values (see vpn_mss_effective in tasks/main.yml):
 #   gre_fou      vpn_gre_mtu  - 40   (1400 - 40 = 1360)
-#   route/none   vpn_xfrm_mtu - 40   (1400 - 40 = 1360)
+#   none         vpn_xfrm_mtu - 40   (1400 - 40 = 1360)
 #
 # Both come to 1360 because vpn_gre_mtu is 1400: the gateway strips the GRE
 # wrapper before encrypting, so the tunnel MTU, not the GRE MTU, is the
@@ -360,7 +345,7 @@ vpn_stateful_forward_rule: false
 #   ens3 GRO off  ->  4590    Mbps      (~1250x)
 #
 # This is correctness, not tuning, so it is applied by vpn-network.sh whenever
-# the transport is gre_fou - not gated behind vpn_perf_tuning. The route
+# the transport is gre_fou - not gated behind vpn_perf_tuning. The none
 # transport has no FOU and keeps GRO on.
 vpn_fou_disable_gro: true
 

@@ -191,17 +191,10 @@ up_overlay_routing() {
 # Client traffic may be destined anywhere (full tunnel), so mark it and route
 # it through a dedicated table. The gateway's own default route is untouched.
 up_mark_routing() {
-{% if vpn_transport == 'gre_fou' %}
 {% for g in gre_devs %}
     iptables -t mangle -D PREROUTING -i {{ g.dev }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
     iptables -t mangle -A PREROUTING -i {{ g.dev }} -j MARK --set-mark {{ vpn_fwmark }}
 {% endfor %}
-{% else %}
-    # route transport: match client traffic on the uplink, but never traffic
-    # that stays inside the local subnet (that includes this gateway's own IP).
-    iptables -t mangle -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} ! -d {{ vpn_client_cidr }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
-    iptables -t mangle -A PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} ! -d {{ vpn_client_cidr }} -j MARK --set-mark {{ vpn_fwmark }}
-{% endif %}
     ip rule del fwmark {{ vpn_fwmark }} lookup {{ vpn_mark_table }} 2>/dev/null || true
     ip rule add fwmark {{ vpn_fwmark }} lookup {{ vpn_mark_table }}
     ip route replace default {{ XFRM_NH }} table {{ vpn_mark_table }}
@@ -229,10 +222,6 @@ up_mss_clamp() {
 # importantly, enforces the statelessness that multi-gateway ECMP depends on:
 # a reply may legitimately return through a DIFFERENT gateway.
 up_notrack() {
-{% if vpn_transport == 'route' %}
-    iptables -t raw -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} -j NOTRACK 2>/dev/null || true
-    iptables -t raw -A PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} -j NOTRACK
-{% endif %}
 {% for g in gre_devs %}
     iptables -t raw -D PREROUTING -i {{ g.dev }} -j NOTRACK 2>/dev/null || true
     iptables -t raw -A PREROUTING -i {{ g.dev }} -j NOTRACK
@@ -286,9 +275,6 @@ do_down() {
     done
 {% endif %}
 {% if vpn_disable_conntrack | bool %}
-{% if vpn_transport == 'route' %}
-    iptables -t raw -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} -j NOTRACK 2>/dev/null || true
-{% endif %}
 {% for g in gre_devs %}
     iptables -t raw -D PREROUTING -i {{ g.dev }} -j NOTRACK 2>/dev/null || true
 {% endfor %}
@@ -297,13 +283,9 @@ do_down() {
 {% endfor %}
 {% endif %}
 {% if vpn_serves_clients | bool %}
-{% if vpn_transport == 'gre_fou' %}
 {% for g in gre_devs %}
     iptables -t mangle -D PREROUTING -i {{ g.dev }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
 {% endfor %}
-{% else %}
-    iptables -t mangle -D PREROUTING -i "$UPLINK" -s {{ vpn_client_cidr }} ! -d {{ vpn_client_cidr }} -j MARK --set-mark {{ vpn_fwmark }} 2>/dev/null || true
-{% endif %}
     ip rule del fwmark {{ vpn_fwmark }} lookup {{ vpn_mark_table }} 2>/dev/null || true
     ip route flush table {{ vpn_mark_table }} 2>/dev/null || true
 {% endif %}
