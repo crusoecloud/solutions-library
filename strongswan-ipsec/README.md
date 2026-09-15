@@ -306,6 +306,10 @@ To measure throughput, use [bandwidth-test](../bandwidth-test/).
 | `gre_fou` | GRE-over-FOU overlay (**default**) | none |
 | `none` | gateway carries no local clients; forwards its own LAN subnet | none |
 
+The client role only ever brings up GRE-over-FOU, so it refuses to configure
+against a gateway it resolves as `none` rather than silently bringing up a
+GRE device with no working peer.
+
 `vpn_use_gre: true/false` still works as a deprecated alias.
 
 Set `vpn_fou_sport_auto: true` for better flow spread across the fabric — the
