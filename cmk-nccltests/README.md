@@ -43,5 +43,6 @@ This directory contains Kubernetes manifests for running [NCCL tests](https://gi
 
 ## Configuration notes
 
-- **Topology file**: B200, H100, and H200 jobs mount `/etc/crusoe/nccl_topo` from the host and set `NCCL_TOPO_FILE` to the SKU-specific XML. This path is pre-populated on Crusoe GPU nodes.
+- **Topology file**: B300, B200, H100, and H200 jobs mount `/etc/crusoe/nccl_topo` from the host and set `NCCL_TOPO_FILE` to the SKU-specific XML. This path is pre-populated on Crusoe GPU nodes.
 - **CUDA image**: B200 and H200 use `nccl-tests:13.0.1-ubuntu24.04-nccl-2.29.2-1`; H100 uses `nccl-tests:12.8.1-ubuntu24.04-nccl-2.26.5-1`. Both images are hosted at `ghcr.io/crusoecloud/nccl-tests`.
+- **B300 No Hyperthreading**: Certain B300 nodes provided by Crusoe disables Hyperthreading for certain CPU performance profile. Those VMs have a dedicated topology file, and therefore should use its own yaml file as indicated by `nccl-b300-noht.yaml`.
