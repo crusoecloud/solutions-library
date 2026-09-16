@@ -5,6 +5,8 @@ This directory contains Kubernetes manifests for running [NCCL tests](https://gi
 | File | SKU | GPUs per node |
 |---|---|---|
 | [nccl-b200.yaml](nccl-b200.yaml) | B200 180GB SXM | 8 |
+| [nccl-b300.yaml](nccl-b300.yaml) | B300 280GB SXM | 8 |
+| [nccl-b300-noht.yaml](nccl-b300-nohtt.yaml) | B300 280GB SXM (No Hyperthreading) | 8 |
 | [nccl-gb200.yaml](nccl-gb200.yaml) | GB200 (NVL72) | 4 |
 | [nccl-h100.yaml](nccl-h100.yaml) | H100 80GB SXM | 8 |
 | [nccl-h200.yaml](nccl-h200.yaml) | H200 141GB SXM | 8 |
@@ -23,7 +25,7 @@ This directory contains Kubernetes manifests for running [NCCL tests](https://gi
 
 1. Choose the manifest for your SKU.
 2. Adjust the `replicas` field under `Worker` to match the number of GPU nodes in your cluster.
-3. For B200, H100, and H200, update `-np` in the launcher command to equal `<GPUs per node> × <worker replicas>` (e.g. `8 × 2 = 16`).
+3. For B300, B200, H100, and H200, update `-np` in the launcher command to equal `<GPUs per node> × <worker replicas>` (e.g. `8 × 2 = 16`).
 4. For GB200, update `-np` to equal `<slotsPerWorker> × <worker replicas>` (e.g. `4 × 36 = 144`).
 5. Apply the manifest:
    ```bash
