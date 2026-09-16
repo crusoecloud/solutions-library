@@ -6,7 +6,7 @@ This directory contains Kubernetes manifests for running [NCCL tests](https://gi
 |---|---|---|
 | [nccl-b200.yaml](nccl-b200.yaml) | B200 180GB SXM | 8 |
 | [nccl-b300.yaml](nccl-b300.yaml) | B300 280GB SXM | 8 |
-| [nccl-b300-noht.yaml](nccl-b300-nohtt.yaml) | B300 280GB SXM (No Hyperthreading) | 8 |
+| [nccl-b300-noht.yaml](nccl-b300-noht.yaml) | B300 280GB SXM (No Hyperthreading) | 8 |
 | [nccl-gb200.yaml](nccl-gb200.yaml) | GB200 (NVL72) | 4 |
 | [nccl-h100.yaml](nccl-h100.yaml) | H100 80GB SXM | 8 |
 | [nccl-h200.yaml](nccl-h200.yaml) | H200 141GB SXM | 8 |
