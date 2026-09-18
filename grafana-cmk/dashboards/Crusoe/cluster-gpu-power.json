@@ -58,7 +58,7 @@
       }
     ]
   },
-  "description": "Aggregate GPU power draw and energy consumption across the cluster. Data sourced from Crusoe Metrics \u2014 DCGM_FI_DEV_POWER_USAGE in watts, DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION in millijoules cumulative. SKU-agnostic: works for any NVIDIA GPU that DCGM reports power for.",
+  "description": "Aggregate GPU power draw and energy consumption across the cluster. Data sourced from Crusoe Metrics \u2014 DCGM_FI_DEV_POWER_USAGE in watts, DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION in millijoules cumulative. Vendor-neutral: uses NVIDIA DCGM (DCGM_FI_DEV_POWER_USAGE) or AMD device-metrics-exporter (gpu_power_usage), whichever the cluster exposes. AMD has no cumulative energy counter, so energy is derived from average power over the range.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -134,7 +134,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -196,7 +196,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "avg(gpu_power_usage{cluster_id=~\"$cluster\"}) or avg(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -258,7 +258,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": false,
           "legendFormat": "",
           "refId": "A"
@@ -321,7 +321,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION{cluster_id=~\"$cluster\"}[$__range])) / 3600000000",
+          "expr": "sum(avg_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$__range])) * $__range_s / 3600000 or sum(increase(DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION{cluster_id=~\"$cluster\"}[$__range])) / 3600000000",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -417,7 +417,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "Total",
           "refId": "A"
         }
@@ -512,7 +512,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum by (vm_name) (gpu_power_usage{cluster_id=~\"$cluster\"}) or sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -575,7 +575,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum by (vm_name) (gpu_power_usage{cluster_id=~\"$cluster\"}) or sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "{{vm_name}}",
           "refId": "A"
@@ -707,7 +707,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "Total Power W",
           "refId": "A"
         },
@@ -716,7 +716,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "avg(gpu_gfx_activity{cluster_id=~\"$cluster\"}) or avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "legendFormat": "Avg Utilization %",
           "refId": "B"
         }
@@ -744,7 +744,7 @@
           "type": "prometheus",
           "uid": "crusoe-metrics"
         },
-        "definition": "label_values(DCGM_FI_DEV_POWER_USAGE, cluster_id)",
+        "definition": "label_values({__name__=~\"gpu_power_usage|DCGM_FI_DEV_POWER_USAGE\"}, cluster_id)",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
@@ -753,7 +753,7 @@
         "name": "cluster",
         "options": [],
         "query": {
-          "query": "label_values(DCGM_FI_DEV_POWER_USAGE, cluster_id)",
+          "query": "label_values({__name__=~\"gpu_power_usage|DCGM_FI_DEV_POWER_USAGE\"}, cluster_id)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
