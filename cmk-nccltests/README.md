@@ -16,8 +16,9 @@ This directory contains Kubernetes manifests for running [NCCL tests](https://gi
 - A functional **Crusoe Managed Kubernetes (CMK)** cluster with GPU node pools provisioned for the target SKU.
 - **MPI Operator** installed on the cluster. The manifests use `kubeflow.org/v2beta1 MPIJob`. Install via:
   ```bash
-  kubectl apply -f https://raw.githubusercontent.com/kubeflow/mpi-operator/master/deploy/v2beta1/mpi-operator.yaml
+  kubectl apply --server-side -f https://raw.githubusercontent.com/kubeflow/mpi-operator/master/deploy/v2beta1/mpi-operator.yaml
   ```
+  (using server-side apply prevents CRD creation from failing due to maximum annotation length being exceeded)
 - For GB200: the **NVIDIA GPU Feature Discovery** and **Dynamic Resource Allocation (DRA)** components must be enabled, as the GB200 manifest uses `resource.nvidia.com/v1beta1 ComputeDomain`.
 - `kubectl` configured to talk to your CMK cluster (`kubeconfig` set up).
 
