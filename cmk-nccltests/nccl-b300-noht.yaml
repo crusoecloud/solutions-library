@@ -120,7 +120,7 @@ spec:
                 add: ["IPC_LOCK"]
             env:
              - name: NCCL_TOPO_FILE
-               value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+               value: /opt/nccl_topo/b300-288gb-sxm-ib-noht-cloud-hypervisor.xml
              - name: UCX_RNDV_SCHEME
                value: "get_zcopy"   # UCX memory setting
              - name: UCX_TLS
