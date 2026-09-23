@@ -319,7 +319,7 @@ Verify the dashboards:
 
 1. Click **Dashboards** in the left sidebar.
 2. Open the **Crusoe** folder.
-3. You should see eleven dashboards in the **Crusoe** folder: Cluster GPU Overview, Cluster GPU Overview (Vendor-Neutral), Node Details, DCGM & Xid Errors, Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
+3. You should see twelve dashboards in the **Crusoe** folder: Cluster GPU Overview, Cluster GPU Overview (Vendor-Neutral), AMD Instinct GPU Detail, Node Details, GPU Errors (DCGM & AMD), Cluster GPU Power, InfiniBand Cluster View, InfiniBand Node View, Shared Storage View, Slurm Cluster View, Network Cluster View, and Node Network Detail.
 4. If you applied the optional vLLM datasource (`manifests/grafana-datasource-vllm-configmap.yaml`) and run scraped vLLM pods, a separate top-level **Inference** folder appears — a peer of **Crusoe**, not nested inside it — holding the **Inference / vLLM Overview** dashboard.
 
 ---
@@ -330,10 +330,12 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 ### GPU dashboards
 
-**Cluster GPU Overview (`Crusoe/cluster-gpu-overview.json`, 13 panels)** — cluster-wide GPU health, utilization, and thermals.
+**Cluster GPU Overview (`Crusoe/cluster-gpu-overview.json`, 13 panels)** — cluster-wide GPU health, utilization, and thermals, on **NVIDIA and AMD alike**.
+
+Every query is a *set union* of the two vendors' series — `sum(gpu_power_usage{...} or DCGM_FI_DEV_POWER_USAGE{...})` rather than `sum(A) or sum(B)`. The two metric families never share a label set (different `__name__`, and `gpu_id` vs `gpu`), so the union is exact, and a cluster running both vendors aggregates correctly instead of silently reporting only the NVIDIA half.
 
 - **Utilization + capacity**: Total GPUs / nodes, average utilization gauge (70%/90% thresholds), per-node utilization time series, memory used vs total, power draw by node, top-10 nodes by utilization.
-- **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs ≥80°C, GPUs ≥85°C slowdown threshold) sourced from `DCGM_FI_DEV_GPU_TEMP`, a compact **Top 3 Hottest Nodes** card row (node-name + temp), and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node Details dashboard.
+- **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs Near Thermal Limit, GPUs At Slowdown Threshold) sourced from `DCGM_FI_DEV_GPU_TEMP` or `gpu_junction_temperature`. The two threshold cards apply **vendor-specific cutoffs** — 80 °C / 85 °C on NVIDIA die temperature, 95 °C / 100 °C on AMD junction (hotspot) temperature — because junction and die are different measurements and junction runs hotter. A single shared cutoff would be wrong for one vendor or the other. Also included: a compact **Top 3 Hottest Nodes** card row (node-name + temp), and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node Details dashboard.
 
 **Node Details (`Crusoe/node-gpu-detail.json`, 14 panels)** — per-node drill-in for both GPU and host system metrics. Pick a node from the `$node` dropdown; panels populate after selection. UID is preserved as `crusoe-node-gpu-detail` so existing URLs and bookmarks resolve.
 
@@ -346,13 +348,27 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 > 2. **Disk devices.** Per-device disk I/O includes `vda*` (root + ephemeral) and `loop*` (squashfs / snap mounts). **Crusoe SDisks are NOT visible here** — those use Crusoe-side counters (`crusoe_sdisk_*`) and appear on the Shared Storage View.
 > 3. **Uptime via `crusoe_vm_boot_time`.** Grafana auto-formats the `time() - boot_time` value as days/hours.
 
-**Cluster GPU Power (`Crusoe/cluster-gpu-power.json`)** — aggregate and per-node power draw across the cluster, plus per-GPU power distribution histogram.
+**Cluster GPU Power (`Crusoe/cluster-gpu-power.json`)** — aggregate and per-node power draw across the cluster, plus per-GPU power distribution histogram. Vendor-neutral via the same set-union form as Cluster GPU Overview. The energy-consumed panel is the one exception: NVIDIA reports a cumulative `DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION` counter while AMD publishes no energy counter, so there the AMD branch integrates average power over the selected range instead, and the two branches stay separate expressions.
 
-**Cluster GPU Overview (Vendor-Neutral) (`Crusoe/gpu-overview-vendor-neutral.json`, 7 panels)** — node count, avg GPU utilization / temperature / memory, and per-node utilization / memory / power / temperature time series built on Crusoe's `crusoe_node:*` recording rules. These rules cover **both NVIDIA and AMD Instinct** nodes, unlike the DCGM-based dashboards (NVIDIA-only), so this is the go-to overview on mixed or AMD fleets. Filters: **Cluster** (`cluster_id` values — note that Crusoe Metrics does not publish a human-readable `cluster_name` label anywhere today, so the dropdown shows cluster UUIDs; same limitation applies to the DCGM dashboards' cluster filter) and **Instance Type** (e.g. `b200-standard.1`, `mi355x-standard.1`) — select both to isolate one cluster's GPU fleet of one SKU.
+**Cluster GPU Overview (Vendor-Neutral) (`Crusoe/gpu-overview-vendor-neutral.json`, 7 panels)** — node count, avg GPU utilization / temperature / memory, and per-node utilization / memory / power / temperature time series built on Crusoe's `crusoe_node:*` recording rules. These rules cover **both NVIDIA and AMD Instinct** nodes, unlike the DCGM-based dashboards (NVIDIA-only), so this is the go-to overview on mixed or AMD fleets. Filters: **Cluster** (`cluster_id` values, so the dropdown shows cluster UUIDs. The `crusoe_node:*` recording rules carry no `cluster_name` label — the raw AMD `gpu_*` series *do* carry one, but the variable is sourced from the rules, so UUIDs are what you get here) and **Instance Type** (e.g. `b200-standard.1`, `mi355x-standard.1`) — select both to isolate one cluster's GPU fleet of one SKU.
 
-> **Caveats:** (1) The power-draw panel is NVIDIA-only — Crusoe Metrics does not publish GPU power for AMD nodes today, so it renders empty when only AMD instance types are selected. (2) The `p95` recording rules aggregate each node's GPUs, so per-node-per-GPU breakouts aren't available here (use the DCGM dashboards for NVIDIA per-GPU detail).
+> **Caveats:** (1) The **GPU Power Draw by Node (total)** panel deliberately does *not* use `crusoe_node:node_gpu_power:p95_1m`. That rule is a p95 **across each node's GPUs** — roughly one GPU's draw — so charting it as node power under-reports an 8-GPU node by close to 8x. Power is an extensive quantity and has to be summed, which the rollups cannot do, so this panel sums the raw per-GPU series instead. Utilization, temperature and memory-utilization are intensive quantities, so avg/p95 is the correct operator there and those panels still use the rules.
+> (2) Whether GPU power appears at all is a per-cluster property, not a per-vendor one: some AMD exporter builds publish `gpu_power_usage` and some publish only `gpu_energy_consumed` (cumulative µJ), which Crusoe Metrics does not currently carry — on those clusters node power cannot be derived from the datasource at all.
+> (3) The `p95` rules collapse each node to one value, so per-GPU breakouts aren't available here — use **AMD Instinct GPU Detail** for AMD, or the DCGM dashboards for NVIDIA.
 
-**DCGM & Xid Errors (`Crusoe/dcgm-xid-errors.json`, 20 panels)** — Xid + ECC tracking, plus a GPU Health section designed for slow-node detection during training runs.
+**AMD Instinct GPU Detail (`Crusoe/amd-gpu-detail.json`, 23 panels)** — per-GPU drill-in for AMD Instinct accelerators, the AMD counterpart to the DCGM per-GPU views. Filters: **Cluster** and **Node**; every panel is node-scoped.
+
+- **Fleet summary**: GPU and node counts, average GFX activity, average and peak junction temperature.
+- **Compute & memory**: GFX activity by node, **UMC (memory-controller) activity** by node — high UMC against low GFX means the workload is memory-bound, not compute-bound — VRAM used vs total, and a top-10 per-GPU VRAM leaderboard.
+- **Thermals & power**: junction temperature by node, and total node power (summed across the node's GPUs).
+- **XGMI fabric**: TX/RX rate by node plus a per-link breakdown by `gpu_id` and `link_index`. XGMI is AMD's GPU-to-GPU interconnect, the analogue of NVLink; a link flat at zero while its peers carry traffic is the signature of a down or degraded link. Nothing else in this repo charts XGMI.
+- **GPU health (node-scoped)**: uncorrectable-ECC GPU count, 24 h correctable and uncorrectable ECC deltas, 24 h AFID event count, and per-GPU correctable-ECC rate.
+
+> **Notes:** (1) **Junction ≠ die temperature.** `gpu_junction_temperature` is the hotspot reading and runs hotter than the die/edge temperature `DCGM_FI_DEV_GPU_TEMP` reports — do not compare the two numbers directly, and do not reuse NVIDIA's 80/85 °C thresholds on it.
+> (2) **XGMI units.** AMD's exporter documents `gpu_xgmi_link_rx`/`_tx` in KB, so the panels are labelled KiB/s. Treat the absolute scale as indicative and the relative shape across links as the reliable signal.
+> (3) **AFID is not Xid.** AFID (AMD Failure ID) is the nearest AMD analogue to an NVIDIA Xid event, but the code spaces are unrelated and the values are not comparable.
+
+**GPU Errors (DCGM & AMD) (`Crusoe/dcgm-xid-errors.json`, 29 panels)** — Xid + ECC tracking, plus a GPU Health section designed for slow-node detection during training runs, and an AMD Instinct health section. UID stays `crusoe-dcgm-xid-errors`, so existing links keep working.
 
 - **Top section: Xid + DBE.** Stat cards that turn red on any non-zero value, Xid rate by node over time, breakdown table by node / GPU / Xid code, and a Health Failures table that lists any GPU with a new ECC DBE volatile increase or an uncorrectable HBM row remapping in the last 24h. Xid code meanings: [NVIDIA's Xid error reference](https://docs.nvidia.com/deploy/xid-errors/).
 - **GPU Health Indicators — Slow Node Detection.** Six headline stats (active SBE GPUs, GPUs with remapped rows, uncorrectable rows, 24 h PCIe replay delta, 24 h SBE volatile delta, cluster lifetime SBE) plus six leaderboard tables for drill-in:
@@ -371,6 +387,7 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 > 3. **Idle and active GPUs share the SBE timeseries.** Top-20 by `rate(... [15m])` will return 20 series even on a quiet cluster — most will be flat zero. That is the healthy state.
 > 4. **Tensor utilization is per-node averaged across that node's 8 GPUs.** A single bad GPU on an 8-GPU node will only drag the average down by ~12 percentage points, but in collective workloads that's exactly enough to make it the step-time bottleneck.
 > 5. **`xid_id` label.** Panels that break down errors by Xid code use `sum by (vm_name, gpu, xid_id)`. This label name is confirmed on Managed Slurm clusters; if the table shows no rows, verify the label name with the discovery curl in the Troubleshooting section.
+> 6. **The DCGM sections stay NVIDIA-only on purpose.** Xid codes, remapped rows, PCIe replay counters and tensor-core activity have no AMD equivalent, so giving them vendor-neutral fallbacks would only produce panels that are permanently blank on AMD. Instead the **AMD Instinct GPU Health** row at the bottom covers the three signals AMD does publish — correctable ECC, uncorrectable ECC, and AFID events — and stays empty on NVIDIA-only clusters.
 
 ### InfiniBand dashboards
 

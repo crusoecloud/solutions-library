@@ -64,7 +64,7 @@
       }
     ]
   },
-  "description": "Cluster-wide GPU utilization, memory, and power across all nodes in a Crusoe CMK or Managed Slurm cluster. Data sourced from Crusoe Metrics.",
+  "description": "Cluster-wide GPU utilization, memory, and power across all nodes in a Crusoe CMK or Managed Slurm cluster. Data sourced from Crusoe Metrics. Vendor-neutral: every query is a set union of the AMD device-metrics-exporter series and the NVIDIA DCGM series (gpu_gfx_activity or DCGM_FI_DEV_GPU_UTIL, and so on). The two families never share a label set, so the union is exact and a cluster running both vendors aggregates correctly.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -125,7 +125,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "count(gpu_gfx_activity{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -188,7 +188,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(count by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+          "expr": "count(count by (vm_name) (gpu_gfx_activity{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -259,7 +259,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "avg(gpu_gfx_activity{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "Avg",
           "refId": "A"
@@ -356,7 +356,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "avg by (vm_name) (gpu_gfx_activity{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -491,7 +491,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"})",
+          "expr": "sum(gpu_used_visible_vram{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"})",
           "legendFormat": "Used",
           "refId": "A"
         },
@@ -500,7 +500,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"} + DCGM_FI_DEV_FB_FREE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(gpu_total_visible_vram{cluster_id=~\"$cluster\"} or (DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"} + DCGM_FI_DEV_FB_FREE{cluster_id=~\"$cluster\"}))",
           "legendFormat": "Total Capacity",
           "refId": "B"
         }
@@ -595,7 +595,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum by (vm_name) (gpu_power_usage{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -667,7 +667,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(10, avg by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(10, avg by (vm_name) (gpu_gfx_activity{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
           "instant": true,
           "legendFormat": "{{vm_name}}",
           "refId": "A"
@@ -729,7 +729,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "expr": "max(gpu_junction_temperature{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -789,7 +789,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "expr": "avg(gpu_junction_temperature{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -798,7 +798,7 @@
     {
       "id": 10,
       "type": "stat",
-      "title": "GPUs \u2265 80\u00b0C",
+      "title": "GPUs Near Thermal Limit",
       "description": "Number of GPUs currently at or above 80\u00b0C. Worth a look on any non-zero \u2014 80\u00b0C is the typical caution threshold; sustained operation above will start affecting boost behavior.",
       "datasource": {
         "type": "prometheus",
@@ -844,7 +844,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(count(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 80)) or vector(0)",
+          "expr": "(count((DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 80) or (gpu_junction_temperature{cluster_id=~\"$cluster\"} >= 95))) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -853,7 +853,7 @@
     {
       "id": 11,
       "type": "stat",
-      "title": "GPUs \u2265 85\u00b0C (slowdown)",
+      "title": "GPUs At Slowdown Threshold",
       "description": "Number of GPUs currently at or above 85\u00b0C \u2014 the typical thermal-slowdown threshold on H100/B200 SXM. Any non-zero value means GPUs are throttling and your job throughput is impacted.",
       "datasource": {
         "type": "prometheus",
@@ -899,7 +899,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(count(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 85)) or vector(0)",
+          "expr": "(count((DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 85) or (gpu_junction_temperature{cluster_id=~\"$cluster\"} >= 100))) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -966,7 +966,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(3, max by (vm_name) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(3, max by (vm_name) (gpu_junction_temperature{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
           "legendFormat": "{{vm_name}}",
           "instant": true,
           "refId": "A"
@@ -1033,7 +1033,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (vm_name) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "expr": "max by (vm_name) (gpu_junction_temperature{cluster_id=~\"$cluster\"} or DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
           "legendFormat": "{{vm_name}}"
         }
       ]
@@ -1044,7 +1044,10 @@
   "tags": [
     "crusoe",
     "gpu",
-    "kubernetes"
+    "kubernetes",
+    "nvidia",
+    "amd",
+    "vendor-neutral"
   ],
   "templating": {
     "list": [
@@ -1059,7 +1062,7 @@
           "type": "prometheus",
           "uid": "crusoe-metrics"
         },
-        "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+        "definition": "label_values({__name__=~\"gpu_gfx_activity|DCGM_FI_DEV_GPU_UTIL\"}, cluster_id)",
         "hide": 0,
         "includeAll": true,
         "label": "Cluster",
@@ -1067,7 +1070,7 @@
         "name": "cluster",
         "options": [],
         "query": {
-          "query": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+          "query": "label_values({__name__=~\"gpu_gfx_activity|DCGM_FI_DEV_GPU_UTIL\"}, cluster_id)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

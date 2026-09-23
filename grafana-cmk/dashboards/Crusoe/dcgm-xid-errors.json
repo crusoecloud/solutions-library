@@ -1940,6 +1940,792 @@
           }
         }
       ]
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "AMD Instinct GPU Health",
+      "gridPos": {
+        "x": 0,
+        "y": 91,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "AMD GPUs With Correctable ECC",
+      "description": "AMD GPUs with a non-zero lifetime correctable (single-bit) ECC count. Corrected in hardware and usually benign in isolation; sustained growth is the signal worth acting on.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 92,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "count(gpu_ecc_correct_total{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "AMD GPUs With Uncorrectable ECC",
+      "description": "AMD GPUs with a non-zero lifetime uncorrectable (multi-bit) ECC count. Any non-zero value is a drain-and-investigate candidate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 92,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "count(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "AMD 24h Correctable ECC Delta",
+      "description": "Correctable ECC corrections accumulated across all AMD GPUs in the last 24h.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 92,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(increase(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "AMD 24h Uncorrectable ECC Delta",
+      "description": "Uncorrectable ECC errors accumulated across all AMD GPUs in the last 24h.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 92,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(increase(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "table",
+      "title": "Top 15 AMD GPUs by Lifetime Correctable ECC",
+      "description": "Per-GPU lifetime correctable ECC counts \u2014 the AMD analogue of the DCGM SBE leaderboards above.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 12,
+        "h": 10
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Correctable ECC",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Correctable ECC"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "topk(15, sum by (vm_name, gpu_id) (gpu_ecc_correct_total{cluster_id=~\"$cluster\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cluster_id": true,
+              "device": true,
+              "Hostname": true,
+              "UUID": true,
+              "container": true,
+              "namespace": true,
+              "pod": true,
+              "crusoe_resource": true,
+              "location": true,
+              "metrics_source": true,
+              "nodepool": true,
+              "ib_network_id": true,
+              "ib_network_name": true,
+              "modelName": true,
+              "pci_bus_id": true,
+              "vm_id": true,
+              "DCGM_FI_DRIVER_VERSION": true,
+              "node_id": true,
+              "organization_id": true,
+              "project_id": true,
+              "vm_instance_type": true,
+              "vpc_network_id": true,
+              "pod_id": true,
+              "nodepool_name": true,
+              "node": true,
+              "cluster_name": true,
+              "card_model": true,
+              "serial_number": true,
+              "hostname": true,
+              "afid_index": true,
+              "deployment_mode": true,
+              "gpu_compute_partition_type": true,
+              "gpu_memory_partition_type": true,
+              "gpu_partition_id": true,
+              "job_id": true,
+              "job_user": true,
+              "job_partition": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "vm_name": "Node",
+              "gpu_id": "GPU",
+              "severity": "Severity"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "table",
+      "title": "AMD GPUs With Uncorrectable ECC (non-zero only)",
+      "description": "Per-GPU lifetime uncorrectable ECC counts. An empty table means a clean fleet.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 96,
+        "w": 12,
+        "h": 10
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Uncorrectable ECC",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Uncorrectable ECC"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum by (vm_name, gpu_id) (gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"}) > 0",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cluster_id": true,
+              "device": true,
+              "Hostname": true,
+              "UUID": true,
+              "container": true,
+              "namespace": true,
+              "pod": true,
+              "crusoe_resource": true,
+              "location": true,
+              "metrics_source": true,
+              "nodepool": true,
+              "ib_network_id": true,
+              "ib_network_name": true,
+              "modelName": true,
+              "pci_bus_id": true,
+              "vm_id": true,
+              "DCGM_FI_DRIVER_VERSION": true,
+              "node_id": true,
+              "organization_id": true,
+              "project_id": true,
+              "vm_instance_type": true,
+              "vpc_network_id": true,
+              "pod_id": true,
+              "nodepool_name": true,
+              "node": true,
+              "cluster_name": true,
+              "card_model": true,
+              "serial_number": true,
+              "hostname": true,
+              "afid_index": true,
+              "deployment_mode": true,
+              "gpu_compute_partition_type": true,
+              "gpu_memory_partition_type": true,
+              "gpu_partition_id": true,
+              "job_id": true,
+              "job_user": true,
+              "job_partition": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "vm_name": "Node",
+              "gpu_id": "GPU",
+              "severity": "Severity"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "table",
+      "title": "AMD AFID Errors by Node / GPU / Severity (Last 24h)",
+      "description": "AMD AFID (AMD Failure ID) events split by severity. This is the nearest AMD analogue to an NVIDIA Xid event, but the code spaces are unrelated and the values are not comparable.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 106,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "AFID",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AFID"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "max by (vm_name, gpu_id, severity) (max_over_time(gpu_afid_errors{cluster_id=~\"$cluster\"}[24h])) > 0",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cluster_id": true,
+              "device": true,
+              "Hostname": true,
+              "UUID": true,
+              "container": true,
+              "namespace": true,
+              "pod": true,
+              "crusoe_resource": true,
+              "location": true,
+              "metrics_source": true,
+              "nodepool": true,
+              "ib_network_id": true,
+              "ib_network_name": true,
+              "modelName": true,
+              "pci_bus_id": true,
+              "vm_id": true,
+              "DCGM_FI_DRIVER_VERSION": true,
+              "node_id": true,
+              "organization_id": true,
+              "project_id": true,
+              "vm_instance_type": true,
+              "vpc_network_id": true,
+              "pod_id": true,
+              "nodepool_name": true,
+              "node": true,
+              "cluster_name": true,
+              "card_model": true,
+              "serial_number": true,
+              "hostname": true,
+              "afid_index": true,
+              "deployment_mode": true,
+              "gpu_compute_partition_type": true,
+              "gpu_memory_partition_type": true,
+              "gpu_partition_id": true,
+              "job_id": true,
+              "job_user": true,
+              "job_partition": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "vm_name": "Node",
+              "gpu_id": "GPU",
+              "severity": "Severity"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "AMD Correctable ECC Rate by Node",
+      "description": "Rate of correctable ECC corrections per node. A node climbing away from the pack is the degrading-HBM / slow-node signal.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 116,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "topk(20, sum by (vm_name) (rate(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[15m])))",
+          "legendFormat": "{{vm_name}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "5m",
@@ -1948,7 +2734,9 @@
     "crusoe",
     "gpu",
     "dcgm",
-    "xid"
+    "xid",
+    "amd",
+    "ecc"
   ],
   "templating": {
     "list": [
@@ -1961,10 +2749,10 @@
           "uid": "crusoe-metrics"
         },
         "query": {
-          "query": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+          "query": "label_values({__name__=~\"gpu_gfx_activity|DCGM_FI_DEV_GPU_UTIL\"}, cluster_id)",
           "refId": "A"
         },
-        "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+        "definition": "label_values({__name__=~\"gpu_gfx_activity|DCGM_FI_DEV_GPU_UTIL\"}, cluster_id)",
         "includeAll": true,
         "multi": true,
         "allValue": ".+",
@@ -1988,7 +2776,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "DCGM & Xid Errors",
+  "title": "GPU Errors (DCGM & AMD)",
   "uid": "crusoe-dcgm-xid-errors",
   "version": 12,
   "weekStart": ""

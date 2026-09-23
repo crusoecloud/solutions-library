@@ -106,13 +106,13 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "crusoe-metrics" },
-      "description": "Per-node GPU power draw (p95) over time. NOTE: Crusoe Metrics currently reports GPU power for NVIDIA only — AMD Instinct (e.g. MI355X) has no power series here yet, so this panel is empty when only AMD instance types are selected.",
+      "description": "Total GPU power drawn by each node: the sum of every GPU on the node. Built on the raw per-GPU series (AMD gpu_power_usage, NVIDIA DCGM_FI_DEV_POWER_USAGE) rather than crusoe_node:node_gpu_power:p95_1m — that rule is a p95 ACROSS the node's GPUs, i.e. roughly one GPU's draw, so charting it as power-by-node under-reports an 8-GPU node by close to 8x. Power is extensive and must be summed. Renders empty on clusters whose exporter publishes no power series.",
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never", "spanNulls": true }, "min": 0, "unit": "watt" }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "id": 6,
       "options": { "legend": { "calcs": [ "mean", "max", "lastNotNull" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "crusoe_node:node_gpu_power:p95_1m{cluster_id=~\"$cluster\", vm_instance_type=~\"$instance_type\"}", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
-      "title": "GPU Power Draw by Node",
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "sum by (vm_name, vm_instance_type) (gpu_power_usage{cluster_id=~\"$cluster\", vm_instance_type=~\"$instance_type\"} or DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\", vm_instance_type=~\"$instance_type\"})", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
+      "title": "GPU Power Draw by Node (total)",
       "type": "timeseries"
     },
     {

@@ -17,6 +17,12 @@ generatorOptions:
     grafana_dashboard: "1"
 
 configMapGenerator:
+  - name: crusoe-dashboard-amd-gpu-detail
+    files:
+      - dashboards/Crusoe/amd-gpu-detail.json
+    options:
+      annotations:
+        grafana_folder: Crusoe
   - name: crusoe-dashboard-cluster-gpu-overview
     files:
       - dashboards/Crusoe/cluster-gpu-overview.json

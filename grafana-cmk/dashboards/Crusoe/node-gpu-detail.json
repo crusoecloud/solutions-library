@@ -451,12 +451,13 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "crusoe_node:node_gpu_power:p95_1m{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}",
+          "expr": "sum by (vm_name) (gpu_power_usage{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"} or DCGM_FI_DEV_POWER_USAGE{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"})",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
-      "title": "GPU Power (P95 per node)",
+      "title": "GPU Power Draw (node total)",
+      "description": "Total GPU power per node, summed across all GPUs on the node, from the raw per-GPU series. Replaces crusoe_node:node_gpu_power:p95_1m, which is a p95 across the node\u2019s GPUs and therefore roughly 1/N of the node total on an N-GPU node.",
       "type": "timeseries"
     },
     {
