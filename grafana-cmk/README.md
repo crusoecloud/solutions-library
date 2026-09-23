@@ -330,10 +330,13 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 ### GPU dashboards
 
-**Cluster GPU Overview (`Crusoe/cluster-gpu-overview.json`, 13 panels)** — cluster-wide GPU health, utilization, and thermals, on **NVIDIA and AMD alike**.
+**Cluster GPU Overview (`Crusoe/cluster-gpu-overview.json`, 14 panels)** — cluster-wide GPU health, utilization, and thermals, on **NVIDIA and AMD alike**.
 
 Every query is a *set union* of the two vendors' series — `sum(gpu_power_usage{...} or DCGM_FI_DEV_POWER_USAGE{...})` rather than `sum(A) or sum(B)`. The two metric families never share a label set (different `__name__`, and `gpu_id` vs `gpu`), so the union is exact, and a cluster running both vendors aggregates correctly instead of silently reporting only the NVIDIA half.
 
+- **Cluster GPU Utilization Over Time**: the headline trend, directly under the stat row. Three series — average utilization across every GPU and the single busiest GPU (left axis, the peak dashed), plus **busy-GPU-equivalents** on the right axis: total utilization divided by 100, i.e. how many GPUs' worth of work is in flight. Average alone hides fleet growth, and busy-GPU-equivalents alone hides what share of capacity is in use, so the two are read together.
+
+  Each point is an `avg_over_time`/`max_over_time` bucket of width `$__interval`, not a single instantaneous sample. A plain instant query evaluated at one point per step aliases when you zoom out — a spike lands or vanishes depending on where the step falls — whereas bucketing re-averages as the range widens, so the shape stays honest from 1 h to 30 d. The datasource's `timeInterval: "60s"` keeps `$__interval` from ever dropping below the scrape period and opening gaps. The peak line matters most when zoomed out: a cluster with one pinned GPU and everything else idle averages to near zero.
 - **Utilization + capacity**: Total GPUs / nodes, average utilization gauge (70%/90% thresholds), per-node utilization time series, memory used vs total, power draw by node, top-10 nodes by utilization.
 - **Thermal section**: stat row (Hottest GPU, Cluster Avg, GPUs Near Thermal Limit, GPUs At Slowdown Threshold) sourced from `DCGM_FI_DEV_GPU_TEMP` or `gpu_junction_temperature`. The two threshold cards apply **vendor-specific cutoffs** — 80 °C / 85 °C on NVIDIA die temperature, 95 °C / 100 °C on AMD junction (hotspot) temperature — because junction and die are different measurements and junction runs hotter. A single shared cutoff would be wrong for one vendor or the other. Also included: a compact **Top 3 Hottest Nodes** card row (node-name + temp), and a full-width **Per-Node Max GPU Temp Over Time** line graph below. Thresholds use green <70°C / yellow 70–80°C / red ≥80°C throughout. HBM memory temperature (`DCGM_FI_DEV_MEMORY_TEMP`) is available as a separate metric if you want to mirror this section for HBM later — currently surfaced only on the Node Details dashboard.
 

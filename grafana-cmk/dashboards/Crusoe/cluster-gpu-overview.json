@@ -269,6 +269,180 @@
       "type": "gauge"
     },
     {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Cluster GPU Utilization Over Time",
+      "description": "Cluster-wide GPU utilization as a trend, so you can see load ebb and flow. Three readings: the average across every GPU (left axis), the single busiest GPU (left axis, dashed), and busy-GPU-equivalents (right axis) \u2014 the sum of all utilization divided by 100, i.e. how many GPUs' worth of work is in flight. Average alone hides fleet growth; busy-GPU-equivalents alone hides what fraction of capacity that represents. Each point is an avg_over_time/max_over_time bucket of width $__interval rather than a single instantaneous sample, so widening the time picker re-buckets instead of aliasing \u2014 the shape stays honest from 1h out to 30d. The peak line matters most when zoomed out: a cluster with one pinned GPU and everything else idle averages near zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg utilization %"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Utilization %"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Peak GPU %"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Busy GPU equivalents"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Busy GPU equivalents"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "avg(avg_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$__interval]) or avg_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$__interval]))",
+          "legendFormat": "Avg utilization %",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "max(max_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$__interval]) or max_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$__interval]))",
+          "legendFormat": "Peak GPU %",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(avg_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$__interval]) or avg_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$__interval])) / 100",
+          "legendFormat": "Busy GPU equivalents",
+          "refId": "C"
+        }
+      ]
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -331,7 +505,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 16
       },
       "id": 4,
       "options": {
@@ -466,7 +640,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 24
       },
       "id": 5,
       "options": {
@@ -570,7 +744,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 32
       },
       "id": 6,
       "options": {
@@ -642,7 +816,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 40
       },
       "id": 7,
       "options": {
@@ -687,7 +861,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -746,7 +920,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -806,7 +980,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -861,7 +1035,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -916,7 +1090,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 54,
         "w": 24,
         "h": 4
       },
@@ -984,7 +1158,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 58,
         "w": 24,
         "h": 8
       },
