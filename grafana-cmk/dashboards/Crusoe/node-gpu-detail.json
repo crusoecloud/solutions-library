@@ -369,7 +369,7 @@
         "type": "prometheus",
         "uid": "crusoe-metrics"
       },
-      "description": "Per-node GPU power draw (P95 over 1m) \u2014 vendor-neutral. Aggregates power across all GPUs on a node.",
+      "description": "Total GPU power per node, summed across all GPUs on the node, from the raw per-GPU series. Replaces crusoe_node:node_gpu_power:p95_1m, which is a p95 across the node\u2019s GPUs and therefore roughly 1/N of the node total on an N-GPU node.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -451,13 +451,12 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (gpu_power_usage{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"} or DCGM_FI_DEV_POWER_USAGE{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"})",
+          "expr": "sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{vm_name=~\"$node\", nodepool_name=~\"$nodepool\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
       ],
       "title": "GPU Power Draw (node total)",
-      "description": "Total GPU power per node, summed across all GPUs on the node, from the raw per-GPU series. Replaces crusoe_node:node_gpu_power:p95_1m, which is a p95 across the node\u2019s GPUs and therefore roughly 1/N of the node total on an N-GPU node.",
       "type": "timeseries"
     },
     {
@@ -1122,6 +1121,19 @@
         "sort": 1,
         "type": "query",
         "allValue": ".+"
+      },
+      {
+        "name": "fresh",
+        "label": "Freshness window",
+        "type": "constant",
+        "query": "2m",
+        "current": {
+          "text": "2m",
+          "value": "2m"
+        },
+        "hide": 2,
+        "skipUrlSync": true,
+        "description": "Lookback used to ignore abandoned time series. Must be >= this deployment's scrape interval; raise it if panels go blank, lower it if stale values linger."
       }
     ]
   },

@@ -330,6 +330,24 @@ All dashboards live in the `Crusoe` folder in Grafana. Most have a **Cluster** d
 
 ### GPU dashboards
 
+> **Why the GPU queries look verbose.** Every aggregation over a raw per-GPU metric is wrapped as
+> `max without (pod, namespace, container, cluster_name, …) (last_over_time(metric[$fresh]))`.
+> That is not stylistic — without it the panels over-report badly.
+>
+> The AMD exporter stamps **workload identity** (`pod`, `namespace`, `container`) onto GPU hardware metrics,
+> and the relay adds enrichment labels (`cluster_name`, `nodepool_name`, `node_id`, `pod_id`, `ib_network_*`).
+> When a job starts or stops, or enrichment lands late, the label set changes — which in Prometheus creates a
+> **new time series**. The abandoned one stays queryable for the staleness lookback, so the same physical GPU
+> is counted twice: once at its old value, once at its new one. On a fleet running short jobs this was measured
+> at up to **5.55x** inflation on GPU count and roughly **2x** on summed power, and it skews averages too
+> (the stale copy holds a different value, not a duplicate one).
+>
+> `last_over_time(...[$fresh])` drops series that stopped reporting; `max without (...)` collapses any
+> remaining variants of one GPU. `$fresh` is a hidden dashboard constant (default `2m`) — raise it if panels
+> go blank because your region scrapes more slowly, lower it if stale values linger. The durable fix belongs
+> upstream: workload labels should not change a hardware metric's series identity.
+
+
 **Cluster GPU Overview (`Crusoe/cluster-gpu-overview.json`, 14 panels)** — cluster-wide GPU health, utilization, and thermals, on **NVIDIA and AMD alike**.
 
 Every query is a *set union* of the two vendors' series — `sum(gpu_power_usage{...} or DCGM_FI_DEV_POWER_USAGE{...})` rather than `sum(A) or sum(B)`. The two metric families never share a label set (different `__name__`, and `gpu_id` vs `gpu`), so the union is exact, and a cluster running both vendors aggregates correctly instead of silently reporting only the NVIDIA half.

@@ -149,7 +149,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h]) > 0) or vector(0)",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[24h])) > 0) or vector(0)",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -230,7 +230,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h]))",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -324,7 +324,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (vm_name) (max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[$__range])) > 0",
+          "expr": "max by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (max_over_time(DCGM_FI_DEV_XID_ERRORS{cluster_id=~\"$cluster\"}[$__range]))) > 0",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -430,7 +430,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (vm_name, gpu, err_code, err_msg) (max_over_time(DCGM_FI_DEV_XID_ERRORS[24h])) > 0",
+          "expr": "max by (vm_name, gpu, err_code, err_msg) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (max_over_time(DCGM_FI_DEV_XID_ERRORS[24h]))) > 0",
           "instant": true,
           "legendFormat": "",
           "refId": "A",
@@ -587,7 +587,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) > 0",
+          "expr": "sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h]))) > 0",
           "instant": true,
           "legendFormat": "ECC DBE {{vm_name}} GPU {{gpu}}",
           "refId": "A"
@@ -597,7 +597,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name, gpu) (DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) > 0",
+          "expr": "sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}[$fresh]))) > 0",
           "instant": true,
           "legendFormat": "Uncorrectable Remap {{vm_name}} GPU {{gpu}}",
           "refId": "B"
@@ -688,7 +688,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[$fresh])) > 0) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -756,7 +756,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}[$fresh])) > 0) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -820,7 +820,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) or vector(0)",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}[$fresh]))) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -888,7 +888,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(DCGM_FI_DEV_PCIE_REPLAY_COUNTER{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_PCIE_REPLAY_COUNTER{cluster_id=~\"$cluster\"}[24h]))) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -956,7 +956,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h]))) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -1016,7 +1016,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_ECC_SBE_AGG_TOTAL{cluster_id=~\"$cluster\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_ECC_SBE_AGG_TOTAL{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -1109,7 +1109,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(15, sum by (vm_name, gpu) (DCGM_FI_DEV_ECC_SBE_AGG_TOTAL{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(15, sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_ECC_SBE_AGG_TOTAL{cluster_id=~\"$cluster\"}[$fresh]))))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1238,7 +1238,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(15, sum by (vm_name, gpu) (DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) > 0)",
+          "expr": "topk(15, sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}[$fresh]))) > 0)",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1367,7 +1367,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(15, sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) > 0)",
+          "expr": "topk(15, sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h]))) > 0)",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1496,7 +1496,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name, gpu) (DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"} + increase(DCGM_FI_DEV_PCIE_REPLAY_COUNTER{cluster_id=~\"$cluster\"}[24h])) > 0",
+          "expr": "sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}[$fresh])) + max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_PCIE_REPLAY_COUNTER{cluster_id=~\"$cluster\"}[24h]))) > 0",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1595,7 +1595,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(20, rate(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[15m]))",
+          "expr": "topk(20, max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (rate(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[15m])))",
           "legendFormat": "{{vm_name}} GPU {{gpu}}"
         }
       ]
@@ -1656,7 +1656,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg by (vm_name) (DCGM_FI_PROF_PIPE_TENSOR_ACTIVE{cluster_id=~\"$cluster\"})",
+          "expr": "avg by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_PROF_PIPE_TENSOR_ACTIVE{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "{{vm_name}}"
         }
       ]
@@ -1747,7 +1747,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(20, sum by (vm_name, gpu) (DCGM_FI_DEV_ECC_DBE_AGG_TOTAL{cluster_id=~\"$cluster\"})) > 0",
+          "expr": "topk(20, sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_ECC_DBE_AGG_TOTAL{cluster_id=~\"$cluster\"}[$fresh])))) > 0",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1887,7 +1887,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(sum by (vm_name, gpu) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h])) > 100) and on (vm_name, gpu) (sum by (vm_name, gpu) (DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}) > 0)",
+          "expr": "(sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL{cluster_id=~\"$cluster\"}[24h]))) > 100) and on (vm_name, gpu) (sum by (vm_name, gpu) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS{cluster_id=~\"$cluster\"}[$fresh]))) > 0)",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -2015,7 +2015,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(gpu_ecc_correct_total{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[$fresh])) > 0) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -2083,7 +2083,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"} > 0) or vector(0)",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"}[$fresh])) > 0) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -2151,7 +2151,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[24h]))) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -2219,7 +2219,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"}[24h])) or vector(0)",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"}[24h]))) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -2312,7 +2312,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(15, sum by (vm_name, gpu_id) (gpu_ecc_correct_total{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(15, sum by (vm_name, gpu_id) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[$fresh]))))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -2459,7 +2459,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name, gpu_id) (gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"}) > 0",
+          "expr": "sum by (vm_name, gpu_id) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\"}[$fresh]))) > 0",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -2606,7 +2606,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (vm_name, gpu_id, severity) (max_over_time(gpu_afid_errors{cluster_id=~\"$cluster\"}[24h])) > 0",
+          "expr": "max by (vm_name, gpu_id, severity) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (max_over_time(gpu_afid_errors{cluster_id=~\"$cluster\"}[24h]))) > 0",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -2721,7 +2721,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(20, sum by (vm_name) (rate(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[15m])))",
+          "expr": "topk(20, sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (rate(gpu_ecc_correct_total{cluster_id=~\"$cluster\"}[15m]))))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -2767,6 +2767,19 @@
         "sort": 1,
         "hide": 0,
         "skipUrlSync": false
+      },
+      {
+        "name": "fresh",
+        "label": "Freshness window",
+        "type": "constant",
+        "query": "2m",
+        "current": {
+          "text": "2m",
+          "value": "2m"
+        },
+        "hide": 2,
+        "skipUrlSync": true,
+        "description": "Lookback used to ignore abandoned time series. Must be >= this deployment's scrape interval; raise it if panels go blank, lower it if stale values linger."
       }
     ]
   },

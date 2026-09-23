@@ -40,6 +40,16 @@
         "refresh": 2,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "name": "fresh",
+        "label": "Freshness window",
+        "type": "constant",
+        "query": "2m",
+        "current": { "text": "2m", "value": "2m" },
+        "hide": 2,
+        "skipUrlSync": true,
+        "description": "Lookback used to ignore abandoned time series. Must be >= this deployment's scrape interval."
       }
     ]
   },
@@ -111,7 +121,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "id": 6,
       "options": { "legend": { "calcs": [ "mean", "max", "lastNotNull" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "sum by (vm_name, vm_instance_type) (gpu_power_usage{cluster_id=~\"$cluster\", vm_instance_type=~\"$instance_type\"} or DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\", vm_instance_type=~\"$instance_type\"})", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "crusoe-metrics" }, "expr": "sum by (vm_name, vm_instance_type) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\", vm_instance_type=~\"$instance_type\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\", vm_instance_type=~\"$instance_type\"}[$fresh])))", "legendFormat": "{{vm_name}} ({{vm_instance_type}})", "refId": "A" } ],
       "title": "GPU Power Draw by Node (total)",
       "type": "timeseries"
     },

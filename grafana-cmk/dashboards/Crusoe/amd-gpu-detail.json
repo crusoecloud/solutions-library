@@ -69,7 +69,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -137,7 +137,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(count by (vm_name) (gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"}))",
+          "expr": "count(count by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh]))))",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -204,7 +204,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "avg(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -215,7 +215,7 @@
       "id": 4,
       "type": "gauge",
       "title": "Avg Junction Temp",
-      "description": "Mean junction (hotspot) temperature. Junction runs hotter than the die/edge temperature NVIDIA DCGM reports — do not compare the two directly.",
+      "description": "Mean junction (hotspot) temperature. Junction runs hotter than the die/edge temperature NVIDIA DCGM reports \u2014 do not compare the two directly.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -271,7 +271,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(gpu_junction_temperature{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "avg(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -339,7 +339,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max(gpu_junction_temperature{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "max(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -414,7 +414,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg by (vm_name) (gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "avg by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -424,7 +424,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "UMC (Memory Controller) Activity by Node",
-      "description": "Unified Memory Controller busy percentage — HBM bandwidth pressure. High UMC with low GFX means the workload is memory-bound rather than compute-bound.",
+      "description": "Unified Memory Controller busy percentage \u2014 HBM bandwidth pressure. High UMC with low GFX means the workload is memory-bound rather than compute-bound.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -475,7 +475,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg by (vm_name) (gpu_umc_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "avg by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_umc_activity{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -535,7 +535,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(gpu_used_visible_vram{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_used_visible_vram{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "Used",
           "refId": "A"
         },
@@ -544,7 +544,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(gpu_total_visible_vram{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_total_visible_vram{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "Total",
           "refId": "B"
         }
@@ -593,7 +593,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(10, sum by (vm_name, gpu_id) (gpu_used_visible_vram{cluster_id=~\"$cluster\", vm_name=~\"$node\"}))",
+          "expr": "topk(10, sum by (vm_name, gpu_id) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_used_visible_vram{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh]))))",
           "legendFormat": "{{vm_name}} gpu{{gpu_id}}",
           "refId": "A"
         }
@@ -666,7 +666,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (vm_name) (gpu_junction_temperature{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "max by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -676,7 +676,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "GPU Power Draw by Node (total)",
-      "description": "Total GPU power per node — the SUM across the node's GPUs, not a per-GPU average or percentile. Renders empty on clusters whose AMD exporter does not publish gpu_power_usage; some builds expose only gpu_energy_consumed (cumulative µJ), which is not currently carried by Crusoe Metrics, so node power cannot be derived there.",
+      "description": "Total GPU power per node \u2014 the SUM across the node's GPUs, not a per-GPU average or percentile. Renders empty on clusters whose AMD exporter does not publish gpu_power_usage; some builds expose only gpu_energy_consumed (cumulative \u00b5J), which is not currently carried by Crusoe Metrics, so node power cannot be derived there.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -726,7 +726,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (gpu_power_usage{cluster_id=~\"$cluster\", vm_name=~\"$node\"})",
+          "expr": "sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -749,7 +749,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "XGMI TX by Node",
-      "description": "XGMI is AMD's die-to-die / GPU-to-GPU interconnect, the analogue of NVIDIA NVLink. Counters are cumulative; this charts their rate. AMD's exporter documents these counters in KB, so the unit is set to KiB/s — treat the absolute scale as indicative and the relative shape as reliable.",
+      "description": "XGMI is AMD's die-to-die / GPU-to-GPU interconnect, the analogue of NVIDIA NVLink. Counters are cumulative; this charts their rate. AMD's exporter documents these counters in KB, so the unit is set to KiB/s \u2014 treat the absolute scale as indicative and the relative shape as reliable.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -799,7 +799,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (rate(gpu_xgmi_link_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
+          "expr": "sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (rate(gpu_xgmi_link_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -809,7 +809,7 @@
       "id": 16,
       "type": "timeseries",
       "title": "XGMI RX by Node",
-      "description": "XGMI is AMD's die-to-die / GPU-to-GPU interconnect, the analogue of NVIDIA NVLink. Counters are cumulative; this charts their rate. AMD's exporter documents these counters in KB, so the unit is set to KiB/s — treat the absolute scale as indicative and the relative shape as reliable.",
+      "description": "XGMI is AMD's die-to-die / GPU-to-GPU interconnect, the analogue of NVIDIA NVLink. Counters are cumulative; this charts their rate. AMD's exporter documents these counters in KB, so the unit is set to KiB/s \u2014 treat the absolute scale as indicative and the relative shape as reliable.",
       "datasource": {
         "type": "prometheus",
         "uid": "crusoe-metrics"
@@ -859,7 +859,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (rate(gpu_xgmi_link_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
+          "expr": "sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (rate(gpu_xgmi_link_rx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -919,7 +919,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (gpu_id, link_index) (rate(gpu_xgmi_link_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval]))",
+          "expr": "sum by (gpu_id, link_index) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (rate(gpu_xgmi_link_tx{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$__rate_interval])))",
           "legendFormat": "gpu{{gpu_id}} link{{link_index}}",
           "refId": "A"
         }
@@ -999,7 +999,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"} > 0) or vector(0)",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[$fresh])) > 0) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -1009,7 +1009,7 @@
     {
       "id": 20,
       "type": "stat",
-      "title": "24h Correctable ECC Δ",
+      "title": "24h Correctable ECC \u0394",
       "description": "Correctable ECC corrections accumulated over the last 24h.",
       "datasource": {
         "type": "prometheus",
@@ -1067,7 +1067,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(gpu_ecc_correct_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[24h])) or vector(0)",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(gpu_ecc_correct_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[24h]))) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -1077,7 +1077,7 @@
     {
       "id": 21,
       "type": "stat",
-      "title": "24h Uncorrectable ECC Δ",
+      "title": "24h Uncorrectable ECC \u0394",
       "description": "Uncorrectable ECC errors accumulated over the last 24h.",
       "datasource": {
         "type": "prometheus",
@@ -1135,7 +1135,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(increase(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[24h])) or vector(0)",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(gpu_ecc_uncorrect_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[24h]))) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -1203,7 +1203,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(max_over_time(gpu_afid_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[24h]) > 0) or vector(0)",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (max_over_time(gpu_afid_errors{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[24h])) > 0) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -1264,7 +1264,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(20, sum by (vm_name, gpu_id) (rate(gpu_ecc_correct_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[15m])))",
+          "expr": "topk(20, sum by (vm_name, gpu_id) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (rate(gpu_ecc_correct_total{cluster_id=~\"$cluster\", vm_name=~\"$node\"}[15m]))))",
           "legendFormat": "{{vm_name}} gpu{{gpu_id}}",
           "refId": "A"
         }
@@ -1330,6 +1330,19 @@
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "name": "fresh",
+        "label": "Freshness window",
+        "type": "constant",
+        "query": "2m",
+        "current": {
+          "text": "2m",
+          "value": "2m"
+        },
+        "hide": 2,
+        "skipUrlSync": true,
+        "description": "Lookback used to ignore abandoned time series. Must be >= this deployment's scrape interval; raise it if panels go blank, lower it if stale values linger."
       }
     ]
   },
