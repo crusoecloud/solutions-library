@@ -9,22 +9,10 @@ The bundle covers cluster provisioning, kernel/driver/firmware verification,
 per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), 2-node RCCL
 all-reduce, and per-GPU compute + straggler + XGMI + ECC health.
 
----
-
-## Platform
-
-| Component | Version |
-|---|---|
-| Bundle | B.MI355.2.1 |
-| Linux kernel | `6.8.0-124-generic` |
-| ROCm | `7.2.0` |
-| RCCL | `2.27.7` |
-| `amdgpu` module | `6.16.13` |
-| AINIC firmware | `1.117.5-a-77` |
-| Mellanox CX-7 firmware | `28.43.3608` |
-| GPU | MI355X (`0x75a3`, gfx950, 256 CUs, 288 GB HBM3E) — 8 per node |
-| NIC | AMD Pensando Pollara 400 — 8 × 400 Gbps VFs per node (`ionic_0…ionic_7`) |
-| GPU-Direct path | dma-buf (`NCCL_DMABUF_ENABLE=1`) |
+The exact tested platform (kernel, ROCm, RCCL, firmware versions) lives in
+[env-verify/bundle-spec.md](env-verify/bundle-spec.md) — that file is the
+reference the env-verify check is compared against, and the one to update
+when the deployed Crusoe software bundle changes.
 
 ---
 
@@ -110,7 +98,7 @@ Each step writes its outputs into its own `<test>/logs/` (raw evidence) and
 5. **Environment verification** —
    `bash env-verify/src/env-verify.sh`.
    Produces `env-verify/logs/env-report-<node>-<ts>.txt`. Confirm the
-   observed versions match the Bundle 2.1 spec (see table above) and
+   observed versions match the bundle spec ([env-verify/bundle-spec.md](env-verify/bundle-spec.md)) and
    that `bad_pages`, ECC counters, and Pollara VF state are clean.
 6. **2-node RCCL all-reduce** —
 
