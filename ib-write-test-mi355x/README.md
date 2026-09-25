@@ -10,10 +10,10 @@ Tests InfiniBand NIC bandwidth across multiple nodes using `ib_write_bw`, then s
 
 ## Setup
 
-1. Copy the scripts to the first node in the cluster:
+1. Copy the script to the first node in the cluster:
 
    ```bash
-   scp ib-write-test.sh summarize-rail-test.sh <first-node-ip>:~/
+   scp ib-write-test.sh <first-node-ip>:~/
    ```
 
 2. On the first node, create a `nodes` file based on `nodes-example`:
@@ -23,7 +23,7 @@ Tests InfiniBand NIC bandwidth across multiple nodes using `ib_write_bw`, then s
    # Edit nodes with your actual IP addresses
    ```
 
-   The format is one IP address per line. The **first IP address must be the IP address of the first node** (the one you are running the scripts on). The remaining lines are the nodes to be tested:
+   The format is one IP address per line. The **first IP address must be the IP address of the first node** (the one you are running the script on). The remaining lines are the nodes to be tested:
 
    ```
    172.27.0.100
@@ -32,10 +32,10 @@ Tests InfiniBand NIC bandwidth across multiple nodes using `ib_write_bw`, then s
    172.27.0.103
    ```
 
-3. Ensure the scripts are executable:
+3. Ensure the script is executable:
 
    ```bash
-   chmod +x ib-write-test.sh summarize-rail-test.sh
+   chmod +x ib-write-test.sh
    ```
 
 ## Running the test
@@ -46,28 +46,25 @@ From the first node, run:
 ./ib-write-test.sh
 ```
 
-This will test all 8 InfiniBand NICs (`ionic_0` through `ionic_7`) on each non-first node by running `ib_write_bw` between the first node and each target node. Results are saved to `ib-write-test-results.log` in the current directory.
+This will test all 8 InfiniBand NICs (`ionic_0` through `ionic_7`) on each non-first node by running `ib_write_bw` between the first node and each target node.
 
-## Summarizing results
+When all tests are complete, a summary is printed to the terminal and saved to `ib-write-test-summary.txt`. The full raw output is saved to `ib-write-test-results.log`.
 
-Once the test completes, run:
+The summary lists any NICs that did not achieve the 320 Gb/sec threshold, for example:
 
-```bash
-./summarize-rail-test.sh
 ```
+========================================================
+  IB Write BW Test Summary
+  Threshold : 320 Gb/sec
+  Generated : Fri Sep 25 16:30:00 2026
+========================================================
 
-Or pass a specific log file:
+  STATUS: FAILURES DETECTED
 
-```bash
-./summarize-rail-test.sh ib-write-test-results.log
+  NICs below 320 Gb/sec:
+  --------------------------------------------------------
+  172.27.0.101         ionic_3     298.44 Gb/sec
+
+  Total: 23 passed, 1 failed, 0 errors
+========================================================
 ```
-
-This prints a table showing each NIC on each node, its peak bandwidth (Gb/s), and its status:
-
-| Status | Meaning |
-|--------|---------|
-| `OK` | Bandwidth met or exceeded the 320 Gb/s threshold |
-| `LOW` | Bandwidth was below the 320 Gb/s threshold |
-| `FAILED` | Test did not produce a result (connection or device error) |
-
-NICs with `LOW` or `FAILED` status are flagged for investigation. A summary count is printed at the end.
