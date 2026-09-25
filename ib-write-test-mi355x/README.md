@@ -1,6 +1,6 @@
-# ib-write-test-multinode
+# Fast InfiniBand Write testing for multiple nodes 
 
-Tests InfiniBand NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw`, then summarizes which NICs passed or failed.
+Tests InfiniBand NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw`, then summarizes which NICs passed or failed. The test is parallelized on each node under test meaning that each node only takes a couple of seconds to test.
 
 ## Prerequisites
 
