@@ -131,6 +131,14 @@ A combined Terraform and Ansible solution that provisions a cluster of Crusoe Cl
 
 A privileged DaemonSet that disables SMT/hyperthreading on Ubuntu-based CMK worker nodes by writing to the kernel's SMT control file and restarting kubelet, re-applying itself automatically after node reboots since it does not persist the change via grub. Intended only for specialized workloads that require hyperthreading off, since it halves the node's visible logical CPU count and requires resizing resource requests accordingly.
 
+[AMD MI355X Validation Suite for Crusoe Managed Kubernetes](./cmk-amd-mi355x/)
+
+A reproducible acceptance bundle for AMD Instinct MI355X nodepools with Pensando Pollara 400 AI NICs on CMK. It covers per-node kernel/driver/firmware verification against the deployed Crusoe software bundle, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), a 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute/straggler/XGMI/ECC health — with reference pass bars from Crusoe's internal dry-run.
+
+[Fast InfiniBand Write Testing for Multiple MI355X Nodes](./ib-write-test-mi355x/)
+
+Tests NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw` driven in parallel from a known-good master node, then summarizes which NICs passed or failed. Parallelization keeps each node's test to a couple of seconds, making it suitable for quickly sweeping a large nodepool.
+
 ### Observability
 
 [Crusoe Managed Kubernetes logs to Google Cloud Logging](./crusoe-managed-kubernetes-logs-to-gcp/)

@@ -1,0 +1,120 @@
+# GPU compute health + straggler scan — adapted from mlcommons AMDMi355xTrainingv6.1
+# for our 2-node mi355x-poc cluster.
+#
+# What it does per node:
+#   0a. GPU inventory — expect 8; fewer = a GPU fell off the bus (BAD NODE)
+#   0b. PCIe slot / link width / speed (want x16 gen5)
+#   0c. ECC / RAS uncorrectable + retired/pending bad memory pages (BAD GPU)
+#   0d. XGMI links (bad interconnect throttles collectives)
+#   1.  Peak bf16 16k^3 GEMM burst on all 8 GPUs (dead/weak-bin GPUs show low)
+#   2.  Sustained 90s GEMM + clock trajectory at 30s/60s/90s (thermal droop / straggler)
+#
+# Original: mlcommons AMDMi355xTrainingv6.1/training/k8s-manifests/gpu-straggler-scan.yaml
+# Uses public rocm/pytorch image — no auth needed. Total wall clock ~3 min per node, both in parallel.
+apiVersion: v1
+kind: Namespace
+metadata: { name: mlperfv60training }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpu-straggler-scan
+  namespace: mlperfv60training
+  labels: { role: gpu-straggler-scan }
+spec:
+  completionMode: Indexed
+  completions: 2
+  parallelism: 2
+  backoffLimit: 0
+  template:
+    metadata: { labels: { role: gpu-straggler-scan } }
+    spec:
+      restartPolicy: Never
+      # No nodeSelector: the amd.com/gpu resource request below already
+      # constrains this Job to MI355X nodes, and podAntiAffinity spreads
+      # one pod per node. If you have MULTIPLE MI355X nodepools in the
+      # same cluster and want to pin to a specific one, uncomment and
+      # set nodeSelector to your `crusoe.ai/nodepool.name` value (find it
+      # with `kubectl get nodes --show-labels`).
+      # nodeSelector:
+      #   crusoe.ai/nodepool.name: <your-mi355x-nodepool-name>
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: { matchLabels: { role: gpu-straggler-scan } }
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: scan
+          image: rocm/pytorch:rocm7.2.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: NODE_NAME, valueFrom: { fieldRef: { fieldPath: spec.nodeName } } }
+          command: ["/bin/bash","-c"]
+          args:
+            - |
+              set -uo pipefail
+              export PATH=$PATH:/opt/rocm/bin
+              N="${NODE_NAME%%.*}"
+              echo "################ GPU STRAGGLER SCAN  node=$N  idx=${JOB_COMPLETION_INDEX} ################"
+
+              echo "---- 0a. GPU inventory (expect 8) ----"
+              CNT=$(rocm-smi 2>/dev/null | grep -cE '^[0-9]+[[:space:]]' || echo 0)
+              echo "RESULT INV node=$N gpu_count=$CNT"
+
+              echo "---- 0b. serial / PCIe link ----"
+              rocm-smi --showserial --showbus 2>/dev/null | grep -iE 'GPU\[|Serial|PCI Bus' | head -30 || true
+              amd-smi static --pcie 2>/dev/null | grep -iE 'GPU|width|speed|max_packet|slot' | head -24 || true
+
+              echo "---- 0c. ECC + bad pages ----"
+              amd-smi metric --ecc 2>/dev/null | grep -iE 'GPU|uncorrect|correct' | head -40 \
+                || rocm-smi --showrasinfo all 2>/dev/null | grep -iE 'GPU\[|UE|CE|uncorrect' | head -40 || echo "(ecc query n/a)"
+              amd-smi bad-pages 2>/dev/null | grep -iE 'GPU|retired|pending|page' | head -20 || echo "(bad-pages n/a)"
+
+              echo "---- 0d. XGMI links ----"
+              amd-smi xgmi 2>/dev/null | grep -iE 'GPU|xgmi|link' | head -20 \
+                || rocm-smi --shownodesbw 2>/dev/null | head -12 || echo "(xgmi query n/a)"
+
+              smi_emit(){
+                rocm-smi 2>/dev/null | awk -v n="$N" -v t="$1" '
+                  /^[0-9]/{ s=""; c="";
+                    for(i=1;i<=NF;i++){ if($i ~ /[Mm]hz$/ && s=="")s=$i; if($i ~ /C$/ && $i ~ /[0-9]/ && c=="")c=$i }
+                    gsub(/[Mm]hz/,"",s); gsub(/°?C/,"",c);
+                    if(s!="") print "RESULT CLK node="n" tag="t" gpu="$1" temp="c" sclk="s }'
+              }
+
+              cat > /tmp/mm.py <<'PY'
+              import torch, time, os
+              torch.cuda.set_device(0)
+              n = 16384
+              a = torch.randn(n, n, device='cuda', dtype=torch.bfloat16)
+              b = torch.randn(n, n, device='cuda', dtype=torch.bfloat16)
+              for _ in range(10): c = a @ b
+              torch.cuda.synchronize()
+              mode = os.environ.get('MODE', 'peak')
+              if mode == 'sust':
+                  dur = 90.0; t0 = time.time(); it = 0
+                  while time.time() - t0 < dur:
+                      for _ in range(20): c = a @ b
+                      torch.cuda.synchronize(); it += 20
+                  dt = time.time() - t0
+              else:
+                  it = 100; t0 = time.time()
+                  for _ in range(it): c = a @ b
+                  torch.cuda.synchronize(); dt = time.time() - t0
+              print("RESULT %s node=%s gpu=%s tflops=%.1f" % (
+                    mode.upper(), os.environ.get('NODE_NAME','?').split('.')[0],
+                    os.environ.get('HIP_VISIBLE_DEVICES','?'), 2 * n**3 * it / dt / 1e12))
+              PY
+
+              echo "---- 1. PEAK burst (all 8 GPU) ----"
+              for i in 0 1 2 3 4 5 6 7; do MODE=peak HIP_VISIBLE_DEVICES=$i python3 /tmp/mm.py & done
+              wait
+
+              echo "---- 2. SUSTAINED 90s + clock trajectory ----"
+              for i in 0 1 2 3 4 5 6 7; do MODE=sust HIP_VISIBLE_DEVICES=$i python3 /tmp/mm.py & done
+              for tag in 30s 60s 90s; do sleep 30; smi_emit "$tag"; done
+              wait
+              echo "################ DONE  node=$N ################"
+          resources:
+            requests: { amd.com/gpu: 8 }
+            limits:   { amd.com/gpu: 8 }
