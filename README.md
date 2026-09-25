@@ -133,7 +133,7 @@ A privileged DaemonSet that disables SMT/hyperthreading on Ubuntu-based CMK work
 
 [AMD MI355X Validation Suite for Crusoe Managed Kubernetes](./cmk-amd-mi355x/)
 
-A reproducible acceptance bundle for AMD Instinct MI355X nodepools with Pensando Pollara 400 AI NICs on CMK, pinned to Bundle B.MI355.2.1. It covers per-node kernel/driver/firmware verification, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), a 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute/straggler/XGMI/ECC health — with reference pass bars from Crusoe's internal dry-run.
+A reproducible acceptance bundle for AMD Instinct MI355X nodepools with Pensando Pollara 400 AI NICs on CMK. It covers per-node kernel/driver/firmware verification against the deployed Crusoe software bundle, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), a 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute/straggler/XGMI/ECC health — with reference pass bars from Crusoe's internal dry-run.
 
 [Fast InfiniBand Write Testing for Multiple MI355X Nodes](./ib-write-test-mi355x/)
 
