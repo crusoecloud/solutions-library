@@ -1,0 +1,213 @@
+# Multi-node RCCL all_reduce_perf MPIJob for AMD MI355X + Pollara 400.
+# Combines the Crusoe MI355X mandatory NCCL env (topology XML pin, dma-buf,
+# RoCEv2 GID, etc.) with the mlcommons AMDMi355xTrainingv6.1 bundle2 tuning
+# envelope (~20 additional RCCL vars tuned for scale-out).
+#
+# Fill in THREE environment variables, then apply with envsubst:
+#   N            number of worker pods (one per node, 8 GPUs each)
+#   IMAGE        your RCCL test image (needs OpenMPI at /root/ompi/install, rccl-tests at /root/rccl-tests/build, sshd, and your NIC's RDMA userspace lib, e.g. libionic)
+#   PULL_SECRET  imagePullSecret name for your registry (create with `kubectl create secret docker-registry ...`)
+#
+#   N=8 IMAGE=myreg/rccl-tests:rocm7 PULL_SECRET=regcred \
+#     envsubst '${N} ${IMAGE} ${PULL_SECRET}' < rccl-allreduce-mpijob-generic.yaml | kubectl apply -f -
+#
+# The quoted list restricts envsubst to exactly these three variables — every
+# other $VAR in this file (the embedded scripts use $NP, $PATH, ...) is left
+# untouched. envsubst ships in the gettext package.
+#
+# Result: kubectl logs -l training.kubeflow.org/job-name=rccl-test,training.kubeflow.org/job-role=launcher
+#         → "Avg bus bandwidth" at the end.
+#
+# Assumes: Kubeflow MPI Operator installed; namespace "default"; GPU resource amd.com/gpu and RDMA resource amd.com/vnic (edit the two `resources:` lines if your device plugins use other names).
+---
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: rdma-rail-nad
+  namespace: default
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: amd.com/vnic
+spec:
+  config: '{ "cniVersion": "0.3.1", "type": "host-device", "ipam": {} }'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rccl-test-params
+  namespace: default
+data:
+  MSG_SIZE_MIN: "2G"
+  MSG_SIZE_MAX: "8G"          # bump to 32G for the asymptotic busbw number
+  STEP_FACTOR: "2"
+  ITERS: "50"
+  WARMUP_ITERS: "10"
+  CHECK: "1"
+  THREADS_PER_GPU: "1"
+  NCCL_DEBUG: "WARN"
+  NCCL_IB_GID_INDEX: "1"      # RoCEv2 GID index on your NICs (`show_gids`)
+  # --- Crusoe MI355X mandatory additions (Rohit Kalmankar, 2026-09-03) ---
+  # Cloud Hypervisor flattens the PCIe hierarchy inside the guest, so RCCL cannot
+  # auto-infer GPU-to-NIC affinity. The synthetic XML pins GPUn ↔ ionic_n. The
+  # MI355X-specific file has device 0x75a3 (gfx950); the MI350X file's 0x75a0
+  # would NOT match MI355X device IDs and silently break affinity.
+  NCCL_TOPO_FILE: "/etc/crusoe/rccl_topo/mi355x-288gb-ib.xml"
+  # Kernel 6.8 dropped ib_peer_mem support in general — dma-buf is the mandated
+  # path for GPU-direct RDMA on this platform.
+  NCCL_DMABUF_ENABLE: "1"
+  # AF_INET forces the bootstrap socket to IPv4. Without it NCCL can pick a v6
+  # link-local address on the RDMA rail's eth interface and hang the rendezvous.
+  NCCL_SOCKET_FAMILY: "AF_INET"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rccl-launcher-script
+  namespace: default
+data:
+  mpirun.sh: |
+    /root/ompi/install/bin/mpirun \
+      --prefix /root/ompi/install \
+      --mca routed direct \
+      --mca plm_rsh_num_concurrent 1024 \
+      --np $NP \
+      --allow-run-as-root \
+      --mca plm_rsh_agent "ssh -p 22" \
+      --mca btl ^vader,openib,ofi \
+      --mca pml ob1 \
+      --mca btl_tcp_if_include eth0 \
+      -x PATH=$PATH \
+      -x LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
+      -x NCCL_DEBUG=$NCCL_DEBUG \
+      -x NCCL_IB_GID_INDEX=$NCCL_IB_GID_INDEX \
+      -x NCCL_SOCKET_IFNAME=eth0 \
+      -x NCCL_IB_HCA=ionic_0,ionic_1,ionic_2,ionic_3,ionic_4,ionic_5,ionic_6,ionic_7 \
+      -x NCCL_IB_QPS_PER_CONNECTION=4 \
+      -x NCCL_IB_TC=96 \
+      -x NCCL_IGNORE_CPU_AFFINITY=1 \
+      -x NCCL_SHM_DISABLE=1 \
+      -x NCCL_DMABUF_ENABLE=$NCCL_DMABUF_ENABLE \
+      -x NCCL_TOPO_FILE=$NCCL_TOPO_FILE \
+      -x NCCL_SOCKET_FAMILY=$NCCL_SOCKET_FAMILY \
+      -x HSA_NO_SCRATCH_RECLAIM=1 \
+      `# ---- mlcommons bundle2 tuning envelope ----                     ` \
+      `# Verified against mlcommons AMDMi355xTrainingv6.1 rccl-mpijob-  ` \
+      `# bundle2.yaml — tuned for their 16-node MLPerf runs; adopted    ` \
+      `# here without modification. Delta vs untuned run is <1% at 2    ` \
+      `# nodes but the envelope is known-good for scale-out.            ` \
+      `#                                                                ` \
+      `# NOTE: NCCL_NET_OPTIONAL_RECV_COMPLETION (line ~1) and          ` \
+      `# NET_OPTIONAL_RECV_COMPLETION (further down) are DIFFERENT vars ` \
+      `# with opposite values — the NCCL_-prefixed one is NCCL's own    ` \
+      `# knob, the bare one is a plugin-side toggle. Both are set to    ` \
+      `# match the mlperf reference exactly.                            ` \
+      -x NCCL_NET_OPTIONAL_RECV_COMPLETION=0 \
+      -x NCCL_GDR_FLUSH_DISABLE=1 \
+      -x RCCL_GDR_FLUSH_GPU_MEM_NO_RELAXED_ORDERING=0 \
+      -x NCCL_IB_USE_INLINE=1 \
+      -x IONIC_LOCKFREE=all \
+      -x NCCL_GDRCOPY_ENABLE=0 \
+      -x NCCL_PXN_DISABLE=1 \
+      -x NCCL_IB_FIFO_TC=184 \
+      -x NET_OPTIONAL_RECV_COMPLETION=1 \
+      -x RCCL_AINIC_ROCE=1 \
+      -x RCCL_CTS_OFFLOAD_ENABLED=0 \
+      -x RCCL_CTS_INLINE_DATA=0 \
+      -x NCCL_IB_DISABLE=0 \
+      -x NCCL_IB_SPLIT_DATA_ON_QPS=0 \
+      -x NCCL_NSOCKS_PERTHREAD=4 \
+      -x NCCL_P2P_NET_CHUNKSIZE=131072 \
+      -x NCCL_SOCKET_NTHREADS=2 \
+      -x RCCL_DIRECT_ALLGATHER_THRESHOLD=-1 \
+      -x RCCL_DISABLE_REDUCE_COPY_PIPELINING=1 \
+      -x RCCL_IB_QPS_PER_P2P=1 \
+      -x RCCL_MSCCL_ENABLE=0 \
+      -x RCCL_P2P_BATCH_ENABLE=0 \
+      -x RSMI_MUTEX_THREAD_ONLY=1 \
+      bash -c 'ulimit -n 1048576 2>/dev/null || ulimit -n 65536 2>/dev/null || true; exec /root/rccl-tests/build/all_reduce_perf -b $MSG_SIZE_MIN -e $MSG_SIZE_MAX -f $STEP_FACTOR -n $ITERS -w $WARMUP_ITERS -c $CHECK -g $THREADS_PER_GPU -N 3'
+---
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: rccl-test
+  namespace: default
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running   # keeps the launcher pod (the busbw log) after finish
+    backoffLimit: 5
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          imagePullSecrets: [{ name: ${PULL_SECRET} }]
+          containers:
+            - name: rccl-launcher
+              image: ${IMAGE}
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - configMapRef: { name: rccl-test-params }
+              volumeMounts:
+                - { name: rccl-launcher-script, mountPath: /etc/rccl, readOnly: true }
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  ts() { printf '[%s] %s\n' "$(date -u +'%H:%M:%SZ')" "$*"; }
+                  ts "launcher on ${HOSTNAME:-?}; waiting for workers in hostfile..."
+                  until [ -s "${OMPI_MCA_orte_default_hostfile}" ]; do ts "  hostfile empty — retry 15s"; sleep 15; done
+                  ts "resolving worker hostnames in DNS..."
+                  DL=$(($(date +%s)+600))
+                  while read -r L; do H="${L%% *}"; [ -z "$H" ] && continue
+                    until getent hosts "$H" >/dev/null 2>&1; do [ "$(date +%s)" -gt "$DL" ] && { ts "ERR: $H unresolved"; exit 1; }; sleep 2; done
+                    IP=$(getent hosts "$H" | awk 'NR==1{print $1; exit}')
+                    grep -q "[[:space:]]${H}\$" /etc/hosts 2>/dev/null || echo "$IP  $H" >> /etc/hosts
+                  done < "${OMPI_MCA_orte_default_hostfile}"
+                  ts "verifying orted on workers..."
+                  OD=$(($(date +%s)+300))
+                  while read -r L; do H="${L%% *}"; [ -z "$H" ] && continue
+                    until ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$H" test -x /root/ompi/install/bin/orted 2>/dev/null; do
+                      [ "$(date +%s)" -gt "$OD" ] && { ts "ERR: $H missing orted"; exit 1; }; sleep 2; done
+                  done < "${OMPI_MCA_orte_default_hostfile}"
+                  W=$(wc -l < "${OMPI_MCA_orte_default_hostfile}"); S=$(awk -F'slots=' 'NR==1{print $2}' "${OMPI_MCA_orte_default_hostfile}")
+                  export NP=$((W*S)); ts "NP=$NP (workers=$W slots=$S) GID_INDEX=${NCCL_IB_GID_INDEX:-1}"
+                  python3 -c "import os,string; print(string.Template(open('/etc/rccl/mpirun.sh').read()).safe_substitute(os.environ))" > /tmp/m.sh
+                  set +o pipefail
+                  bash /tmp/m.sh 2>&1
+                  rc="${PIPESTATUS[0]}"; ts "mpirun rc=$rc"; exit "$rc"
+          volumes:
+            - name: rccl-launcher-script
+              configMap: { name: rccl-launcher-script }
+    Worker:
+      replicas: ${N}
+      template:
+        metadata:
+          annotations:
+            k8s.v1.cni.cncf.io/networks: >-
+              rdma-rail-nad,rdma-rail-nad,rdma-rail-nad,rdma-rail-nad,rdma-rail-nad,rdma-rail-nad,rdma-rail-nad,rdma-rail-nad
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          imagePullSecrets: [{ name: ${PULL_SECRET} }]
+          containers:
+            - name: rccl-worker
+              image: ${IMAGE}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                capabilities: { add: ["IPC_LOCK"] }
+              resources:
+                requests: { amd.com/gpu: 8, amd.com/vnic: 8 }
+                limits:   { amd.com/gpu: 8, amd.com/vnic: 8 }
+              volumeMounts:
+                - { name: shm, mountPath: /dev/shm }
+                # Bind the host's topology XML into the worker so NCCL_TOPO_FILE
+                # points at a real file. Read-only, per-pod. On the host this is
+                # provisioned by Bundle 2.1 to /etc/crusoe/rccl_topo/.
+                - { name: rccl-topo, mountPath: /etc/crusoe/rccl_topo, readOnly: true }
+          volumes:
+            - name: shm
+              emptyDir: { medium: Memory, sizeLimit: 16Gi }
+            - name: rccl-topo
+              hostPath: { path: /etc/crusoe/rccl_topo, type: Directory }
