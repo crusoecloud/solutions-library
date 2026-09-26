@@ -1,6 +1,6 @@
-# Fast InfiniBand Write testing for multiple nodes 
+# Fast IB Write testing for Pensando AI NICs on multiple AMD-MI355X GPU nodes 
 
-Tests InfiniBand NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw`, then summarizes which NICs passed or failed. The test is parallelized on each node under test meaning that each node only takes a couple of seconds to test.
+Tests AI NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw`, then summarizes which NICs passed or failed. The test is parallelized on each node under test meaning that each node only takes a couple of seconds to test.
 
 ## Prerequisites
 
@@ -46,7 +46,7 @@ From the master node, run:
 ./ib-write-test.sh
 ```
 
-This will test all 8 InfiniBand NICs (`ionic_0` through `ionic_7`) on each node by running `ib_write_bw` between the master node (acting as the ib_write client) and each target node (acting as an ib_write server).
+This will test all 8 Pensando AI NICs (`ionic_0` through `ionic_7`) on each node by running `ib_write_bw` between the master node (acting as the ib_write client) and each target node (acting as an ib_write server).
 
 When all tests are complete, a summary is printed to the terminal and saved to `ib-write-test-summary.txt`. The full raw output is saved to `ib-write-test-results.log`.
 
