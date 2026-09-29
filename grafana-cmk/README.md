@@ -506,7 +506,13 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 
 ### Inference dashboard (optional)
 
-**Inference / vLLM Overview (`Crusoe/Inference/vllm-overview.json`, 16 panels)** — SLO view for vLLM inference servers (e.g. recipes from the crusoe-kserve-example solution). It is the one dashboard that does **not** query Crusoe Metrics: it uses the `vLLM Local` datasource (uid `vllm-local`, applied via `manifests/grafana-datasource-vllm-configmap.yaml`), which points at the in-cluster `prometheus-vllm` Deployment from the crusoe-kserve-example repo. The ConfigMap carries a `grafana_folder: Crusoe/Inference` annotation, which on Grafana 12.3.x lands the dashboard in a **top-level `Inference` folder alongside `Crusoe`** — Grafana 12.3.x cannot provision folders inside other folders, so the `Crusoe/` prefix only reflects the repo layout, not the resulting folder hierarchy.
+**Inference / vLLM Overview (`Crusoe/Inference/vllm-overview.json`, 20 panels)** — token KPIs plus an SLO view for vLLM inference servers (e.g. recipes from the crusoe-kserve-example solution). It is the one dashboard that does **not** query Crusoe Metrics: it uses the `vLLM Local` datasource (uid `vllm-local`, applied via `manifests/grafana-datasource-vllm-configmap.yaml`), which points at the in-cluster `prometheus-vllm` Deployment from the crusoe-kserve-example repo. The ConfigMap carries a `grafana_folder: Crusoe/Inference` annotation, which on Grafana 12.3.x lands the dashboard in a **top-level `Inference` folder alongside `Crusoe`** — Grafana 12.3.x cannot provision folders inside other folders, so the `Crusoe/` prefix only reflects the repo layout, not the resulting folder hierarchy.
+
+- **Token KPI row** (top): **Total tokens processed**, **Output tokens served**, and **Prompt tokens processed** over the dashboard time range, plus a stacked **Tokens processed over time** graph splitting prompt (in) from generated (out). Scope to one model with the **Model** dropdown to answer "how many tokens has this model served".
+
+  These use `increase()` over the range rather than the bare counter. `increase()` absorbs counter resets when a vLLM pod restarts and avoids double-counting across replicas, which a plain `sum()` of the counter gets wrong. Each point on the graph is an `increase()` over `$__interval`, so widening the time picker re-buckets rather than aliasing.
+
+  > Expect prompt tokens to dwarf generated tokens — often by two orders of magnitude — because prefill re-ingests the whole context on every request. Read "total tokens processed" as compute consumed, not as output produced.
 
 - **Stat row**: servers up, requests running, requests waiting (queue), cluster generation + prompt tokens/s, prefix-cache hit rate.
 - **Latency SLAs**: TTFT and TPOT p50/p95/p99 quantiles with threshold lines (defaults: TTFT p99 = 2 s, TPOT p99 = 100 ms — retune the panel thresholds to your contract), plus end-to-end request latency quantiles.
@@ -517,11 +523,23 @@ The `$cluster` variable is sourced from `label_values(crusoe_slurm_nodes, cluste
 >
 > 1. **No per-user identity.** vLLM `/metrics` carries no user or API-key label. True per-user accounting needs an API gateway in front of vLLM (e.g. KServe/llm-d with auth), not this dashboard.
 > 2. **Pods must opt in to scraping** — see [Inference metrics via Crusoe Managed Metrics](#inference-metrics-via-crusoe-managed-metrics) for the annotation contract. Scaled-to-zero replicas simply disappear from the panels.
-> 3. **Local retention only.** `prometheus-vllm` is single-replica with 7-day retention and no remote-write. Use Crusoe Managed Metrics (below) to get cluster-wide 30-day retention without running a second Prometheus.
+> 3. **Local retention.** `prometheus-vllm` is single-replica with **90-day retention on a 20Gi SSD PVC** and no remote-write. It originally ran with 7-day retention and *no volume at all*, which put the TSDB in the container's writable layer — every pod restart destroyed all history, making cumulative counters useless as KPIs. If you are upgrading an older install, the cutover to a PVC starts history fresh; the counters themselves live in the vLLM process, so lifetime totals re-scrape intact while the per-bucket history restarts.
 
 ### Inference metrics via Crusoe Managed Metrics
 
-The `prometheus-vllm` Deployment in this solution was the original workaround before Crusoe's managed pipeline supported arbitrary pod scraping. Today the `kubernetes-pods` job inside Crusoe's own `cluster-vmagent-victoria-metrics-agent` (running in `kube-system` on every CMK cluster) **already honors the standard `prometheus.io/{scrape,port,path}` pod annotations** and remote-writes directly into the Crusoe Metrics backend (30-day retention, one query endpoint, no second Prometheus to babysit).
+Crusoe's own `cluster-vmagent-victoria-metrics-agent` (running in `kube-system` on every CMK cluster) ships a `kubernetes-pods` scrape job whose relabel rules read the standard `prometheus.io/{scrape,port,path}` pod annotations, and remote-writes into the Crusoe Metrics backend (30-day retention, one query endpoint, no second Prometheus to babysit). In principle that makes the local `prometheus-vllm` Deployment unnecessary.
+
+> **Status: not reproducible as of this writing — verify before relying on it.** On a CMK cluster where a vLLM Deployment carried all three annotations correctly, declared `containerPort: 8000`, and served 408 `vllm:` metric lines on `:8000/metrics` with HTTP 200, **no `vllm:` series ever appeared in Crusoe Metrics**. Checking more broadly, the `kubernetes-pods` job contributed **zero metric names** to the backend cluster-wide, despite several other pods also carrying `prometheus.io/scrape: "true"`. The same cluster was also missing `gpu_energy_consumed`, which its AMD exporter emits locally — consistent with filtering somewhere on the ingest path rather than a scrape-side misconfiguration. Root cause is unresolved and may be backend-side.
+>
+> Check it on your own cluster before depending on this path:
+>
+> ```bash
+> # Should be non-zero if annotation-based pod scraping is reaching the backend.
+> # Run against the Crusoe Metrics datasource (e.g. Grafana Explore):
+> count(count by (__name__) ({job="kubernetes-pods"}))
+> ```
+>
+> If that returns nothing, use the local `prometheus-vllm` path above — it is what the Inference dashboard is built against today.
 
 That means the same `vllm:`-series — plus anything SGLang or another OpenAI-compatible server emits on `/metrics` — flows through the same pipeline your GPU/DCGM/IB metrics already use, with no new DaemonSet, no new scrape config, and no seven-day ceiling.
 

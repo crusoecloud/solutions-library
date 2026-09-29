@@ -99,32 +99,61 @@ data:
           - source_labels: [__meta_kubernetes_pod_node_name]
             target_label: node
 ---
+# Durable TSDB storage. Without this, Prometheus writes its time series into the
+# container's writable layer, so every pod restart destroys all history — which
+# makes cumulative counters (tokens served, request totals) useless as KPIs.
+#
+# Sizing: roughly 2k series at a 5s scrape interval is ~70 MB/day, so 90 days of
+# retention lands near 6-7 GB. 20Gi leaves headroom for more models and replicas.
+# Raise scrape_interval in the ConfigMap above to trade resolution for a longer
+# window at the same size.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: prometheus-vllm-data, namespace: vllm-metrics }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: crusoe-csi-driver-ssd-sc
+  resources:
+    requests: { storage: 20Gi }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: prometheus-vllm, namespace: vllm-metrics, labels: { app: prometheus-vllm } }
 spec:
   replicas: 1
   selector: { matchLabels: { app: prometheus-vllm } }
+  # Recreate, not the default RollingUpdate: the data PVC is ReadWriteOnce, so a
+  # rolling update deadlocks with "Multi-Attach error" — Kubernetes tries to start
+  # the replacement pod while the old one still holds the volume. Recreate tears
+  # the old pod down first, releasing the PVC.
+  strategy: { type: Recreate }
   template:
     metadata: { labels: { app: prometheus-vllm } }
     spec:
       serviceAccountName: prometheus-vllm
+      # prom/prometheus runs as uid 65534 (nobody); fsGroup lets it write to the
+      # freshly provisioned volume.
+      securityContext: { fsGroup: 65534 }
       containers:
         - name: prometheus
           image: prom/prometheus:v3.1.0
           args:
             - --config.file=/etc/prometheus/prometheus.yml
-            - --storage.tsdb.retention.time=7d
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=90d
             - --web.enable-lifecycle
           ports: [{ containerPort: 9090 }]
           volumeMounts:
             - { name: config, mountPath: /etc/prometheus }
+            - { name: data, mountPath: /prometheus }
           resources:
             requests: { cpu: 200m, memory: 512Mi }
-            limits: { cpu: "1", memory: 1Gi }
+            limits: { cpu: "1", memory: 2Gi }
       volumes:
         - name: config
           configMap: { name: prometheus-vllm }
+        - name: data
+          persistentVolumeClaim: { claimName: prometheus-vllm-data }
 ---
 apiVersion: v1
 kind: Service
