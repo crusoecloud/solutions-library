@@ -134,7 +134,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -196,7 +196,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(gpu_power_usage{cluster_id=~\"$cluster\"}) or avg(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "avg(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -258,7 +258,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": false,
           "legendFormat": "",
           "refId": "A"
@@ -321,7 +321,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(avg_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$__range])) * $__range_s / 3600000 or sum(increase(DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION{cluster_id=~\"$cluster\"}[$__range])) / 3600000000",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (avg_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$__range]))) * $__range_s / 3600000 or sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (increase(DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION{cluster_id=~\"$cluster\"}[$__range]))) / 3600000000",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -417,7 +417,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "Total",
           "refId": "A"
         }
@@ -512,7 +512,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (gpu_power_usage{cluster_id=~\"$cluster\"}) or sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -575,7 +575,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (gpu_power_usage{cluster_id=~\"$cluster\"}) or sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": true,
           "legendFormat": "{{vm_name}}",
           "refId": "A"
@@ -707,7 +707,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(gpu_power_usage{cluster_id=~\"$cluster\"}) or sum(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "Total Power W",
           "refId": "A"
         },
@@ -716,7 +716,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(gpu_gfx_activity{cluster_id=~\"$cluster\"}) or avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "avg(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "Avg Utilization %",
           "refId": "B"
         }
@@ -760,6 +760,19 @@
         "regex": "",
         "sort": 1,
         "type": "query"
+      },
+      {
+        "name": "fresh",
+        "label": "Freshness window",
+        "type": "constant",
+        "query": "2m",
+        "current": {
+          "text": "2m",
+          "value": "2m"
+        },
+        "hide": 2,
+        "skipUrlSync": true,
+        "description": "Lookback used to ignore abandoned time series. Must be >= this deployment's scrape interval; raise it if panels go blank, lower it if stale values linger."
       }
     ]
   },

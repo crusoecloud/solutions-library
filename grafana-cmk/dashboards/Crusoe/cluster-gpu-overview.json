@@ -64,7 +64,7 @@
       }
     ]
   },
-  "description": "Cluster-wide GPU utilization, memory, and power across all nodes in a Crusoe CMK or Managed Slurm cluster. Data sourced from Crusoe Metrics.",
+  "description": "Cluster-wide GPU utilization, memory, and power across all nodes in a Crusoe CMK or Managed Slurm cluster. Data sourced from Crusoe Metrics. Vendor-neutral: every query is a set union of the AMD device-metrics-exporter series and the NVIDIA DCGM series (gpu_gfx_activity or DCGM_FI_DEV_GPU_UTIL, and so on). The two families never share a label set, so the union is exact and a cluster running both vendors aggregates correctly.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -125,7 +125,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "count(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -188,7 +188,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "count(count by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+          "expr": "count(count by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$fresh]))))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -259,7 +259,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "avg(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": true,
           "legendFormat": "Avg",
           "refId": "A"
@@ -267,6 +267,180 @@
       ],
       "title": "Cluster Avg GPU Utilization",
       "type": "gauge"
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Cluster GPU Utilization Over Time",
+      "description": "Cluster-wide GPU utilization as a trend, so you can see load ebb and flow. Three readings: the average across every GPU (left axis), the single busiest GPU (left axis, dashed), and busy-GPU-equivalents (right axis) \u2014 the sum of all utilization divided by 100, i.e. how many GPUs' worth of work is in flight. Average alone hides fleet growth; busy-GPU-equivalents alone hides what fraction of capacity that represents. Each point is an avg_over_time/max_over_time bucket of width $__interval rather than a single instantaneous sample, so widening the time picker re-buckets instead of aliasing \u2014 the shape stays honest from 1h out to 30d. The peak line matters most when zoomed out: a cluster with one pinned GPU and everything else idle averages near zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "crusoe-metrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg utilization %"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Utilization %"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Peak GPU %"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Busy GPU equivalents"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Busy GPU equivalents"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "avg(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (avg_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$__interval])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (avg_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$__interval])))",
+          "legendFormat": "Avg utilization %",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "max(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (max_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$__interval])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (max_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$__interval])))",
+          "legendFormat": "Peak GPU %",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "crusoe-metrics"
+          },
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (avg_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$__interval])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (avg_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$__interval]))) / 100",
+          "legendFormat": "Busy GPU equivalents",
+          "refId": "C"
+        }
+      ]
     },
     {
       "datasource": {
@@ -331,7 +505,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 16
       },
       "id": 4,
       "options": {
@@ -356,7 +530,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"})",
+          "expr": "avg by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -466,7 +640,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 24
       },
       "id": 5,
       "options": {
@@ -491,7 +665,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_used_visible_vram{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "Used",
           "refId": "A"
         },
@@ -500,7 +674,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"} + DCGM_FI_DEV_FB_FREE{cluster_id=~\"$cluster\"})",
+          "expr": "sum(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_total_visible_vram{cluster_id=~\"$cluster\"}[$fresh])) or (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_FB_USED{cluster_id=~\"$cluster\"}[$fresh])) + max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_FB_FREE{cluster_id=~\"$cluster\"}[$fresh]))))",
           "legendFormat": "Total Capacity",
           "refId": "B"
         }
@@ -570,7 +744,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 32
       },
       "id": 6,
       "options": {
@@ -595,7 +769,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "sum by (vm_name) (DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"})",
+          "expr": "sum by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_power_usage{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_POWER_USAGE{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "{{vm_name}}",
           "refId": "A"
         }
@@ -642,7 +816,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 40
       },
       "id": 7,
       "options": {
@@ -667,7 +841,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(10, avg by (vm_name) (DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(10, avg by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_gfx_activity{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_UTIL{cluster_id=~\"$cluster\"}[$fresh]))))",
           "instant": true,
           "legendFormat": "{{vm_name}}",
           "refId": "A"
@@ -687,7 +861,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -729,7 +903,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "expr": "max(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -746,7 +920,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -789,7 +963,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "avg(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "expr": "avg(max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}[$fresh])))",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -798,7 +972,7 @@
     {
       "id": 10,
       "type": "stat",
-      "title": "GPUs \u2265 80\u00b0C",
+      "title": "GPUs Near Thermal Limit",
       "description": "Number of GPUs currently at or above 80\u00b0C. Worth a look on any non-zero \u2014 80\u00b0C is the typical caution threshold; sustained operation above will start affecting boost behavior.",
       "datasource": {
         "type": "prometheus",
@@ -806,7 +980,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -844,7 +1018,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(count(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 80)) or vector(0)",
+          "expr": "(count((max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}[$fresh])) >= 80) or (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\"}[$fresh])) >= 95))) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -853,7 +1027,7 @@
     {
       "id": 11,
       "type": "stat",
-      "title": "GPUs \u2265 85\u00b0C (slowdown)",
+      "title": "GPUs At Slowdown Threshold",
       "description": "Number of GPUs currently at or above 85\u00b0C \u2014 the typical thermal-slowdown threshold on H100/B200 SXM. Any non-zero value means GPUs are throttling and your job throughput is impacted.",
       "datasource": {
         "type": "prometheus",
@@ -861,7 +1035,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 42,
+        "y": 50,
         "w": 6,
         "h": 4
       },
@@ -899,7 +1073,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "(count(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"} >= 85)) or vector(0)",
+          "expr": "(count((max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}[$fresh])) >= 85) or (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\"}[$fresh])) >= 100))) or vector(0)",
           "instant": true,
           "legendFormat": "__auto"
         }
@@ -916,7 +1090,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 54,
         "w": 24,
         "h": 4
       },
@@ -966,7 +1140,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "topk(3, max by (vm_name) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}))",
+          "expr": "topk(3, max by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}[$fresh]))))",
           "legendFormat": "{{vm_name}}",
           "instant": true,
           "refId": "A"
@@ -984,7 +1158,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 58,
         "w": 24,
         "h": 8
       },
@@ -1033,7 +1207,7 @@
             "type": "prometheus",
             "uid": "crusoe-metrics"
           },
-          "expr": "max by (vm_name) (DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"})",
+          "expr": "max by (vm_name) (max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(gpu_junction_temperature{cluster_id=~\"$cluster\"}[$fresh])) or max without (pod, namespace, container, cluster_name, ib_network_id, ib_network_name, node_id, nodepool_name, pod_id, deployment_mode) (last_over_time(DCGM_FI_DEV_GPU_TEMP{cluster_id=~\"$cluster\"}[$fresh])))",
           "legendFormat": "{{vm_name}}"
         }
       ]
@@ -1044,7 +1218,10 @@
   "tags": [
     "crusoe",
     "gpu",
-    "kubernetes"
+    "kubernetes",
+    "nvidia",
+    "amd",
+    "vendor-neutral"
   ],
   "templating": {
     "list": [
@@ -1059,7 +1236,7 @@
           "type": "prometheus",
           "uid": "crusoe-metrics"
         },
-        "definition": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+        "definition": "label_values({__name__=~\"gpu_gfx_activity|DCGM_FI_DEV_GPU_UTIL\"}, cluster_id)",
         "hide": 0,
         "includeAll": true,
         "label": "Cluster",
@@ -1067,13 +1244,26 @@
         "name": "cluster",
         "options": [],
         "query": {
-          "query": "label_values(DCGM_FI_DEV_GPU_UTIL, cluster_id)",
+          "query": "label_values({__name__=~\"gpu_gfx_activity|DCGM_FI_DEV_GPU_UTIL\"}, cluster_id)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
         "regex": "",
         "sort": 1,
         "type": "query"
+      },
+      {
+        "name": "fresh",
+        "label": "Freshness window",
+        "type": "constant",
+        "query": "2m",
+        "current": {
+          "text": "2m",
+          "value": "2m"
+        },
+        "hide": 2,
+        "skipUrlSync": true,
+        "description": "Lookback used to ignore abandoned time series. Must be >= this deployment's scrape interval; raise it if panels go blank, lower it if stale values linger."
       }
     ]
   },

@@ -9,6 +9,157 @@
   "panels": [
     {
       "datasource": { "type": "prometheus", "uid": "vllm-local" },
+      "description": "Prompt + generated tokens over the selected time range \u2014 the headline \"how much have we served\" KPI. Select a model in the Model dropdown to scope it (e.g. glm-5.3). Uses increase() over the dashboard time range rather than the raw counter: increase() absorbs counter resets when a vLLM pod restarts and avoids double-counting across replicas, which a bare sum of the counter would get wrong.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "id": 17,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "vllm-local" },
+          "expr": "sum(increase(vllm:prompt_tokens_total{namespace=~\"$namespace\", model_name=~\"$model\", pod=~\"$pod\"}[$__range])) + sum(increase(vllm:generation_tokens_total{namespace=~\"$namespace\", model_name=~\"$model\", pod=~\"$pod\"}[$__range]))",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Total tokens processed (range)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "vllm-local" },
+      "description": "Generated (completion) tokens over the selected range \u2014 what the model produced for callers. Uses increase() over the dashboard time range rather than the raw counter: increase() absorbs counter resets when a vLLM pod restarts and avoids double-counting across replicas, which a bare sum of the counter would get wrong.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "id": 18,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "vllm-local" },
+          "expr": "sum(increase(vllm:generation_tokens_total{namespace=~\"$namespace\", model_name=~\"$model\", pod=~\"$pod\"}[$__range]))",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Output tokens served (range)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "vllm-local" },
+      "description": "Prompt (prefill) tokens ingested over the selected range. Uses increase() over the dashboard time range rather than the raw counter: increase() absorbs counter resets when a vLLM pod restarts and avoids double-counting across replicas, which a bare sum of the counter would get wrong.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "purple", "value": null } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "id": 19,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "vllm-local" },
+          "expr": "sum(increase(vllm:prompt_tokens_total{namespace=~\"$namespace\", model_name=~\"$model\", pod=~\"$pod\"}[$__range]))",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Prompt tokens processed (range)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "vllm-local" },
+      "description": "Tokens processed per time bucket, split into prompt (in) and generated (out) and stacked so the total reads directly. Each point is an increase() over $__interval, so widening the time picker re-buckets instead of aliasing \u2014 the shape stays honest from 1h to the full retention window. Sustained flat-zero with traffic running usually means prometheus-vllm restarted and lost its series.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "decimals": 0,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 5 },
+      "id": 20,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "vllm-local" },
+          "expr": "sum(increase(vllm:prompt_tokens_total{namespace=~\"$namespace\", model_name=~\"$model\", pod=~\"$pod\"}[$__interval]))",
+          "legendFormat": "Prompt tokens (in)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "vllm-local" },
+          "expr": "sum(increase(vllm:generation_tokens_total{namespace=~\"$namespace\", model_name=~\"$model\", pod=~\"$pod\"}[$__interval]))",
+          "legendFormat": "Generated tokens (out)",
+          "refId": "B"
+        }
+      ],
+      "title": "Tokens processed over time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "vllm-local" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -18,7 +169,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 13 },
       "id": 1,
       "options": {
         "colorMode": "background",
@@ -52,7 +203,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 13 },
       "id": 2,
       "options": {
         "colorMode": "background",
@@ -93,7 +244,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 13 },
       "id": 3,
       "options": {
         "colorMode": "background",
@@ -128,7 +279,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 13 },
       "id": 4,
       "options": {
         "colorMode": "background",
@@ -163,7 +314,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 13 },
       "id": 5,
       "options": {
         "colorMode": "background",
@@ -206,7 +357,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 13 },
       "id": 6,
       "options": {
         "colorMode": "background",
@@ -268,7 +419,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
       "id": 7,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -337,7 +488,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
       "id": 8,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -400,7 +551,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
       "id": 9,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -472,7 +623,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 26 },
       "id": 10,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -523,7 +674,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 26 },
       "id": 11,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -589,7 +740,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 26 },
       "id": 12,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -640,7 +791,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 21 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 34 },
       "id": 13,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -697,7 +848,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 21 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 34 },
       "id": 14,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -748,7 +899,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 21 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 34 },
       "id": 15,
       "options": {
         "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -769,7 +920,7 @@
       "datasource": { "type": "prometheus", "uid": "vllm-local" },
       "description": "Which API endpoints received traffic over the selected time range (total requests, not rate). vLLM has no per-user metric — the handler/method mix is the closest 'who is using this server' signal available from /metrics.",
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false } }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
       "id": 16,
       "options": {
         "cellHeight": "sm",
