@@ -28,10 +28,9 @@ automatically. To pin the old behaviour set `vpn_crypto_profile: default`,
 `vpn_stateful_forward_rule: true`, `vpn_perf_tuning: false` and
 `vpn_kernel_upgrade: false`.
 
-To measure any of this, use the separate
-[bandwidth-test](../bandwidth-test/) solution. It drives iperf3 across
-one-or-many hosts and collects results from the receivers, so it works through
-a managed gateway on either end.
+To measure any of this, run `iperf3` with one server process per flow and
+collect results at the receiver, so it works through a managed gateway on
+either end.
 
 ## Measured throughput
 
@@ -295,7 +294,7 @@ ansible-playbook -i inventory.ini site.yml --tags verify
 ssh <crusoe-vm> ping <remote-vm-private-ip>
 ```
 
-To measure throughput, use [bandwidth-test](../bandwidth-test/).
+To measure throughput, run `iperf3` with one server process per flow.
 
 ## Client transports
 
@@ -686,7 +685,7 @@ kubectl logs -n kube-system ds/vpn-client
 | **Tunnel healthy, ping clean, TCP retransmitting hard** | **Anti-replay is discarding reordered packets.** `grep XfrmInStateSeqError /proc/net/xfrm_stat` — if it climbs, check `cat /sys/class/net/<uplink>/queues/rx-0/rps_flow_cnt`. RFS hands one SA's packets between CPUs so they arrive out of order. Measured 18,624 retransmits with RFS on versus 106 with it off. Keep `vpn_disable_rfs: true`. |
 | Tunnel never installs after changing `vpn_replay_window` | Values the kernel refuses leave the SA uninstalled. 1024 works; 32768 does not. The role now validates 0–4096. |
 | Per-tunnel throughput ~20% below expectation | Kernel has no VAES AES-GCM driver. `sed -n "/^name .*: rfc4106(gcm(aes))$/,+1p" /proc/crypto` — want a `*vaes*` driver. Needs kernel ≥ 6.11; see [AZURE-10G-GUIDE.md](AZURE-10G-GUIDE.md) §4.2 (host-side, applies to any peer). |
-| Benchmark plateaus at 4–5 Gbps regardless of tuning | A single `iperf3` server process is single-threaded. Use one process per flow — the `bandwidth-test` solution does. |
+| Benchmark plateaus at 4–5 Gbps regardless of tuning | A single `iperf3` server process is single-threaded. Use one process per flow. |
 | Some flows blackhole after a gateway dies | Health timer running? `vpn_client_healthcheck: true`? |
 | Return traffic dropped intermittently | SNAT or a conntrack-only firewall rule in the path. Both break multi-gateway ECMP. |
 | Client play fails on "could not resolve every gateway's private IP" | Ran with `--limit vpn_clients`, so the gateways play never set its facts. Run the whole `site.yml`, or set `vpn_local_gw_ip=<private-ip>` per gateway in the inventory. |

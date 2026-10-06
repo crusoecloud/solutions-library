@@ -86,8 +86,7 @@ the gateway is the fixed anchor:
 - The one non-transparent event is the **gateway** changing IP (only a gateway
   config change does that); mitigate with its static IP and `ha_mode=dual`.
 
-Flags, trade-offs (throughput funnel, per-pod identity, WireGuard roadmap),
-and the comparison with the in-cluster `ipsec-tunnel-cmk` chart:
+Flags and trade-offs (throughput funnel, per-pod identity, WireGuard roadmap):
 [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md).
 
 ## Security notes
@@ -124,7 +123,7 @@ and [tests/README.md](tests/README.md) for how to run all test phases.
 | [docs/customer-aws.md](docs/customer-aws.md) | Customer-side AWS S2S VPN (CGW/TGW, PSK handoff, inside CIDRs); existing AWS S2S VPN deployments are supported via Path A |
 | [docs/crypto-profiles.md](docs/crypto-profiles.md) | Default proposals, overrides, provider cipher-doc warning, FIPS hook |
 | [docs/ip-planning.md](docs/ip-planning.md) | CIDR overlap guard, /30 convention, isolation, NAT escape hatch |
-| [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md) | Routing CMK cluster / multi-VM traffic through the gateway; flags, resilience, ipsec-tunnel-cmk comparison |
+| [docs/crusoe-cluster-egress.md](docs/crusoe-cluster-egress.md) | Routing CMK cluster / multi-VM traffic through the gateway; flags, resilience |
 | [docs/outgrowing-this.md](docs/outgrowing-this.md) | Throughput/SPOF ceilings, interconnect graduation path |
 | [params/schema.md](params/schema.md) | Every variable, documented |
 

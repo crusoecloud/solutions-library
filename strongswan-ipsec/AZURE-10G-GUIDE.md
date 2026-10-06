@@ -281,8 +281,8 @@ anti-replay is discarding them. Check `rps_flow_cnt` first.
 
 **Measure with one process per flow.** A single `iperf3` server process is
 single-threaded and caps out around 4–5 Gbps, which is very easy to mistake
-for a network limit. The companion `bandwidth-test` solution collects at the
-receiver, one process per flow, so it works through a managed gateway on
+for a network limit. Collect results at the
+receiver with one process per flow, so it works through a managed gateway on
 either end.
 
 ---
