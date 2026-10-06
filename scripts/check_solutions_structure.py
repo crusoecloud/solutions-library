@@ -1,10 +1,13 @@
-#!/usr/bin/env python3
 """Enforce the repo-structure rules from CONTRIBUTING.md:
 
-  1. Every top-level solution directory has a README.md.
-  2. Every top-level solution directory is linked from the root README.md.
-  3. Every root-README link that points at a top-level directory resolves
-     to a directory that actually exists.
+  1. Every category directory (a top-level directory) has a README.md.
+  2. Every solution directory has a README.md.
+  3. Every solution directory is linked from the root README.md.
+  4. Every root-README link that points into a category resolves to a
+     directory that actually exists.
+
+Layout: <category>/<solution>/, or <category>/<group>/<solution>/ where
+<group> is listed in GROUP_DIRS below (e.g. performance-tuning/nvidia).
 
 Run from anywhere; paths are resolved relative to the repo root (this
 script's parent's parent directory).
@@ -18,43 +21,62 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ROOT_README = REPO_ROOT / "README.md"
 
-# Top-level entries that are not independent solutions and are exempt from
-# the "has a README" / "linked from root README" rules.
+# Top-level entries that are not solution categories and are exempt from
+# the README / root-README-link rules.
 NON_SOLUTION_DIRS = {"assets", "scripts"}
 
-# Directory names (not paths) that are known-missing from the root README
-# today. New entries must NOT be added here — this is a closing door, not
-# an escape hatch. Remove a name once its root-README entry is added.
-GRANDFATHERED_UNLINKED: set[str] = set()
+# Directories (relative to the repo root) that group solutions one level
+# below a category. Their children, not they themselves, are the solutions.
+GROUP_DIRS = {
+    "performance-tuning/nvidia",
+    "performance-tuning/amd",
+    "samples/training",
+    "samples/inference",
+    "samples/others",
+}
 
 LINK_RE = re.compile(r"\]\(\./([^)#]+?)/?\)")
 
 
-def top_level_solution_dirs() -> list[str]:
+def _subdirs(path: Path) -> list[Path]:
     return sorted(
-        p.name
-        for p in REPO_ROOT.iterdir()
-        if p.is_dir()
-        and not p.name.startswith(".")
-        and p.name not in NON_SOLUTION_DIRS
+        p
+        for p in path.iterdir()
+        if p.is_dir() and not p.name.startswith(".") and p.name != "__pycache__"
     )
 
 
-def linked_dir_names(readme_text: str) -> set[str]:
-    """Top-level directory names referenced by relative links in the root
-    README — e.g. "foo" or "foo/README.md" both count as linking "foo".
-    Links straight at a root-level file ("CONTRIBUTING.md", "CODEOWNERS")
-    are not directory references and are skipped.
+def category_dirs() -> list[str]:
+    return [p.name for p in _subdirs(REPO_ROOT) if p.name not in NON_SOLUTION_DIRS]
+
+
+def solution_dirs() -> list[str]:
+    """Repo-relative paths of every solution directory."""
+    found = []
+    for cat in category_dirs():
+        for child in _subdirs(REPO_ROOT / cat):
+            rel = f"{cat}/{child.name}"
+            if rel in GROUP_DIRS:
+                found.extend(f"{rel}/{g.name}" for g in _subdirs(child))
+            else:
+                found.append(rel)
+    return sorted(found)
+
+
+def linked_paths(readme_text: str) -> set[str]:
+    """Repo-relative paths referenced by relative links in the root README,
+    normalised so "foo/bar", "foo/bar/" and "foo/bar/README.md" all count as
+    linking "foo/bar".
     """
-    names = set()
+    paths = set()
     for match in LINK_RE.finditer(readme_text):
         target = match.group(1)
-        parts = target.split("/")
-        first_segment = parts[0]
-        if len(parts) == 1 and (REPO_ROOT / first_segment).is_file():
-            continue  # bare root-level file link, e.g. ./CONTRIBUTING.md
-        names.add(first_segment)
-    return names
+        if (REPO_ROOT / target).is_file():
+            target = str(Path(target).parent)
+            if target == ".":
+                continue  # root-level file, e.g. ./CONTRIBUTING.md
+        paths.add(target)
+    return paths
 
 
 def main() -> int:
@@ -62,32 +84,35 @@ def main() -> int:
         print(f"ERROR: root README not found at {ROOT_README}", file=sys.stderr)
         return 1
 
-    readme_text = ROOT_README.read_text(encoding="utf-8")
-    linked = linked_dir_names(readme_text)
-
+    linked = linked_paths(ROOT_README.read_text(encoding="utf-8"))
     errors = []
 
-    for name in top_level_solution_dirs():
-        solution_dir = REPO_ROOT / name
-
-        if not (solution_dir / "README.md").is_file():
+    for cat in category_dirs():
+        if not (REPO_ROOT / cat / "README.md").is_file():
             errors.append(
-                f"{name}/: missing README.md — every solution directory needs one "
+                f"{cat}/: missing README.md — every category directory needs one "
                 f"(see CONTRIBUTING.md)"
             )
 
-        if name not in linked and name not in GRANDFATHERED_UNLINKED:
+    solutions = solution_dirs()
+    for rel in solutions:
+        if not (REPO_ROOT / rel / "README.md").is_file():
             errors.append(
-                f"{name}/: not linked from the root README.md — add an entry under "
+                f"{rel}/: missing README.md — every solution directory needs one "
+                f"(see CONTRIBUTING.md)"
+            )
+        if rel not in linked:
+            errors.append(
+                f"{rel}/: not linked from the root README.md — add an entry under "
                 f"the relevant ## Solutions category (see CONTRIBUTING.md)"
             )
 
-    # Any link into a top-level dir should resolve to a real directory.
-    all_dirs = set(top_level_solution_dirs()) | NON_SOLUTION_DIRS
-    for name in sorted(linked):
-        if name not in all_dirs:
+    # Any link into a category should resolve to a real directory.
+    categories = set(category_dirs())
+    for path in sorted(linked):
+        if path.split("/")[0] in categories and not (REPO_ROOT / path).exists():
             errors.append(
-                f"README.md links to './{name}' but no such top-level directory exists "
+                f"README.md links to './{path}' but no such directory exists "
                 f"— fix or remove the stale link"
             )
 

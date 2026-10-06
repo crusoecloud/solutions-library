@@ -21,7 +21,7 @@ A Python tool for fetching audit logs from the [Crusoe Cloud API](https://docs.c
 1. **Clone or download the repository**
    ```bash
    git clone https://github.com/crusoecloud/solutions-library.git
-   cd solutions-library/crusoe-splunk-hec
+   cd solutions-library/observability/crusoe-splunk-hec
    ```
 
 2. **Install dependencies**
