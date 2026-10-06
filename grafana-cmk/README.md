@@ -820,7 +820,7 @@ This solution is provided **AS IS, WITHOUT WARRANTY OF ANY KIND**, express or im
 
 - **Minimum query interval is 60 seconds.** Crusoe Metrics collects samples every 60 seconds; querying more frequently returns the same data.
 - **30-day metric retention** on the Crusoe backend. For longer retention, add a Prometheus instance that remote-writes from Crusoe Metrics into your own Thanos or Mimir.
-- **Metrics only.** Logs and distributed traces are not available via Crusoe Metrics. For log aggregation on CMK, see the [CMK logs to GCP](../crusoe-managed-kubernetes-logs-to-gcp) solution in this repository.
+- **Metrics only.** Logs and distributed traces are not available via Crusoe Metrics.
 - **Label names.** Dashboards use the `node` label to identify nodes and the `gpu` label for GPU index. These are confirmed correct for Crusoe Metrics on Managed Slurm clusters. If variable dropdowns appear empty on a different cluster type, run the discovery curl in the Troubleshooting section to confirm the actual label names.
 - **Per-partition / per-user Slurm breakdown.** The Slurm Cluster View aggregates to the cluster level. `crusoe_slurm_partition_*`, `crusoe_slurm_user_jobs_*`, and `crusoe_slurm_account_jobs_*` series are available with `partition`, `username`, and `account` labels respectively — good follow-up dashboards if you need to slice by partition, user, or accounting group.
 - **Production hardening.** See the dedicated [Production hardening](#production-hardening) section above for the full checklist: node-affinity / CPU pinning, resource sizing, TLS, SSO, source-range restriction, password rotation, and backups.
