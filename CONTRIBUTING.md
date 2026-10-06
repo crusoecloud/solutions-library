@@ -1,6 +1,6 @@
 # Contributing to the Crusoe Solutions Library
 
-Thanks for helping grow this collection. This repo is a set of independent, runnable solutions for [Crusoe Cloud](https://crusoe.ai/) — each one lives in its own top-level directory and should be usable on its own, without pulling in the rest of the repo.
+Thanks for helping grow this collection. This repo is a set of independent, runnable solutions for [Crusoe Cloud](https://crusoe.ai/) — each one lives in its own directory under a category folder and should be usable on its own, without pulling in the rest of the repo.
 
 ## Before you start
 
@@ -10,18 +10,18 @@ For small fixes (typos, broken links, doc corrections, minor bug fixes), just se
 
 ## Adding a new solution
 
-1. **Create a new top-level directory** named for what it does, following the existing convention: lowercase, hyphen-separated, often suffixed with the platform it targets (`-cmk` for Crusoe Managed Kubernetes, `-vms` for VM-based solutions, etc.). Look at existing directories for naming precedent before picking a name.
+1. **Create a new solution directory** under the category that fits it — `performance-tuning/` (grouped into `nvidia/` and `amd/`), `observability/`, `slurm/`, `networking/`, `data-transfer/`, or `samples/` (grouped into `training/`, `inference/` and `others/`) — e.g. `observability/my-solution/`. If no category fits, open an issue or draft PR to propose one. Name the directory for what it does, following the existing convention: lowercase, hyphen-separated, often suffixed with the platform it targets (`-cmk` for Crusoe Managed Kubernetes, `-vms` for VM-based solutions, etc.). Look at existing directories for naming precedent before picking a name.
 2. **Include a `README.md`** in the directory, following the shape used throughout the repo:
    - `#` title
    - A short paragraph describing what it does and when to use it
    - Setup / prerequisites specific to this solution (beyond the repo-wide ones in the root README)
    - Quick-start usage with copy-pasteable commands
    - Any tunables, gotchas, or known limitations worth calling out
-3. **Add an entry to the root [README.md](./README.md)** under the relevant `## Solutions` category (Training, Inference, Storage, Performance, Observability, Identity & Security, Networking, or a new category if none fit) — one link plus a 1-3 sentence summary, matching the existing entries.
+3. **Add an entry to the root [README.md](./README.md)** under the matching `### ` category (and sub-group) in the `## Solutions` section, linking to the solution's path from the repo root (e.g. `./observability/my-solution/`) — one link plus a 1-3 sentence summary, matching the existing entries.
 4. **Keep it self-contained.** Scripts, manifests, Dockerfiles, and docs for a solution belong inside that solution's directory. Don't introduce shared/common code across solutions unless you're deliberately establishing a new shared pattern — ask first.
 5. **Gitignore generated/local output** (results files, state files, secrets) rather than committing it — see existing `.gitignore` files for the pattern.
 
-Steps 2 and 3 are enforced automatically — see [Automated checks](#automated-checks) below. A PR that adds a new top-level directory without a README and a root-README entry will fail CI.
+Steps 2 and 3 are enforced automatically — see [Automated checks](#automated-checks) below. A PR that adds a solution directory without a README and a root-README entry will fail CI.
 
 ## Modifying an existing solution
 
@@ -33,9 +33,12 @@ Steps 2 and 3 are enforced automatically — see [Automated checks](#automated-c
 
 CI ([.github/workflows/check-solutions-structure.yml](./.github/workflows/check-solutions-structure.yml)) runs [scripts/check_solutions_structure.py](./scripts/check_solutions_structure.py) on every PR, which enforces:
 
-- Every top-level solution directory has a `README.md`.
-- Every top-level solution directory is linked from the root `README.md`.
-- No root-`README.md` link points at a top-level directory that doesn't exist.
+- Every category directory (e.g. `observability/`) has a `README.md`.
+- Every solution directory has a `README.md`.
+- Every solution directory is linked from the root `README.md`.
+- No root-`README.md` link points at a directory that doesn't exist.
+
+If you add a new group directory (like `samples/others/`), register it in `GROUP_DIRS` in the check script.
 
 Run it locally before pushing:
 

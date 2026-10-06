@@ -38,7 +38,7 @@ kubectl debug node/<one-gpu-node> -it --image=busybox -- ls /host/etc/crusoe/ncc
 #     b200-180gb-sxm-ib-cloud-hypervisor.xml
 
 # 3. run the probe (auto-detects node count for the pool):
-cd ib-health-probe-cmk
+cd performance-tuning/nvidia/ib-health-probe-cmk
 ./apply.sh <pool-label> <topo-filename>
 
 # 4. watch progress / read results:
@@ -184,4 +184,4 @@ ib-health-probe-cmk/
 
 - **`/ib-health-check`** (Solutions Engineering skill) — sysfs counter read + NVLink check. Read-only, no traffic. Complementary to this probe: the skill catches accumulating errors that have already occurred; this probe catches degradation that only shows under live load.
 - **`../cmk-nccltests/nccl-b200.yaml`** — the multi-node MPIJob that `multi-node-nccl-job.yaml` is forked from.
-- **`../grafana-cmk/`** — continuous monitoring stack if you want trend data.
+- **`../../../observability/grafana-cmk/`** — continuous monitoring stack if you want trend data.
