@@ -1,0 +1,19 @@
+apiVersion: v2
+name: cmk-logging
+description: >
+  Deploys Fluent Bit (DaemonSet log collector) and Grafana Loki (single-binary
+  log aggregation) for Kubernetes pod log collection. Designed to pair with an
+  existing Grafana installation; creates a datasource ConfigMap that the Grafana
+  sidecar auto-discovers.
+type: application
+version: 0.1.0
+appVersion: "3.3.2"
+dependencies:
+  - name: loki
+    version: ">=6.0.0 <7.0.0"
+    repository: https://grafana.github.io/helm-charts
+    condition: loki.enabled
+  - name: fluent-bit
+    version: ">=0.40.0 <1.0.0"
+    repository: https://fluent.github.io/helm-charts
+    condition: fluent-bit.enabled
