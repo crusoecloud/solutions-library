@@ -84,7 +84,14 @@ helm upgrade --install cmk-logging ./cmk-logging \
 
 ## Grafana: viewing logs
 
-After install:
+Adding the Log Messages dashboard:
+
+1. Open Grafana → **Dashboards** → New → Import
+2. In the 'Upload dashboard JSON file' section, uplodad 'log-messages-grafana-dashboard.json' from this repo
+3. Under 'Select Loki data source', select 'Loki' and save
+4. In the new dashboard, filter by the namespace and pod/container name to find the logs you want to view 
+
+Exploring the Loki data source directly:
 
 1. Open Grafana → **Explore**.
 2. Select the **Loki** datasource (auto-configured by the datasource ConfigMap).
