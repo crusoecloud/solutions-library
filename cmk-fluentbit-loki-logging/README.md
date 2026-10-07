@@ -1,6 +1,6 @@
-# cmk-fluent-loki-logging
+# Log aggregation for all pods in a CMK cluster using Fluentbit, Loki and Grafana
 
-Helm umbrella chart that deploys:
+A Helm umbrella chart that deploys:
 
 | Component | Role | Chart source |
 |-----------|------|--------------|
@@ -8,10 +8,8 @@ Helm umbrella chart that deploys:
 | **Fluent Bit** (DaemonSet) | Per-node log collector → Loki | `fluent/fluent-bit` |
 | **Grafana datasource ConfigMap** | Auto-wires Loki into Grafana | this chart |
 
-Logs are written to a `crusoe-csi-driver-fs-sc` PersistentVolumeClaim (1 Ti,
-the provider minimum). Grafana itself is **not** installed by this chart;
-only the datasource ConfigMap is created so the existing Grafana sidecar can
-discover Loki automatically.
+Pod logs are written to a `crusoe-csi-driver-fs-sc` PersistentVolumeClaim (1 Ti minimum). Grafana itself is **not** installed by this chart;
+only the datasource ConfigMap is created so the existing Grafana sidecar can discover Loki automatically.
 
 ---
 
@@ -24,7 +22,7 @@ discover Loki automatically.
 
 Grafana must be deployed from the `grafana/grafana` Helm chart (or compatible)
 with the datasource sidecar enabled (`sidecar.datasources.enabled: true`). This requirement is met by
-the 'grafana-cmk' solution in this repo (Crusoe Solutions Library)
+the 'grafana-cmk' solution in this repo (Crusoe Solutions Library), which is what we recommend.
 
 ---
 
@@ -36,28 +34,19 @@ helm repo add grafana  https://grafana.github.io/helm-charts
 helm repo add fluent   https://fluent.github.io/helm-charts
 helm repo update
 
-# 2. Fetch subchart tarballs into logging/charts/
-helm dependency update ./logging
+# 2. Fetch subchart tarballs into cmk-logging/charts/
+helm dependency update ./cmk-logging
 
 # 3. Install into the same namespace as Grafana
-#    (the example below uses "monitoring"; adjust to match your setup)
+#    (the example below uses "monitoring", as used by grafana-cmk; adjust to match your setup if different)
 export KUBECONFIG=$(pwd)/config
 
-helm upgrade --install cmk-fluent-loki-logging ./logging \
-  --namespace monitoring --create-namespace \
-  --values logging/values.yaml \
+helm upgrade --install cmk-logging ./cmk-logging \
+  --namespace monitoring \
+  --values cmk-logging/values.yaml \
   --wait
 ```
 
-> **Important**: the default `fluent-bit.env[0].value` assumes the Helm
-> release is named `cmk-fluent-loki-logging` and the namespace is `monitoring`.
-> If you use a different release name or namespace, pass the corrected host:
->
-> ```bash
-> helm upgrade --install cmk-fluent-loki-logging ./logging \
->   --namespace my-ns \
->   --set "fluent-bit.env[0].value=cmk-fluent-loki-logging-loki-gateway.my-ns.svc.cluster.local"
-> ```
 
 ---
 
@@ -141,7 +130,7 @@ Fluent Bit → Loki pipelines.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `fluent-bit.extraEnvVars[0].value` | `logging-loki-gateway.monitoring.svc.cluster.local` | Loki gateway hostname |
+| `fluent-bit.extraEnvVars[0].value` | `cmk-logging-loki-gateway.monitoring.svc.cluster.local` | Loki gateway hostname |
 | `fluent-bit.config.filters` | see values.yaml | Edit the `grep` filter to include/exclude namespaces |
 
 ---
@@ -149,9 +138,9 @@ Fluent Bit → Loki pipelines.
 ## Uninstall
 
 ```bash
-helm uninstall logging -n monitoring
+helm uninstall cmk-logging -n monitoring
 
 # The PVC is NOT deleted automatically (Kubernetes retain policy).
 # To free storage:
-kubectl delete pvc -n monitoring -l app.kubernetes.io/instance=logging
+kubectl delete pvc -n monitoring storage-cmk-logging-loki-0
 ```
