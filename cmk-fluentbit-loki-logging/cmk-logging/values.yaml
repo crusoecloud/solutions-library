@@ -1,0 +1,288 @@
+# =============================================================================
+# cmk-logging chart — top-level values
+# =============================================================================
+#
+# Default install command (namespace must match grafanaDatasource.grafanaNamespace
+# if Grafana lives in the same namespace):
+#
+#   helm dependency update ./cmk-logging
+#   helm upgrade --install cmk-logging ./cmk-logging \
+#     --namespace monitoring --create-namespace \
+#     --values cmk-logging/values.yaml
+#
+# The Fluent Bit DaemonSet infers the Loki gateway address from LOKI_HOST/LOKI_PORT
+# environment variables. Adjust fluent-bit.env below if you install
+# with a different release name or namespace.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Grafana datasource sidecar discovery
+# ---------------------------------------------------------------------------
+grafanaDatasource:
+  # Set to false to skip creating the datasource ConfigMap entirely.
+  enabled: true
+
+  # Namespace where Grafana is running. The datasource ConfigMap is placed here
+  # so the Grafana sidecar (grafana-sc-datasources) can discover it.
+  # Defaults to the same namespace as this chart when left empty.
+  grafanaNamespace: ""
+
+  # Label key/value that the Grafana sidecar watches for.
+  # These defaults match the standard grafana/grafana Helm chart.
+  sidecarLabel: "grafana_datasource"
+  sidecarLabelValue: "1"
+
+# =============================================================================
+# Loki — single-binary mode with filesystem storage
+# =============================================================================
+loki:
+  enabled: true
+
+  # Single-binary (monolithic) mode: all Loki components run in one StatefulSet.
+  # Requires no object storage; data lives on the PVC below.
+  deploymentMode: SingleBinary
+
+  loki:
+    # Disable multi-tenant auth for simplicity (all logs go to the "fake" tenant).
+    auth_enabled: false
+
+    commonConfig:
+      replication_factor: 1
+
+    # Use the local filesystem; no S3 / GCS / Azure bucket required.
+    storage:
+      type: filesystem
+
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+
+    limits_config:
+      # Retain logs for 31 days.
+      retention_period: 744h
+      max_query_lookback: 744h
+      ingestion_rate_mb: 32
+      ingestion_burst_size_mb: 64
+      max_entries_limit_per_query: 50000
+      # Allow individual streams to have higher cardinality.
+      max_streams_per_user: 0
+      max_global_streams_per_user: 0
+
+    compactor:
+      working_directory: /var/loki/compactor
+      compaction_interval: 10m
+      retention_enabled: true
+      # Filesystem delete-request store (matches storage.type above).
+      delete_request_store: filesystem
+
+  # ---------------------------------------------------------------------------
+  # Single-binary StatefulSet
+  # ---------------------------------------------------------------------------
+  singleBinary:
+    replicas: 1
+
+    persistence:
+      enabled: true
+      # crusoe-csi-driver-fs-sc is a shared filesystem; minimum volume size is 1 Ti.
+      storageClass: crusoe-csi-driver-fs-sc
+      size: 1Ti
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+    # Allow the pod to be scheduled on GPU or tainted nodes (e.g. b300 pool).
+    tolerations:
+      - operator: Exists
+
+  # ---------------------------------------------------------------------------
+  # Disable distributed components (only used in SimpleScalable / distributed modes)
+  # ---------------------------------------------------------------------------
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+
+  # Disable the bundled MinIO — we are using the filesystem backend.
+  minio:
+    enabled: false
+
+  # Nginx gateway — exposes a single Service for both push (write) and query (read).
+  gateway:
+    enabled: true
+    replicas: 1
+    nginxConfig:
+      # The default resolver "kube-dns.kube-system.svc.cluster.local." does not
+      # exist on this cluster — CoreDNS is named "coredns", not "kube-dns".
+      # Using the stable CoreDNS ClusterIP avoids a chicken-and-egg situation
+      # where nginx must DNS-resolve its own resolver at startup.
+      resolver: 10.233.0.10
+
+  # Self-monitoring (Grafana Agent + Loki canary) adds overhead; off by default.
+  monitoring:
+    selfMonitoring:
+      enabled: false
+      grafanaAgent:
+        installOperator: false
+    lokiCanary:
+      enabled: false
+
+  # Disable the built-in Helm test pod.
+  test:
+    enabled: false
+
+# =============================================================================
+# Fluent Bit — DaemonSet log shipper
+# =============================================================================
+fluent-bit:
+  enabled: true
+
+  kind: DaemonSet
+
+  rbac:
+    create: true
+    # nodeAccess grants get/list/watch on nodes — needed for enriching logs
+    # with node-level metadata.
+    nodeAccess: true
+
+  serviceAccount:
+    create: true
+
+  # Allow Fluent Bit to run on tainted nodes (GPU nodes, system nodes, etc.)
+  # so no pod logs are missed.
+  tolerations:
+    - operator: Exists
+
+  # ---------------------------------------------------------------------------
+  # Loki endpoint
+  #
+  # LOKI_HOST / LOKI_PORT are injected as env vars and referenced in the
+  # [OUTPUT] block below via ${LOKI_HOST} / ${LOKI_PORT}. Fluent Bit performs
+  # env-var substitution in config files automatically.
+  #
+  # Default: release name "cmk-logging", namespace "monitoring".
+  # Override with --set fluent-bit.env[0].value=<host> if needed.
+  # ---------------------------------------------------------------------------
+  env:
+    - name: LOKI_HOST
+      value: "cmk-logging-loki-gateway.monitoring.svc.cluster.local"
+    - name: LOKI_PORT
+      value: "80"
+
+  # ---------------------------------------------------------------------------
+  # Fluent Bit pipeline configuration
+  # ---------------------------------------------------------------------------
+  config:
+    service: |
+      [SERVICE]
+          Flush             5
+          Grace             30
+          Log_Level         info
+          Daemon            off
+          HTTP_Server       On
+          HTTP_Listen       0.0.0.0
+          HTTP_Port         2020
+          storage.path      /var/fluent-bit/state/flb-storage/
+          storage.sync      normal
+          storage.checksum  off
+          storage.backlog.mem_limit 5M
+
+    inputs: |
+      [INPUT]
+          Name              tail
+          Tag               kube.*
+          # Collect all container logs from every node.
+          Path              /var/log/containers/*.log
+          # Handle both Docker (JSON) and containerd (CRI) log formats.
+          multiline.parser  docker, cri
+          # Persist read offsets across restarts so no logs are re-sent.
+          DB                /var/fluent-bit/state/flb_kube.db
+          Mem_Buf_Limit     50MB
+          Skip_Long_Lines   On
+          Refresh_Interval  10
+          Rotate_Wait       30
+          storage.type      filesystem
+          Read_from_Head    Off
+
+    filters: |
+      [FILTER]
+          Name                kubernetes
+          Match               kube.*
+          Kube_URL            https://kubernetes.default.svc:443
+          Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+          Kube_Tag_Prefix     kube.var.log.containers.
+          Merge_Log           On
+          Merge_Log_Key       log_processed
+          K8S-Logging.Parser  On
+          K8S-Logging.Exclude Off
+          Annotations         Off
+          Labels              On
+
+      [FILTER]
+          # Drop logs from Kubernetes system namespaces; keep only user workloads.
+          # Remove or adjust this filter to include system-namespace logs.
+          Name    grep
+          Match   kube.*
+          Exclude $kubernetes['namespace_name'] ^(kube-system|kube-public|kube-node-lease)$
+
+    outputs: |
+      [OUTPUT]
+          Name                   loki
+          Match                  kube.*
+          Host                   ${LOKI_HOST}
+          Port                   ${LOKI_PORT}
+          # Static label applied to every log stream.
+          Labels                 job=fluent-bit
+          # Per-stream labels derived from Kubernetes metadata.
+          Label_keys             $kubernetes['namespace_name'],$kubernetes['pod_name'],$kubernetes['container_name'],$kubernetes['host']
+          Auto_Kubernetes_Labels off
+          line_format            json
+          Retry_Limit            False
+
+  # ---------------------------------------------------------------------------
+  # Host volume mounts — required to read container log files from the node.
+  # ---------------------------------------------------------------------------
+  volumes:
+    - name: varlog
+      hostPath:
+        path: /var/log
+        type: ""
+    - name: varlibdockercontainers
+      hostPath:
+        path: /var/lib/docker/containers
+        type: ""
+    - name: fluent-bit-state
+      hostPath:
+        path: /var/fluent-bit/state
+        type: DirectoryOrCreate
+
+  volumeMounts:
+    - name: varlog
+      mountPath: /var/log
+      readOnly: true
+    - name: varlibdockercontainers
+      mountPath: /var/lib/docker/containers
+      readOnly: true
+    - name: fluent-bit-state
+      mountPath: /var/fluent-bit/state
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
