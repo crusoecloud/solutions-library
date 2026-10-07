@@ -121,6 +121,10 @@ Tests NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw` driven 
 
 A team-dedicated Grafana deployment for Crusoe Managed Kubernetes / Managed Slurm clusters. Pulls GPU, DCGM, power, and InfiniBand metrics from the Crusoe Telemetry Relay endpoint and ships pre-built dashboards (cluster GPU overview, per-node GPU detail, Xid / ECC error tracking, GPU power, and InfiniBand fabric activity). Includes a zero-dependency two-node H100 burn-in benchmark to validate the dashboards end-to-end.
 
+[Log aggregation with Fluent Bit, Loki, and a dashboard for Self-hosted Grafana](./cmk-fluentbit-loki-logging/)
+
+Designed to be used with the Self-hosted Grafana solution above, or any other Grafana installed on CMK. Aggregates CMK pod logs into a single data source queryable by LogQL.
+
 ### Identity & Security
 
 [Crusoe to Splunk HEC Log Forwarder](./crusoe-splunk-hec/README.md)
