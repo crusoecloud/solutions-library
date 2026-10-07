@@ -1,4 +1,4 @@
-# Log aggregation for all pods in a CMK cluster using Fluentbit, Loki and Grafana
+# Log aggregation for all pods in a CMK cluster using Fluent Bit, Loki and Grafana
 
 A Helm umbrella chart that deploys:
 
