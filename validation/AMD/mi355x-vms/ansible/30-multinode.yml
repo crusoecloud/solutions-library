@@ -1,0 +1,194 @@
+# Multi-node RCCL validation, launched from one anchor node (mpirun over SSH to the others).
+#
+# Node set: nodes that PASSED the latest single-node smoke (results/smoke-*/summary.csv), in
+# inventory order; the first one is the anchor. -e use_all=true uses every inventory node.
+#
+# Steps (-e steps=...; default "scale"):
+#   scale   for each scale point, run every collective in `collectives` over the first n
+#           nodes of the set. Default scale_sizes=full runs only the full set (N nodes);
+#           "auto" adds the 2, 4, 8, ... scaling curve below N; or pass a list, e.g. 2,8.
+#           Sweep 2G-32G; each RESULT reports avg busbw and peak busbw@size.
+#           Gates (scripts/rccl/thresholds.env): <=8 nodes avg busbw, >8 nodes peak busbw.
+#   rails   (opt-in, ~1.5 min per node) same-rail ib_write_bw from the anchor to every other
+#           node, ONE target and ONE rail at a time, 4 QPs, gate >= 320 Gb/s per rail.
+#
+# Usage (from ansible/):
+#   ansible-playbook 30-multinode.yml
+#   ansible-playbook 30-multinode.yml -e scale_sizes=auto        # full scaling curve
+#   ansible-playbook 30-multinode.yml -e scale_sizes=2,8 -e collectives=all_reduce
+#   ansible-playbook 30-multinode.yml -e collectives=all_reduce,all_gather,reduce_scatter,alltoall
+#   ansible-playbook 30-multinode.yml -e steps=rails,scale
+#
+# Results: results/multinode-<ts>/ (anchor logs + summary.txt); then run
+#   python3 ../scripts/parse_results.py ../results
+
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group mi355x must exist and be non-empty
+      ansible.builtin.assert:
+        that: groups['mi355x'] | default([]) | length > 0
+        fail_msg: >-
+          No hosts in group 'mi355x'. Run from the repo root or from ansible/ (both have an
+          ansible.cfg pointing at inventory/hosts.ini), or pass -i inventory/hosts.ini.
+          inventory/hosts.ini is written by 'terraform apply' (or by hand, see README).
+        quiet: true
+
+    - name: Open-file limit must cover the parallel SSH workers (forks)
+      vars:
+        nofile: "{{ lookup('pipe', 'ulimit -n') }}"
+      ansible.builtin.assert:
+        that: nofile == 'unlimited' or nofile | int >= 2048
+        fail_msg: >-
+          Open-file limit is {{ nofile }}. With forks=40 Ansible runs out of file handles and
+          crashes with "process object is closed" (macOS terminals default to 256).
+          Run 'ulimit -n 4096' in this shell and retry, or lower parallelism with -f 10.
+        quiet: true
+
+- name: Select node set
+  hosts: localhost
+  gather_facts: false
+  vars:
+    use_all: false
+    latest_smoke: "{{ lookup('pipe', 'ls -1d ' + playbook_dir + '/../results/smoke-2*/summary.csv 2>/dev/null | tail -1') }}"
+    smoke_csv: "{{ latest_smoke }}"
+  tasks:
+    - name: Nodes that passed smoke (verdict is column 10 of summary.csv)
+      ansible.builtin.set_fact:
+        smoke_pass: >-
+          {{ [] if (use_all | bool or smoke_csv == '')
+             else (lookup('file', smoke_csv).splitlines()[1:]
+                   | map('split', ',') | selectattr(9, 'eq', 'PASS') | map('first') | list) }}
+
+    - name: Ordered node set
+      ansible.builtin.set_fact:
+        mn_nodes: >-
+          {{ groups['mi355x'] if (use_all | bool or smoke_csv == '')
+             else (groups['mi355x'] | select('in', smoke_pass) | list) }}
+        mn_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+
+    - name: Report node set
+      ansible.builtin.debug:
+        msg: "{{ mn_nodes | length }} nodes (source: {{ 'inventory' if (use_all | bool or smoke_csv == '') else smoke_csv }}); anchor={{ mn_nodes[0] | default('NONE') }}"
+
+    - name: Need at least 2 nodes
+      ansible.builtin.assert:
+        that: mn_nodes | length >= 2
+        fail_msg: "Fewer than 2 smoke-passing nodes; nothing to test multi-node."
+
+    - name: Anchor group
+      ansible.builtin.add_host:
+        name: "{{ mn_nodes[0] }}"
+        groups: mn_anchor
+
+- name: Multi-node tests from the anchor
+  hosts: mn_anchor
+  gather_facts: false
+  vars:
+    steps: "scale"
+    scale_sizes: "full"
+    collectives: "all_reduce,all_gather"
+    min_bytes: 2G
+    max_bytes: 32G
+    nodes: "{{ hostvars['localhost']['mn_nodes'] }}"
+    ips: "{{ nodes | map('extract', hostvars, 'private_ip') | list }}"
+    ts: "{{ hostvars['localhost']['mn_ts'] }}"
+    remote_results: "/home/ubuntu/validation/results/multinode-{{ ts }}"
+    local_results: "{{ playbook_dir }}/../results/multinode-{{ ts }}"
+    pow2: [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+    sizes: >-
+      {{ (([] if scale_sizes == 'full' else (pow2 if scale_sizes == 'auto'
+              else (scale_sizes | string).split(',') | map('int') | list))
+          | select('lt', ips | length) | list) + [ips | length] }}
+  tasks:
+    - name: Results dir
+      ansible.builtin.file:
+        path: "{{ remote_results }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy validation scripts
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/"
+        dest: /home/ubuntu/validation/
+        mode: preserve
+
+    - name: Node set files
+      ansible.builtin.copy:
+        dest: "{{ remote_results }}/{{ item.name }}"
+        content: "{{ item.content }}"
+        mode: "0644"
+      loop:
+        - { name: nodes.txt, content: "{{ (nodes | zip(ips) | map('join', ' ') | join('\n')) ~ '\n' }}" }
+        - { name: targets, content: "{{ (ips[1:] | join('\n')) ~ '\n' }}" }
+
+    # ------------------------------------------------------------- rails (opt-in)
+    - name: Pair-rail ib_write_bw (anchor vs each target, one rail at a time)
+      when: "'rails' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/rdma
+        PARALLEL_RAILS=0 PAIR_DUR_S=5 OUT_DIR={{ remote_results }} ./pair_rail.sh -f {{ remote_results }}/targets \
+          > {{ remote_results }}/pair_rail.txt 2>&1; rc=$?
+        grep -E '[|](FAIL|SKIP)$' {{ remote_results }}/pair_rail.txt | head -40
+        tail -3 {{ remote_results }}/pair_rail.txt
+        exit $rc
+      args: { executable: /bin/bash }
+      register: rails
+      async: 14400
+      poll: 30
+      failed_when: false
+      changed_when: false
+
+    # ------------------------------------------------------------- scale
+    - name: "Collectives {{ collectives }} at {{ sizes | join(',') }} nodes"
+      when: "'scale' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/rccl
+        for n in {{ sizes | join(' ') }}; do
+          hosts=$(head -n "$n" {{ remote_results }}/nodes.txt | awk '{print $2}' | paste -sd, -)
+          for c in {{ collectives.split(',') | join(' ') }}; do
+            ./run_rccl_mi355x.sh -c "$c" -H "$hosts" -b {{ min_bytes }} -e {{ max_bytes }} \
+              -o {{ remote_results }} --tag "rccl-$c-n$n" > {{ remote_results }}/rccl-$c-n$n.txt 2>&1
+            grep '^RESULT' {{ remote_results }}/rccl-$c-n$n.txt \
+              || echo "RESULT collective=$c nodes=$n verdict=ERROR (no RESULT line)"
+          done
+        done
+      args: { executable: /bin/bash }
+      register: scale
+      async: 14400
+      poll: 30
+      failed_when: false
+      changed_when: false
+
+    # ------------------------------------------------------------- collect
+    - name: Fetch results
+      ansible.posix.synchronize:
+        mode: pull
+        src: "{{ remote_results }}/"
+        dest: "{{ local_results }}/"
+      failed_when: false
+
+    - name: Write summary
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ local_results }}/summary.txt"
+        mode: "0644"
+        content: |
+          Multi-node validation  {{ ts }}   anchor={{ inventory_hostname }}   nodes={{ ips | length }}
+
+          == pair-rail (anchor vs each target, >= 320 Gb/s per rail)
+          {{ rails.stdout | default('skipped') if not (rails.skipped | default(false)) else 'skipped' }}
+
+          == collectives ({{ collectives }}) at {{ sizes | join(',') }} nodes
+          {{ scale.stdout | default('skipped') if not (scale.skipped | default(false)) else 'skipped' }}
+
+    - name: Show summary
+      delegate_to: localhost
+      ansible.builtin.command: cat {{ local_results }}/summary.txt
+      register: s
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ s.stdout_lines }}"

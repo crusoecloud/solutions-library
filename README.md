@@ -111,6 +111,10 @@ A combined Terraform and Ansible solution that provisions a cluster of Crusoe Cl
 
 A reproducible acceptance bundle for AMD Instinct MI355X nodepools with Pensando Pollara 400 AI NICs on CMK. It covers per-node kernel/driver/firmware verification against the deployed Crusoe software bundle, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), a 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute/straggler/XGMI/ECC health — with reference pass bars from Crusoe's internal dry-run.
 
+[AMD MI355X VM Validation Smoke Test](./validation/AMD/mi355x-vms/)
+
+A Terraform + Ansible smoke test for AMD Instinct MI355X VMs with Pensando Pollara 400 AI NICs. It provisions the VMs, checks every node in parallel (software and firmware versions, GPUs, ECC, NIC rails, RVS GEMM throughput, 8-GPU RCCL), then runs RCCL all_reduce and all_gather across all passing nodes and writes a markdown report — about 12 minutes end to end. Use it to accept a new set of MI355X VMs or to re-check a cluster before a long training run.
+
 [Fast InfiniBand Write Testing for Multiple MI355X Nodes](./ib-write-test-mi355x/)
 
 Tests NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw` driven in parallel from a known-good master node, then summarizes which NICs passed or failed. Parallelization keeps each node's test to a couple of seconds, making it suitable for quickly sweeping a large nodepool.

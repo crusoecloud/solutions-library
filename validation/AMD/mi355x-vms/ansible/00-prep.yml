@@ -1,0 +1,94 @@
+# Prep every node: node-to-node SSH (generated cluster key), MPI hostfile, validation scripts.
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group mi355x must exist and be non-empty
+      ansible.builtin.assert:
+        that: groups['mi355x'] | default([]) | length > 0
+        fail_msg: >-
+          No hosts in group 'mi355x'. Run from the repo root or from ansible/ (both have an
+          ansible.cfg pointing at inventory/hosts.ini), or pass -i inventory/hosts.ini.
+          inventory/hosts.ini is written by 'terraform apply' (or by hand, see README).
+        quiet: true
+
+    - name: Open-file limit must cover the parallel SSH workers (forks)
+      vars:
+        nofile: "{{ lookup('pipe', 'ulimit -n') }}"
+      ansible.builtin.assert:
+        that: nofile == 'unlimited' or nofile | int >= 2048
+        fail_msg: >-
+          Open-file limit is {{ nofile }}. With forks=40 Ansible runs out of file handles and
+          crashes with "process object is closed" (macOS terminals default to 256).
+          Run 'ulimit -n 4096' in this shell and retry, or lower parallelism with -f 10.
+        quiet: true
+
+- name: Prep MI355X nodes
+  hosts: mi355x
+  gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir }}/.."
+  tasks:
+    - name: Install cluster private key for node-to-node SSH (mpirun)
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/keys/cluster_ssh_key"
+        dest: /home/ubuntu/.ssh/id_ed25519
+        mode: "0600"
+
+    - name: Authorize cluster public key
+      ansible.builtin.lineinfile:
+        path: /home/ubuntu/.ssh/authorized_keys
+        line: "{{ lookup('file', repo_root + '/keys/cluster_ssh_key.pub') }}"
+        create: true
+        mode: "0600"
+
+    - name: SSH client config for the private subnet
+      ansible.builtin.blockinfile:
+        path: /home/ubuntu/.ssh/config
+        create: true
+        mode: "0600"
+        block: |
+          Host 172.* 10.* 192.168.*
+              StrictHostKeyChecking no
+              UserKnownHostsFile /dev/null
+              LogLevel ERROR
+              IdentityFile ~/.ssh/id_ed25519
+
+    - name: MPI hostfile
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/inventory/hostfile"
+        dest: /home/ubuntu/hostfile
+        mode: "0644"
+
+    - name: Node list
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/inventory/nodes"
+        dest: /home/ubuntu/nodes
+        mode: "0644"
+
+    - name: Validation scripts
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/scripts/"
+        dest: /home/ubuntu/validation/
+        mode: preserve
+
+    - name: Wait for 8 GPUs (amd-smi can report 'driver not initialized' right after boot)
+      ansible.builtin.shell: amd-smi list 2>/dev/null | grep -c '^GPU'
+      register: gpus
+      retries: 6
+      delay: 30
+      until: gpus.stdout | int == 8
+      changed_when: false
+
+- name: Verify node-to-node SSH from the anchor
+  hosts: mi355x[0]
+  gather_facts: false
+  tasks:
+    - name: SSH from anchor to every private IP
+      ansible.builtin.shell: |
+        fail=0
+        for ip in $(cat ~/nodes); do
+          ssh -o BatchMode=yes -o ConnectTimeout=10 "$ip" true || { echo "UNREACHABLE $ip"; fail=1; }
+        done
+        exit $fail
+      changed_when: false

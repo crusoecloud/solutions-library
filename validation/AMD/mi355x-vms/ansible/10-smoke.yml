@@ -1,0 +1,224 @@
+# Single-node smoke test. Runs on every node in parallel; on each node the steps run
+# back-to-back (never concurrently - GEMM and RCCL share the GPUs).
+#
+#   1. env_verify   bundle 2.2 versions, 8 GPUs, ECC, rails, GIDs, PCIe, dmesg
+#   2. rail_census  per-rail ACTIVE / GID / MTU / neighbor state
+#   3. GEMM         RVS GST smoke (8 targeted fp8/bf8/fp16/bf16 GEMMs, all GPUs parallel, ~4 min)
+#   4. RCCL 1-node  8-GPU all_reduce_perf 2G-32G, gate avg busbw >= 360 GB/s (reference ~368)
+#
+# Usage (from ansible/):
+#   ansible-playbook 10-smoke.yml                          # all nodes
+#   ansible-playbook 10-smoke.yml -l mi355x-val-05,mi355x-val-09
+#   ansible-playbook 10-smoke.yml -e steps=env,rails       # subset: env,rails,gemm,rccl
+#   ansible-playbook 10-smoke.yml -e gemm_full=true        # full RVS gst_single.conf (~45 min)
+#   ansible-playbook 10-smoke.yml -e fix_sysctl=true       # set + persist ndisc_notify=1 first
+#
+# Results: results/smoke-<ts>/<node>/... and results/smoke-<ts>/summary.{txt,csv}
+# A node is PASS only if every executed step passed (env WARNs are allowed).
+
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group mi355x must exist and be non-empty
+      ansible.builtin.assert:
+        that: groups['mi355x'] | default([]) | length > 0
+        fail_msg: >-
+          No hosts in group 'mi355x'. Run from the repo root or from ansible/ (both have an
+          ansible.cfg pointing at inventory/hosts.ini), or pass -i inventory/hosts.ini.
+          inventory/hosts.ini is written by 'terraform apply' (or by hand, see README).
+        quiet: true
+
+    - name: Open-file limit must cover the parallel SSH workers (forks)
+      vars:
+        nofile: "{{ lookup('pipe', 'ulimit -n') }}"
+      ansible.builtin.assert:
+        that: nofile == 'unlimited' or nofile | int >= 2048
+        fail_msg: >-
+          Open-file limit is {{ nofile }}. With forks=40 Ansible runs out of file handles and
+          crashes with "process object is closed" (macOS terminals default to 256).
+          Run 'ulimit -n 4096' in this shell and retry, or lower parallelism with -f 10.
+        quiet: true
+
+- name: Single-node smoke
+  hosts: mi355x
+  gather_facts: false
+  vars:
+    steps: "env,rails,gemm,rccl"
+    gemm_full: false
+    fix_sysctl: false
+    ts: "{{ hostvars['localhost']['smoke_ts'] | default(lookup('pipe', 'date +%Y%m%d-%H%M')) }}"
+    remote_results: "/home/ubuntu/validation/results/smoke-{{ ts }}"
+    local_results: "{{ playbook_dir }}/../results/smoke-{{ ts }}"
+  pre_tasks:
+    - name: Pin one timestamp for the whole run
+      ansible.builtin.set_fact:
+        smoke_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
+
+  tasks:
+    - name: Sync validation scripts
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/"
+        dest: /home/ubuntu/validation/
+        mode: preserve
+
+    - name: Results dir
+      ansible.builtin.file:
+        path: "{{ remote_results }}"
+        state: directory
+        mode: "0755"
+
+    - name: Set and persist ndisc_notify=1 (opt-in)
+      when: fix_sysctl | bool
+      become: true
+      block:
+        - name: Persist sysctl
+          ansible.builtin.copy:
+            dest: /etc/sysctl.d/90-ionic-ndisc.conf
+            content: |
+              net.ipv6.conf.all.ndisc_notify = 1
+              net.ipv6.conf.default.ndisc_notify = 1
+            mode: "0644"
+        - name: Apply to all + default + existing interfaces
+          ansible.builtin.shell: |
+            sysctl -q -p /etc/sysctl.d/90-ionic-ndisc.conf
+            for f in /proc/sys/net/ipv6/conf/*/ndisc_notify; do echo 1 > "$f"; done
+          changed_when: true
+
+    # ---------------------------------------------------------------- 1. env
+    - name: env_verify
+      when: "'env' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/rdma
+        ./env_verify.sh > {{ remote_results }}/env_verify.txt 2>&1; rc=$?
+        grep -E '\|(FAIL|WARN)$' {{ remote_results }}/env_verify.txt | grep -v '|summary|'
+        tail -1 {{ remote_results }}/env_verify.txt
+        exit $rc
+      args: { executable: /bin/bash }
+      register: env
+      failed_when: false
+      changed_when: false
+
+    # ---------------------------------------------------------------- 2. rails
+    - name: rail_census
+      when: "'rails' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/rdma
+        ./rail_census.sh > {{ remote_results }}/rail_census.txt 2>&1; rc=$?
+        grep '^CENSUS|' {{ remote_results }}/rail_census.txt
+        exit $rc
+      args: { executable: /bin/bash }
+      register: rails
+      failed_when: false
+      changed_when: false
+
+    # ---------------------------------------------------------------- 3. GEMM
+    - name: GEMM (RVS GST)
+      when: "'gemm' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/gemm
+        ./run_rvs_gst.sh {{ '' if gemm_full | bool else '--smoke' }} -o {{ remote_results }} > {{ remote_results }}/gemm.txt 2>&1; rc=$?
+        cat {{ remote_results }}/gemm.txt | grep -v '^== '
+        exit $rc
+      args: { executable: /bin/bash }
+      register: gemm
+      async: "{{ 3600 if gemm_full | bool else 1200 }}"
+      poll: 20
+      failed_when: false
+      changed_when: false
+
+    # ---------------------------------------------------------------- 4. RCCL
+    - name: RCCL single-node all_reduce
+      when: "'rccl' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/rccl
+        ./run_rccl_mi355x.sh -c all_reduce -H {{ private_ip }} -o {{ remote_results }} \
+          --tag rccl-ar-1n-{{ inventory_hostname }} > {{ remote_results }}/rccl_1n.txt 2>&1; rc=$?
+        grep -E '^RESULT|^VERDICT|^  [a-z].*(status=12|segfault|error|hang)' {{ remote_results }}/rccl_1n.txt
+        exit $rc
+      args: { executable: /bin/bash }
+      register: rccl
+      async: 1200
+      poll: 20
+      failed_when: false
+      changed_when: false
+
+    - name: Fetch results
+      ansible.posix.synchronize:
+        mode: pull
+        src: "{{ remote_results }}/"
+        dest: "{{ local_results }}/{{ inventory_hostname }}/"
+      failed_when: false
+
+    - name: Per-node verdicts
+      vars:
+        rc_word: "{{ {0: 'PASS', 1: 'FAIL'} }}"
+      ansible.builtin.set_fact:
+        v_env: >-
+          {{ 'SKIP' if env.skipped | default(false)
+             else ('PASS' if env.rc == 0 else 'FAIL') }}
+        v_env_detail: >-
+          {{ '' if env.skipped | default(false)
+             else (env.stdout_lines | select('search', '\|FAIL$') | map('split', '|') | map(attribute=1) | join(' ')) }}
+        v_rails: >-
+          {{ 'SKIP' if rails.skipped | default(false)
+             else (rails.stdout | regex_search('rails=[^|]+[|]active=[^|]+[|]gid=[^|]+') | default('?', true)) ~ ('' if rails.rc == 0 else ' FAIL') }}
+        v_gemm: >-
+          {{ 'SKIP' if gemm.skipped | default(false)
+             else (rc_word[gemm.rc | default(2)] | default('ERROR')) }}
+        v_gemm_min: >-
+          {{ '' if gemm.skipped | default(false)
+             else (gemm.stdout | default('') | regex_findall('fp8\s+\d+\s+(\d+)') | map('int') | min | default('?', true)) }}
+        v_rccl: >-
+          {{ 'SKIP' if rccl.skipped | default(false)
+             else (rc_word[rccl.rc | default(2)] | default('HANG/ERROR')) }}
+        v_busbw: >-
+          {{ '' if rccl.skipped | default(false)
+             else (rccl.stdout | default('') | regex_search('avg_busbw=([0-9.]+)', '\1') | default(['?'], true) | first) }}
+
+    - name: Overall node verdict
+      ansible.builtin.set_fact:
+        v_node: "{{ 'FAIL' if ('FAIL' in [v_env, v_gemm, v_rccl] or 'FAIL' in v_rails or 'ERROR' in v_gemm or 'ERROR' in v_rccl) else 'PASS' }}"
+
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  vars:
+    local_results: "{{ playbook_dir }}/../results/smoke-{{ smoke_ts }}"
+    nodes: "{{ ansible_play_hosts_all | default(groups['mi355x']) }}"
+  tasks:
+    - name: Write summary.csv
+      ansible.builtin.copy:
+        dest: "{{ local_results }}/summary.csv"
+        content: |
+          node,vm_id,private_ip,env,rails,gemm,gemm_fp8_min_tflops,rccl_1n,rccl_1n_busbw_gbps,verdict,env_fail_checks
+          {% for h in groups['mi355x'] if hostvars[h].v_node is defined %}
+          {{ h }},{{ hostvars[h].vm_id }},{{ hostvars[h].private_ip }},{{ hostvars[h].v_env }},{{ hostvars[h].v_rails | replace('|', ' ') }},{{ hostvars[h].v_gemm }},{{ hostvars[h].v_gemm_min }},{{ hostvars[h].v_rccl }},{{ hostvars[h].v_busbw }},{{ hostvars[h].v_node }},{{ hostvars[h].v_env_detail }}
+          {% endfor %}
+        mode: "0644"
+
+    - name: Write summary.txt
+      ansible.builtin.copy:
+        dest: "{{ local_results }}/summary.txt"
+        content: |
+          {{ '%-15s %-5s %-30s %-6s %-9s %-10s %-9s %s' | format('node', 'env', 'rails', 'gemm', 'fp8_min', 'rccl_1n', 'busbw', 'VERDICT') }}
+          {% for h in groups['mi355x'] if hostvars[h].v_node is defined %}
+          {{ '%-15s %-5s %-30s %-6s %-9s %-10s %-9s %s' | format(h, hostvars[h].v_env, hostvars[h].v_rails | replace('|', ' '), hostvars[h].v_gemm, hostvars[h].v_gemm_min, hostvars[h].v_rccl, hostvars[h].v_busbw, hostvars[h].v_node) }}
+          {% endfor %}
+
+          PASS: {{ groups['mi355x'] | map('extract', hostvars) | selectattr('v_node', 'defined') | selectattr('v_node', 'eq', 'PASS') | list | length }}
+          FAIL: {{ groups['mi355x'] | map('extract', hostvars) | selectattr('v_node', 'defined') | selectattr('v_node', 'eq', 'FAIL') | list | length }}
+          results: {{ local_results }}
+        mode: "0644"
+
+    - name: Show summary
+      ansible.builtin.command: cat {{ local_results }}/summary.txt
+      register: summary_txt
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ summary_txt.stdout_lines }}"
