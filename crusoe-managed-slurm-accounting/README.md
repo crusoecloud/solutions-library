@@ -130,6 +130,50 @@ Check the result:
 ssh root@<login-ip> "sacctmgr show assoc format=Cluster,Account,User"
 ```
 
+## Enforce limits and QoS
+
+By default slurmctld records usage but enforces nothing
+(`AccountingStorageEnforce = none`), so QoS and association limits set with
+`sacctmgr` have no effect. To turn enforcement on, set
+`accounting.storageEnforce`:
+
+```bash
+helm upgrade slurm-accounting . -n slurm --reuse-values \
+  --set 'accounting.storageEnforce=associations\,limits\,qos'
+```
+
+(Helm splits `--set` on commas, hence the `\,`.)
+
+The patch Job writes `AccountingStorageEnforce=<value>` at the top of the
+`Controller` CR's `spec.extraConf`, above the sections the Crusoe operator
+manages, so operator reconciles keep it. slurmctld picks it up through the
+reconfigure sidecar, with no pod restarts. Re-running the upgrade with a
+different value replaces the line rather than adding a second one.
+
+Before you enable it:
+
+- **Users without an association can no longer submit jobs.** Run
+  `sacctmgr add user` (see [Set up accounts and users](#set-up-accounts-and-users))
+  for every `SlurmUser` first, or their jobs are rejected.
+- **Job submission now depends on accounting data.** slurmctld caches
+  associations in its state directory and keeps enforcing from that cache
+  during a slurmdbd or MariaDB outage, but users and limits added during the
+  outage don't apply until slurmdbd is back.
+
+Setting `storageEnforce` back to `""` does not remove the line. Remove it by
+hand:
+
+```bash
+kubectl edit controllers.slinky.slurm.net -n slurm slurm-<cluster-name>
+# delete the AccountingStorageEnforce= line at the top of spec.extraConf
+```
+
+Confirm from a login node:
+
+```bash
+ssh root@<login-ip> "scontrol show config | grep AccountingStorageEnforce"
+```
+
 ## Verification
 
 ```bash

@@ -45,6 +45,12 @@ accounting:
     requests:
       cpu: 250m
       memory: 512Mi
+  # AccountingStorageEnforce for slurm.conf, e.g. `associations,limits,qos`.
+  # Needed for QoS and association limits to take effect. Empty leaves
+  # slurm.conf alone (Slurm's default is no enforcement). Requires
+  # patchController.enabled. Clearing it later does NOT remove the line --
+  # see README "Enforce limits and QoS".
+  storageEnforce: ""
 
 # Whether this chart should patch the existing Crusoe-managed Controller CR
 # (slinky.slurm.net/v1beta1) to set spec.accountingRef. The Controller CR
@@ -64,6 +70,9 @@ patchController:
   # backoffLimit. Raise this if node provisioning is slow enough to exceed
   # it in your environment.
   waitForControllerTimeoutSeconds: 900
+  # Image for the accounting.storageEnforce step, which needs a shell, kubectl
+  # and jq. Only pulled when storageEnforce is set.
+  shellImage: alpine/k8s:1.33.1@sha256:7f8133af0dd210cb5b168f889c5bc77dd65ecc935f3e3cb72d1b98ff96bfed40
 
 # sackd (login) and slurmd (worker, dynamic/configless nodes) only read
 # slurm.conf once at process start and have no live-reconfigure signal, so
