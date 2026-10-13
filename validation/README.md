@@ -1,4 +1,4 @@
-# Performance Tuning
+# Validation
 
 Cluster validation and performance benchmarking for Crusoe GPU clusters: NCCL / RCCL collective tests and InfiniBand health checks. Use these before a long training run, after provisioning a new nodepool, or when investigating a suspected straggler node.
 

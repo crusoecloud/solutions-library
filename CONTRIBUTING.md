@@ -10,7 +10,7 @@ For small fixes (typos, broken links, doc corrections, minor bug fixes), just se
 
 ## Adding a new solution
 
-1. **Create a new solution directory** under the category that fits it — `performance-tuning/` (grouped into `nvidia/` and `amd/`), `observability/`, `slurm/`, `networking/`, `data-transfer/`, or `samples/` (grouped into `training/`, `inference/` and `others/`) — e.g. `observability/my-solution/`. If no category fits, open an issue or draft PR to propose one. Name the directory for what it does, following the existing convention: lowercase, hyphen-separated, often suffixed with the platform it targets (`-cmk` for Crusoe Managed Kubernetes, `-vms` for VM-based solutions, etc.). Look at existing directories for naming precedent before picking a name.
+1. **Create a new solution directory** under the category that fits it — `validation/` (grouped into `nvidia/` and `amd/`), `observability/`, `slurm/`, `networking/`, `data-transfer/`, or `samples/` (grouped into `training/`, `inference/` and `others/`) — e.g. `observability/my-solution/`. If no category fits, open an issue or draft PR to propose one. Name the directory for what it does, following the existing convention: lowercase, hyphen-separated, often suffixed with the platform it targets (`-cmk` for Crusoe Managed Kubernetes, `-vms` for VM-based solutions, etc.). Look at existing directories for naming precedent before picking a name.
 2. **Include a `README.md`** in the directory, following the shape used throughout the repo:
    - `#` title
    - A short paragraph describing what it does and when to use it

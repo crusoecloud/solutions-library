@@ -7,7 +7,7 @@
 * [Disclaimer](#warning-disclaimer)
 * [Prerequisites](#prerequisites)
 * [Solutions](#solutions)
-    * [Performance Tuning](#performance-tuning)
+    * [Validation](#validation)
     * [Observability](#observability)
     * [Slurm](#slurm)
     * [Networking](#networking)
@@ -34,27 +34,27 @@ Each solution README will also list its own specific prerequisites.
 
 ## Solutions
 
-### Performance Tuning
+### Validation
 
-Cluster validation and benchmarking — NCCL / RCCL tests and InfiniBand health checks. See the [performance-tuning README](./performance-tuning/README.md).
+Cluster validation and benchmarking — NCCL / RCCL tests and InfiniBand health checks. See the [validation README](./validation/README.md).
 
 #### NVIDIA
 
-[SKU-Tuned NCCL Tests for Crusoe Managed Kubernetes](./performance-tuning/nvidia/cmk-nccltests/)
+[SKU-Tuned NCCL Tests for Crusoe Managed Kubernetes](./validation/nvidia/cmk-nccltests/)
 
 A set of ready-to-apply Kubernetes MPIJob manifests that run the `all_reduce_perf` NCCL benchmark, pre-tuned for specific Crusoe GPU SKUs (B200, B300, GB200, H100, H200) with the correct topology file and CUDA/NCCL image per SKU. Use it to quickly validate InfiniBand fabric performance on a given CMK GPU nodepool without hand-configuring NCCL test manifests from scratch.
 
-[InfiniBand Health Probe for Crusoe Managed Kubernetes](./performance-tuning/nvidia/ib-health-probe-cmk/)
+[InfiniBand Health Probe for Crusoe Managed Kubernetes](./validation/nvidia/ib-health-probe-cmk/)
 
 A Kubernetes-native health check for InfiniBand fabrics that runs one pod per GPU worker node, performing per-HCA `ib_write_bw` loopback tests plus single- and multi-node NCCL all_reduce, and flags any HCA running below line rate. Use it before a long training run, or to investigate a suspected straggler node, on any SKU (H200, B200, etc.) without manual configuration.
 
 #### AMD
 
-[AMD MI355X Validation Suite for Crusoe Managed Kubernetes](./performance-tuning/amd/cmk-amd-mi355x/)
+[AMD MI355X Validation Suite for Crusoe Managed Kubernetes](./validation/amd/cmk-amd-mi355x/)
 
 A reproducible acceptance bundle for AMD Instinct MI355X nodepools with Pensando Pollara 400 AI NICs on CMK. It covers per-node kernel/driver/firmware verification against the deployed Crusoe software bundle, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), a 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute/straggler/XGMI/ECC health — with reference pass bars from Crusoe's internal dry-run.
 
-[Fast InfiniBand Write Testing for Multiple MI355X Nodes](./performance-tuning/amd/ib-write-test-mi355x/)
+[Fast InfiniBand Write Testing for Multiple MI355X Nodes](./validation/amd/ib-write-test-mi355x/)
 
 Tests NIC bandwidth across multiple AMD MI355X nodes using `ib_write_bw` driven in parallel from a known-good master node, then summarizes which NICs passed or failed. Parallelization keeps each node's test to a couple of seconds, making it suitable for quickly sweeping a large nodepool.
 

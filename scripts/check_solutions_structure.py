@@ -7,7 +7,7 @@
      directory that actually exists.
 
 Layout: <category>/<solution>/, or <category>/<group>/<solution>/ where
-<group> is listed in GROUP_DIRS below (e.g. performance-tuning/nvidia).
+<group> is listed in GROUP_DIRS below (e.g. validation/nvidia).
 
 Run from anywhere; paths are resolved relative to the repo root (this
 script's parent's parent directory).
@@ -28,8 +28,8 @@ NON_SOLUTION_DIRS = {"assets", "scripts"}
 # Directories (relative to the repo root) that group solutions one level
 # below a category. Their children, not they themselves, are the solutions.
 GROUP_DIRS = {
-    "performance-tuning/nvidia",
-    "performance-tuning/amd",
+    "validation/nvidia",
+    "validation/amd",
     "samples/training",
     "samples/inference",
     "samples/others",

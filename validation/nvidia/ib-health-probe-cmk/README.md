@@ -38,7 +38,7 @@ kubectl debug node/<one-gpu-node> -it --image=busybox -- ls /host/etc/crusoe/ncc
 #     b200-180gb-sxm-ib-cloud-hypervisor.xml
 
 # 3. run the probe (auto-detects node count for the pool):
-cd performance-tuning/nvidia/ib-health-probe-cmk
+cd validation/nvidia/ib-health-probe-cmk
 ./apply.sh <pool-label> <topo-filename>
 
 # 4. watch progress / read results:
