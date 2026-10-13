@@ -23,6 +23,15 @@ This solution adds slurm accounting (slurmdbd + MariaDB) on top of a Crusoe **Ma
 
 There will typically be two scenarios in which you will install this chart:
 
+> **Enforcing limits:** the chart leaves `AccountingStorageEnforce` unset, so
+> QoS and association limits do nothing. To enforce them, add this to either
+> `helm install` command below, and read
+> [Enforce limits and QoS](#enforce-limits-and-qos) first:
+>
+> ```bash
+> --set 'accounting.storageEnforce=associations\,limits\,qos'
+> ```
+
 ### Installing on a new Crusoe Managed Slurm cluster
 
 Creating the `SlurmCluster` CR is what triggers node provisioning for the
@@ -129,6 +138,24 @@ Check the result:
 ```bash
 ssh root@<login-ip> "sacctmgr show assoc format=Cluster,Account,User"
 ```
+
+## Enforce limits and QoS
+
+QoS and association limits do nothing until enforcement is on. Set
+`accounting.storageEnforce` at install time (see [Installations](#installations)),
+or later with an upgrade. Helm needs the commas escaped:
+
+```bash
+helm upgrade slurm-accounting . -n slurm --reuse-values \
+  --set 'accounting.storageEnforce=associations\,limits\,qos'
+```
+
+It applies with no pod restarts. Once it is on, a user with no association
+can't submit jobs, so run `sacctmgr add user` for each `SlurmUser` first.
+
+Setting the value back to `""` leaves the line in place. To turn enforcement
+off, delete the `AccountingStorageEnforce=` line at the top of `spec.extraConf`
+in `controllers.slinky.slurm.net/slurm-<cluster-name>`.
 
 ## Verification
 

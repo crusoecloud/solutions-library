@@ -43,6 +43,44 @@ spec:
             - -n
             - {{ .Values.namespace }}
             - --timeout={{ .Values.patchController.waitForControllerTimeoutSeconds }}s
+        {{- with .Values.accounting.storageEnforce }}
+        {{- if not (regexMatch "^[a-z]+(,[a-z]+)*$" .) }}
+        {{- fail "accounting.storageEnforce must be a comma-separated list of Slurm enforce flags, e.g. associations,limits,qos" }}
+        {{- end }}
+        # Prepends AccountingStorageEnforce to Controller.spec.extraConf, above
+        # the Crusoe operator's marked sections: the operator rewrites only
+        # those sections on each reconcile and keeps the rest. Needs a shell
+        # and jq for the read-modify-write, which rancher/kubectl lacks.
+        - name: set-accounting-storage-enforce
+          # The default covers `helm upgrade --reuse-values` from a release
+          # installed before shellImage existed: it reuses the old values,
+          # which have no shellImage.
+          image: {{ $.Values.patchController.shellImage | default "alpine/k8s:1.33.1@sha256:7f8133af0dd210cb5b168f889c5bc77dd65ecc935f3e3cb72d1b98ff96bfed40" }}
+          env:
+            - name: CONTROLLER
+              value: {{ include "slurm-accounting.controllerName" $ }}
+            - name: NAMESPACE
+              value: {{ $.Values.namespace }}
+            - name: ENFORCE
+              value: {{ . | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              obj=$(kubectl get controllers.slinky.slurm.net "$CONTROLLER" -n "$NAMESPACE" -o json)
+              old=$(printf '%s' "$obj" | jq -r '.spec.extraConf // ""')
+              rest=$(printf '%s\n' "$old" | grep -v -i -E '^[[:space:]]*AccountingStorageEnforce[[:space:]]*=' || true)
+              new=$(printf 'AccountingStorageEnforce=%s\n%s' "$ENFORCE" "$rest")
+              if [ "$new" = "$old" ]; then
+                echo "AccountingStorageEnforce=$ENFORCE already set"
+                exit 0
+              fi
+              # resourceVersion makes a concurrent operator write fail this
+              # patch with a conflict; the Job retries.
+              rv=$(printf '%s' "$obj" | jq -r '.metadata.resourceVersion')
+              patch=$(jq -n --arg c "$new" --arg rv "$rv" '{metadata: {resourceVersion: $rv}, spec: {extraConf: $c}}')
+              kubectl patch controllers.slinky.slurm.net "$CONTROLLER" -n "$NAMESPACE" --type=merge -p "$patch"
+        {{- end }}
       containers:
         - name: patch-controller
           image: docker.io/rancher/kubectl:v1.33.0
