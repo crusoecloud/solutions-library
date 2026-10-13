@@ -52,7 +52,10 @@ spec:
         # those sections on each reconcile and keeps the rest. Needs a shell
         # and jq for the read-modify-write, which rancher/kubectl lacks.
         - name: set-accounting-storage-enforce
-          image: {{ $.Values.patchController.shellImage }}
+          # The default covers `helm upgrade --reuse-values` from a release
+          # installed before shellImage existed: it reuses the old values,
+          # which have no shellImage.
+          image: {{ $.Values.patchController.shellImage | default "alpine/k8s:1.33.1@sha256:7f8133af0dd210cb5b168f889c5bc77dd65ecc935f3e3cb72d1b98ff96bfed40" }}
           env:
             - name: CONTROLLER
               value: {{ include "slurm-accounting.controllerName" $ }}
