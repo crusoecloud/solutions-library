@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars and fill in. IDs come from the Crusoe CLI:
+#   crusoe projects list
+#   crusoe networking vpc-subnets list --project-id <project-id>
+#   crusoe networking transport-networks list --project-id <project-id>     (RoCE network for MI355X)
+#   crusoe networking transport-partitions list --project-id <project-id>
+#   crusoe compute images list --project-id <project-id> | grep -i mi355
+
+project_id           = "<project-id>"
+location             = "<location>"              # e.g. us-east2-a
+vpc_subnet_id        = "<vpc-subnet-id>"         # subnet in the same location
+transport_network_id = "<roce-transport-network-id>"
+
+image     = "ubuntu24.04-amd-mi355-vm-bundle2.2:2026-10-05" # always an explicit name:tag
+node_type = "mi355x-288gb-roce.8x"
+
+# Your SSH key; the only key authorized on the VMs. Changing it recreates the VMs.
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+# ssh_private_key_path defaults to the public key path without ".pub"
+
+name_prefix = "mi355x-val"   # VMs are named <prefix>-01 .. <prefix>-NN; must be unique in the project
+node_count  = 2              # start with 1-2 to confirm the image boots, then scale up
+
+# Transport partition: attach to an existing one (recommended), or set
+# create_partition = true to create a dedicated "<prefix>-roce" partition.
+create_partition      = false
+existing_partition_id = "<transport-partition-id>"
