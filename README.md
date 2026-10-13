@@ -68,6 +68,10 @@ Crusoe Cloud provides a 90-day history of who did what in your cloud, when, wher
 
 A team-dedicated Grafana deployment for Crusoe Managed Kubernetes / Managed Slurm clusters. Pulls GPU, DCGM, power, and InfiniBand metrics from the Crusoe Telemetry Relay endpoint and ships pre-built dashboards (cluster GPU overview, per-node GPU detail, Xid / ECC error tracking, GPU power, and InfiniBand fabric activity). Includes a zero-dependency two-node H100 burn-in benchmark to validate the dashboards end-to-end.
 
+[Log aggregation with Fluent Bit, Loki, and a dashboard for Self-hosted Grafana](./observability/cmk-fluentbit-loki-logging/)
+
+Designed to be used with the Self-hosted Grafana solution above, or any other Grafana installed on CMK. Aggregates CMK pod logs into a single data source queryable by LogQL.
+
 ### Slurm
 
 See also the Crusoe Slurm repository: <https://github.com/crusoecloud/slurm>.

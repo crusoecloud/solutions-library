@@ -1,0 +1,30 @@
+{{- if .Values.grafanaDatasource.enabled }}
+---
+# ConfigMap picked up automatically by the Grafana sidecar (grafana-sc-datasources).
+# The sidecar label selector defaults to grafana_datasource=1 in the standard
+# grafana/grafana Helm chart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-loki-datasource
+  namespace: {{ include "logging.grafanaNamespace" . }}
+  labels:
+    {{ .Values.grafanaDatasource.sidecarLabel }}: {{ .Values.grafanaDatasource.sidecarLabelValue | quote }}
+    app.kubernetes.io/name: loki-datasource
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: {{ include "logging.lokiUrl" . }}
+        isDefault: false
+        editable: true
+        jsonData:
+          timeout: 60
+          maxLines: 5000
+          derivedFields: []
+{{- end }}

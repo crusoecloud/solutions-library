@@ -96,7 +96,7 @@ spec:
             - |
               torchrun \
                 --nproc_per_node=8 \
-                --nnodes=2 \
+                --nnodes=8 \
                 --node_rank=${RANK} \
                 --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
                 --rdzv_backend=c10d \
@@ -113,7 +113,8 @@ spec:
               value: "0"
             - name: NCCL_IB_HCA
             # replace with value: "^mlx5_0" for H100/H200 - ibstat -v on node to confirm
-              value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
+            #  value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
+              value: "^mlx5_0"
             - name: NCCL_IB_GID_INDEX
               value: "3"
             - name: NCCL_NET_GDR_LEVEL
@@ -162,7 +163,7 @@ spec:
               path: /dev/infiniband
               type: Directory
     Worker:
-      replicas: 1
+      replicas: 7
       restartPolicy: OnFailure
       template:
         spec:
@@ -180,7 +181,7 @@ spec:
             - |
               torchrun \
                 --nproc_per_node=8 \
-                --nnodes=2 \
+                --nnodes=8 \
                 --node_rank=${RANK} \
                 --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
                 --rdzv_backend=c10d \
@@ -197,7 +198,8 @@ spec:
               value: "0"
             - name: NCCL_IB_HCA
               # replace with value: "^mlx5_0" for H100/H200 - ibstat -v on node to confirm
-              value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
+              # value: "mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
+              value: "^mlx5_0"
             - name: NCCL_IB_GID_INDEX
               value: "3"
             - name: NCCL_NET_GDR_LEVEL
@@ -206,7 +208,7 @@ spec:
               value: "<YOUR HF TOKEN HERE>"
             - name: NCCL_TOPO_FILE
               # replace with correct topo file for your SKU type as found in /etc/crusoe/nccl_topo of node
-              value: /opt/nccl_topo/b300-288gb-sxm-ib-cloud-hypervisor.xml
+              value: /opt/nccl_topo/h100-80gb-sxm-ib-cloud-hypervisor.xml
             - name: LD_LIBRARY_PATH
               value: "/usr/local/cuda/lib64:/opt/hpcx/nccl_rdma_sharp_plugin/lib:/opt/hpcx/ucc/lib/ucc:/opt/hpcx/ucc/lib:/opt/hpcx/ucx/lib/ucx:/opt/hpcx/ucx/lib:/opt/hpcx/sharp/lib:/opt/hpcx/hcoll/lib:/opt/hpcx/ompi/lib:/usr/local/nvidia/lib"
             resources:
