@@ -10,3 +10,4 @@ Solutions are grouped by GPU vendor: `nvidia/` and `amd/`.
 | [ib-health-probe-cmk](./nvidia/ib-health-probe-cmk/) | Per-HCA InfiniBand health probe for CMK |
 | [cmk-amd-mi355x](./amd/cmk-amd-mi355x/) | AMD MI355X acceptance and validation suite |
 | [ib-write-test-mi355x](./amd/ib-write-test-mi355x/) | Parallel `ib_write_bw` sweep across MI355X nodes |
+| [mi355x-vms](./amd/mi355x-vms/) | Terraform + Ansible smoke test for MI355X VMs: per-node checks, then RCCL all_reduce / all_gather across all nodes (~12 min) |
