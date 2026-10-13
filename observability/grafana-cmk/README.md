@@ -636,7 +636,7 @@ curl -s -G "https://api.crusoecloud.com/v1alpha5/projects/${PROJECT_ID}/metrics/
 If metric names differ from what the dashboards expect, update the `expr` field in the relevant panels (or the corresponding JSON in `dashboards/`), then re-apply:
 
 ```bash
-cd grafana-cmk
+cd observability/grafana-cmk
 kubectl apply -k .
 ```
 

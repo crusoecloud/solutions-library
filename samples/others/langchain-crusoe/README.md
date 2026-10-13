@@ -141,7 +141,7 @@ export CRUSOE_PROJECT_ID="my-project-id"
 ```bash
 # Clone the repo
 git clone https://github.com/crusoecloud/solutions-library.git
-cd solutions-library/langchain-crusoe
+cd solutions-library/samples/others/langchain-crusoe
 
 # Install dependencies
 poetry install --with lint,typing,test,test_integration

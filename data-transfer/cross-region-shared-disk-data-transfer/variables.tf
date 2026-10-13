@@ -125,7 +125,7 @@ variable "destination_disk_mount_path" {
 variable "grafana_cmk_manifests_path" {
   description = "Local path to the grafana-cmk/manifests directory from the solutions-library repo."
   type        = string
-  default     = "../grafana-cmk/manifests"
+  default     = "../../observability/grafana-cmk/manifests"
 }
 
 variable "grafana_monitoring_token" {

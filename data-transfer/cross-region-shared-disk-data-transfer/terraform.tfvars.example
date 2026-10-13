@@ -65,7 +65,7 @@ destination_disk_mount_path = "/vast"
 # =============================================================================
 
 # Path to grafana-cmk/manifests from the solutions-library repo.
-grafana_cmk_manifests_path = "../grafana-cmk/manifests"
+grafana_cmk_manifests_path = "../../observability/grafana-cmk/manifests"
 
 # Crusoe monitoring token. Create with: crusoe monitoring tokens create
 # Leave empty to skip Grafana CMK installation.
