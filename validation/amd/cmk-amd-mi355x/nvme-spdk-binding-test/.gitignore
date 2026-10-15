@@ -1,0 +1,18 @@
+# Exclude any kubeconfig files
+*.kubeconfig
+kubeconfig*
+*-config.yml
+
+# Exclude test output logs
+*.log
+test-output/
+
+# Exclude any credentials
+credentials/
+secrets/
+*.key
+*.pem
+
+# Exclude temporary files
+*.tmp
+.DS_Store

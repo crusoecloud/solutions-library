@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spdk-test-privileged
+  namespace: default
+  labels:
+    app: spdk-nvme-test
+    test-type: storage-validation
+spec:
+  # IMPORTANT: Replace with your target MI355X node name
+  # Get node names with: kubectl get nodes -l node.kubernetes.io/instance-type=a40.8x
+  nodeName: YOUR-MI355X-NODE-NAME-HERE
+
+  hostNetwork: true
+  hostPID: true
+  hostIPC: true
+
+  containers:
+  - name: spdk-test
+    image: ubuntu:22.04
+    command: ["/bin/bash", "-c", "sleep 3600"]
+
+    securityContext:
+      # WARNING: This pod runs with full root privileges
+      # Only use in controlled test environments
+      privileged: true
+      capabilities:
+        add:
+        - SYS_MODULE    # Required to load vfio-pci kernel module
+        - SYS_RAWIO     # Required for raw device access
+        - SYS_ADMIN     # Required for privileged operations
+
+    volumeMounts:
+    - name: host-root
+      mountPath: /host
+    - name: kernel-modules
+      mountPath: /lib/modules
+      readOnly: true
+
+  volumes:
+  - name: host-root
+    hostPath:
+      path: /
+      type: Directory
+  - name: kernel-modules
+    hostPath:
+      path: /lib/modules
+      type: Directory
+
+  restartPolicy: Never
+
+  # Prevent accidental scheduling on production nodes
+  tolerations: []
+
+  # Optional: Add node affinity to only run on test nodes
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: crusoe.ai/test-node
+  #           operator: In
+  #           values:
+  #           - "true"
