@@ -1,93 +1,143 @@
-# Quick Start - SPDK NVMe Binding Test
+# Quick Start - SPDK Validation
 
-Get started in 5 minutes.
+Run either test with copy-paste commands. Start with Test 1 (2 min) for basic validation, then Test 2 (10-12 min) for complete RDMA stack.
+
+---
+
+## Test 1: Basic Device Binding (2 minutes)
+
+### Commands
+```bash
+# 1. Get node name
+NODE=$(kubectl get nodes -l node.kubernetes.io/instance-type=a40.8x -o name | head -1 | cut -d/ -f2)
+echo "Using node: $NODE"
+
+# 2. Edit pod YAML and deploy
+sed "s/YOUR-MI355X-NODE-NAME-HERE/$NODE/" spdk-test-pod.yaml | kubectl apply -f -
+kubectl wait --for=condition=Ready pod/spdk-test-privileged --timeout=60s
+
+# 3. Run test
+chmod +x run-spdk-binding-test.sh
+./run-spdk-binding-test.sh
+
+# 4. Cleanup
+kubectl delete pod spdk-test-privileged
+```
+
+### Success Indicator
+```
+✓ Test completed successfully!
+Summary:
+  - Single device binding: ✓ PASS
+  - Multiple device binding: ✓ PASS
+  - Device reset: ✓ PASS
+```
+
+---
+
+## Test 2: NVMe-oF RDMA (10-12 minutes)
+
+### Commands
+```bash
+# 1. Get node name
+NODE=$(kubectl get nodes -l node.kubernetes.io/instance-type=a40.8x -o name | head -1 | cut -d/ -f2)
+echo "Using node: $NODE"
+
+# 2. Edit pod YAML and deploy
+sed "s/YOUR-MI355X-NODE-NAME-HERE/$NODE/" spdk-nvmeof-pod.yaml | kubectl apply -f -
+kubectl wait --for=condition=Ready pod/spdk-nvmeof-test --timeout=120s
+
+# 3. Run test (builds SPDK from source)
+chmod +x run-spdk-nvmeof-rdma-test.sh cleanup-spdk-nvmeof.sh
+./run-spdk-nvmeof-rdma-test.sh
+
+# 4. Cleanup (REQUIRED!)
+./cleanup-spdk-nvmeof.sh
+kubectl delete pod spdk-nvmeof-test
+```
+
+### Success Indicator
+```
+✓ NVMe-oF RDMA Test Completed Successfully!
+Test Results:
+  ✓ Hugepage mmap validation: PASS
+  ✓ Ionic RDMA provider: 8 devices
+  ✓ Real NVMe device attachment: PASS
+  ✓ RDMA listener: <ip>:4420
+```
+
+---
+
+## What Each Test Validates
+
+| Test 1 | Test 2 |
+|--------|--------|
+| vfio-pci binding | Everything in Test 1, plus: |
+| Mount protection | Hugepage allocation |
+| Device reset | SPDK build with RDMA |
+| | 8× ionic RDMA NICs |
+| | Real 3.8TB NVMe attachment |
+| | NVMe-oF subsystem over RDMA |
+
+**Duration:** Test 1 = ~2 min | Test 2 = ~10-12 min (SPDK build takes ~7 min)
+
+---
 
 ## Prerequisites
 
-- `kubectl` configured for your CMK cluster
-- MI355X nodepool with at least one `Ready` node
+- `kubectl` configured for CMK cluster
+- MI355X node in `Ready` state (bundle 2.2+)
 - Cluster-admin permissions
 
-## Steps
-
-### 1. Find an MI355X node
-
-```bash
-kubectl get nodes -l node.kubernetes.io/instance-type=a40.8x
-```
-
-Example output:
-```
-NAME                                         STATUS   ROLES    AGE   VERSION
-your-mi355x-node-1.region.compute.internal   Ready    <none>   4h    v1.30.0
-your-mi355x-node-2.region.compute.internal   Ready    <none>   4h    v1.30.0
-```
-
-### 2. Edit the pod manifest
-
-Open `spdk-test-pod.yaml` and replace `YOUR-MI355X-NODE-NAME-HERE` with your node name:
-
-```yaml
-spec:
-  nodeName: your-mi355x-node-1.region.compute.internal  # <-- Replace with your actual node name
-```
-
-### 3. Deploy the test pod
-
-```bash
-kubectl apply -f spdk-test-pod.yaml
-kubectl wait --for=condition=Ready pod/spdk-test-privileged --timeout=60s
-```
-
-### 4. Run the automated test
-
-```bash
-./run-spdk-binding-test.sh
-```
-
-Expected output:
-```
-[INFO] STEP 1: Mapping NVMe topology...
-[INFO] STEP 2: Loading vfio-pci kernel module...
-[INFO] STEP 3: Setting up SPDK...
-[INFO] STEP 4: Testing single device binding...
-[INFO] STEP 5: Testing multiple device binding...
-[INFO] STEP 6: Cleaning up...
-[INFO] ✓ Test completed successfully!
-```
-
-### 5. Cleanup
-
-```bash
-kubectl delete -f spdk-test-pod.yaml
-```
-
-## What You Just Tested
-
-✓ SPDK can bind NVMe devices to vfio-pci driver
-✓ Mount detection protects containerd drive automatically
-✓ Multiple devices can be bound simultaneously
-✓ Device reset works correctly
-✓ Node returns to original state
-
-## Next Steps
-
-- Read [README.md](./README.md) for full technical details
-- Understand the safety mechanisms
-- Learn about production deployment considerations
+---
 
 ## Troubleshooting
 
-**Pod stays in Pending:**
-- Check node name is correct in `spdk-test-pod.yaml`
-- Verify node is in `Ready` state
+**Pod won't start:**
+```bash
+kubectl get nodes -l node.kubernetes.io/instance-type=a40.8x  # Verify nodes exist
+kubectl describe pod <pod-name>  # Check why pod is pending
+```
 
-**Script fails at module loading:**
-- Ensure pod has `privileged: true` set
-- Check pod is running: `kubectl get pod spdk-test-privileged`
+**Test 1 fails:**
+```bash
+kubectl exec spdk-test-privileged -- chroot /host lsblk | grep nvme  # Verify NVMe visible
+```
 
-**"Permission denied" errors:**
-- Verify you have cluster-admin permissions
-- Check pod's securityContext includes all required capabilities
+**Test 2 build fails:**
+```bash
+kubectl logs spdk-nvmeof-test  # Check for errors
+```
 
-For more help, see the [README](./README.md) troubleshooting section.
+**Test 2 cleanup fails:**
+```bash
+kubectl exec spdk-nvmeof-test -- readlink /sys/bus/pci/devices/0003:00:05.0/driver
+# Should show: ../../../bus/pci/drivers/nvme (not vfio-pci)
+```
+
+**Scripts not executable:**
+```bash
+chmod +x *.sh
+```
+
+---
+
+## Full Documentation
+
+- **Complete guide:** [README.md](README.md) - Hardware details, safety mechanisms, production considerations
+- **Test 2 deep dive:** [NVMEOF-RDMA.md](NVMEOF-RDMA.md) - Technical details, performance testing, troubleshooting
+- **Test results:** [RESULTS.md](RESULTS.md) - Validation history
+
+---
+
+## Manual Deployment (if sed not available)
+
+**Test 1:**
+1. Open `spdk-test-pod.yaml` in editor
+2. Replace `YOUR-MI355X-NODE-NAME-HERE` with your node name
+3. Save and run: `kubectl apply -f spdk-test-pod.yaml`
+
+**Test 2:**
+1. Open `spdk-nvmeof-pod.yaml` in editor
+2. Replace `YOUR-MI355X-NODE-NAME-HERE` with your node name
+3. Save and run: `kubectl apply -f spdk-nvmeof-pod.yaml`

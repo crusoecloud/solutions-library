@@ -1,20 +1,41 @@
-# NVMe SPDK Binding Test for CMK AMD MI355X
+# SPDK Validation Suite for CMK AMD MI355X
 
-Validates that SPDK can successfully bind local NVMe devices on AMD MI355X instances in Crusoe Managed Kubernetes (CMK) clusters. This test confirms:
+Comprehensive validation of SPDK (Storage Performance Development Kit) on AMD MI355X instances in Crusoe Managed Kubernetes (CMK) clusters.
 
-- SPDK can bind NVMe devices to `vfio-pci` driver
-- Built-in mount detection protects system drives
-- PCI allowlist filtering works correctly
-- Device reset restores original kernel `nvme` driver
-- Multiple devices can be bound and unbound safely
+## Test Suite Overview
+
+This suite includes two progressive tests:
+
+### Test 1: Basic SPDK Device Binding
+Validates fundamental SPDK capabilities:
+- Bind NVMe devices to `vfio-pci` driver
+- Mount detection protects system drives
+- PCI allowlist filtering
+- Device reset to kernel `nvme` driver
+- Multi-device binding and unbinding
+
+**Duration:** ~2 minutes
+**See:** Quick Start section below
+
+### Test 2: NVMe-oF RDMA with Real Devices
+Validates end-to-end SPDK NVMe-oF over RDMA fabric:
+- Hugepage allocation with cgroup v2
+- SPDK build with RDMA support
+- AMD Pensando ionic RDMA NICs (8 devices)
+- Real NVMe device attachment via vfio-pci
+- DPDK initialization in IOVA=PA mode
+- NVMe-oF subsystem serving real device over RDMA
+
+**Duration:** ~10-12 minutes (includes SPDK build)
+**See:** [NVMEOF-RDMA.md](NVMEOF-RDMA.md)
 
 ## Why This Matters
 
 MI355X instances include 8× local NVMe devices (Micron 7500 PRO, 3.5TB each). SPDK is a storage acceleration framework used by high-performance applications (e.g., Ceph, MinIO, distributed databases). This test validates that SPDK can take control of NVMe devices for userspace I/O, bypassing the kernel block layer.
 
-## Test Summary
+## Test 1: Basic Device Binding Summary
 
-The experiment:
+The basic binding test:
 1. Identifies all NVMe devices and their PCI addresses
 2. Detects which device hosts the containerd filesystem (must never be bound)
 3. Loads the `vfio-pci` kernel module in no-IOMMU mode
@@ -68,47 +89,80 @@ nvme7 (0002:00:08.0) → mounted at /mnt/nvme → AUTOMATIC SKIP
 vda (virtio boot disk) → contains root filesystem → AUTOMATIC SKIP
 ```
 
-**Expected output when running SPDK setup:**
+**Expected output when running SPDK setup (both tests):**
 ```
 0002:00:08.0 (1344 51b7): Active devices: mount@nvme7n1:nvme7n1, so not binding PCI dev
 0000:00:01.0 (1af4 1042): Active devices: mount@vda:vda1,mount@vda:vda15,mount@vda:vda16, so not binding PCI dev
 ```
 
+This confirms SPDK's mount detection is protecting system drives.
+
 ## Quick Start
 
-### 1. Select a node
+**TL;DR:** See [QUICKSTART.md](QUICKSTART.md) for copy-paste commands.
+
+### Test 1: Basic Device Binding (~2 minutes)
+
+Validates fundamental SPDK device binding capabilities.
 
 ```bash
+# 1. Get a node
 kubectl get nodes -l node.kubernetes.io/instance-type=a40.8x
-```
 
-Pick any `Ready` node without active customer workloads.
-
-### 2. Deploy the test pod
-
-Edit `spdk-test-pod.yaml` to set `nodeName:` to your chosen node, then:
-
-```bash
+# 2. Edit spdk-test-pod.yaml with your node name, then:
 kubectl apply -f spdk-test-pod.yaml
 kubectl wait --for=condition=Ready pod/spdk-test-privileged --timeout=60s
+
+# 3. Run test
+chmod +x run-spdk-binding-test.sh
+./run-spdk-binding-test.sh
+
+# 4. Cleanup
+kubectl delete pod spdk-test-privileged
 ```
 
-### 3. Run the test script
+**What it tests:**
+- ✓ vfio-pci driver binding
+- ✓ Mount detection (protects containerd drive)
+- ✓ Multi-device binding
+- ✓ Device reset to nvme driver
+
+### Test 2: NVMe-oF RDMA (~10-12 minutes)
+
+Validates complete SPDK NVMe-oF stack with real NVMe device over RDMA fabric.
 
 ```bash
-./run-spdk-binding-test.sh
+# 1. Get a node
+kubectl get nodes -l node.kubernetes.io/instance-type=a40.8x
+
+# 2. Edit spdk-nvmeof-pod.yaml with your node name, then:
+kubectl apply -f spdk-nvmeof-pod.yaml
+kubectl wait --for=condition=Ready pod/spdk-nvmeof-test --timeout=120s
+
+# 3. Run test (builds SPDK)
+chmod +x run-spdk-nvmeof-rdma-test.sh cleanup-spdk-nvmeof.sh
+./run-spdk-nvmeof-rdma-test.sh
+
+# 4. Cleanup (REQUIRED!)
+./cleanup-spdk-nvmeof.sh
+kubectl delete pod spdk-nvmeof-test
 ```
 
-This script will:
-- Map NVMe devices to PCI addresses
-- Identify the containerd drive
-- Load vfio-pci module
-- Test single-device binding
-- Test multi-device binding
-- Reset all devices
-- Clean up and verify node state
+**What it tests:**
+- ✓ All of Test 1, plus:
+- ✓ Hugepage allocation with cgroup v2
+- ✓ SPDK build with RDMA support
+- ✓ AMD Pensando ionic RDMA provider (8 NICs)
+- ✓ DPDK initialization (IOVA=PA mode)
+- ✓ Real NVMe device (3.8TB Micron) attachment
+- ✓ NVMe-oF subsystem creation
+- ✓ RDMA listener on ionic network
 
-### 4. Check the output
+**Deep dive:** See [NVMEOF-RDMA.md](NVMEOF-RDMA.md) for technical details.
+
+---
+
+## Expected Output - Test 1
 
 Look for these key indicators of success:
 
@@ -140,9 +194,56 @@ No vfio modules loaded ✓
 kubectl delete -f spdk-test-pod.yaml
 ```
 
-## Manual Test Procedure
+## Expected Output - Test 2
 
-If you prefer to run commands manually:
+### Step 2: Hugepage Validation
+```
+✓ Anonymous hugepage mmap OK
+✓ File-backed hugepage mmap OK
+```
+
+### Step 7: RDMA Transport
+```
+rdma.c:2438:create_ib_device: *NOTICE*: Create IB device mlx5_0(...) succeed.
+rdma.c:2438:create_ib_device: *NOTICE*: Create IB device ionic_0(...) succeed.
+[... 7 more ionic devices ...]
+```
+
+### Step 8: Real NVMe Device Attachment
+```
+✓ Device: nvme0n1
+  Model: MTFDKCC3T8TGP-1BK1DABYY
+  Capacity: 3.84 TB
+  PCI: 0003:00:05.0
+```
+
+### Step 9: NVMe-oF Subsystem
+```
+✓ Subsystem: nqn.2026-10.com.crusoe:test
+  Serial: CRUSOE00000000001
+  Namespace: nvme0n1
+  Listener: RDMA at <node-ip>:4420
+```
+
+### Final Summary
+```
+✓ NVMe-oF RDMA Test Completed Successfully!
+Test Results:
+  ✓ Hugepage mmap validation: PASS
+  ✓ SPDK build with RDMA: PASS
+  ✓ Ionic RDMA provider: 8 devices
+  ✓ NVMe device binding (vfio-pci): PASS
+  ✓ DPDK initialization (IOVA=PA): PASS
+  ✓ Real NVMe device attachment: PASS
+  ✓ NVMe-oF subsystem creation: PASS
+  ✓ RDMA listener: <ip>:4420
+```
+
+---
+
+## Manual Test Procedure - Test 1
+
+If you prefer to run Test 1 commands manually:
 
 ### Step 1: Deploy privileged pod
 
@@ -400,9 +501,10 @@ DRIVER_OVERRIDE=vfio-pci                  # Force specific driver
 
 ## Test History
 
-| Date | Bundle | Kernel | Result | Notes |
-|------|--------|--------|--------|-------|
-| 2024-10-15 | 2.2 | 6.8.12-322.crusoe | ✓ Pass | Single and multi-device binding successful |
+| Date | Test | Bundle | Kernel | Result | Notes |
+|------|------|--------|--------|--------|-------|
+| 2024-10-16 | Test 2 (NVMe-oF RDMA) | 2.2 | 6.8.12-322.crusoe | ✓ Pass | Complete stack validated: hugepages, 8 ionic NICs, real 3.8TB NVMe over RDMA |
+| 2024-10-15 | Test 1 (Basic Binding) | 2.2 | 6.8.12-322.crusoe | ✓ Pass | Single and multi-device binding successful |
 
 ## License
 
