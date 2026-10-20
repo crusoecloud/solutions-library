@@ -10,28 +10,93 @@ Roughly 30 to 45 minutes, most of it compiling SPDK and Mooncake.
 
 ## Before you start
 
-You need:
+Three things: a registry secret, the ionic provider files, and a build node.
 
-- A Kubernetes cluster with a node that can build (no GPU required, see below)
-- A container registry you can push to
-- Registry push credentials as a `dockerconfigjson` Secret in the namespace
-- The **three ionic provider files** placed flat next to the Dockerfile:
+### 1. Registry credentials
 
-  ```
-  libionic-rdmav34.so
-  libionic.so.1
-  ionic.driver
-  ```
+The build pushes the finished image, and the validation pods pull it back.
+**The build needs push rights, the pods need pull rights.** One secret with
+both is simplest, and that is what the manifests assume: `__PULL_SECRET__` is
+substituted into the kaniko pod (as push credentials) and into both pod specs
+(as `imagePullSecrets`).
 
-  These are not in this repo. Copy them off any running MI355X node from
-  `/usr/lib/x86_64-linux-gnu/libibverbs/`, `/usr/lib/x86_64-linux-gnu/` and
-  `/etc/libibverbs.d/` respectively. Without them the image cannot see the
-  Pollara NICs and every RDMA step fails. See the README's
-  [prerequisites](./README.md#the-ionic-rdma-provider).
+Create it as a standard `docker-registry` Secret in the namespace you will
+build and run in:
 
-The build node does **not** need a GPU. The Dockerfile stubs `amdgpu-arch` to
-return `gfx950`, because Mooncake's CMake otherwise calls it to autodetect the
-architecture and fails on a GPU-less node.
+```bash
+kubectl -n <namespace> create secret docker-registry <secret-name> \
+  --docker-server=<registry-host> \
+  --docker-username=<username> \
+  --docker-password=<token>
+```
+
+<details>
+<summary><b>Crusoe Container Registry (CCR) — worked example</b></summary>
+
+```bash
+kubectl -n default create secret docker-registry ccr-cred \
+  --docker-server=registry.<region>.ccr.crusoecloudcompute.com \
+  --docker-username="<your-crusoe-email>" \
+  --docker-password="<crusoe-registry-token>"
+```
+
+Two things that catch people out:
+
+- **The username is your Crusoe account email address**, not the user UUID and
+  not the token ID.
+- **The password is a registry token**, created with
+  `crusoe registry tokens create`. It is not your console password.
+
+The image path then looks like:
+
+```
+registry.<region>.ccr.crusoecloudcompute.com/<registry-name>.<project-short>/mooncake-nof-mi355x:v0.3.12.post1
+```
+
+where `<registry-name>.<project-short>` is the registry you created in your
+project.
+
+</details>
+
+Any OCI registry works: a cloud registry, a private Harbor, anything kaniko can
+authenticate to. Nothing in this build is tied to one provider.
+
+Verify the secret before you spend 40 minutes on a build that cannot push:
+
+```bash
+kubectl -n <namespace> get secret <secret-name> \
+  -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d
+```
+
+You should see your registry host and an `auth` field.
+
+### 2. The ionic provider files
+
+Place these three flat next to the Dockerfile:
+
+```
+libionic-rdmav34.so
+libionic.so.1
+ionic.driver
+```
+
+They are not in this repo. Copy them off any running MI355X node:
+
+```bash
+/usr/lib/x86_64-linux-gnu/libibverbs/libionic-rdmav34.so
+/usr/lib/x86_64-linux-gnu/libionic.so.1
+/etc/libibverbs.d/ionic.driver
+```
+
+Without them the image cannot see the Pollara NICs and every RDMA step fails.
+See the README's [prerequisites](./README.md#the-ionic-rdma-provider).
+
+### 3. A build node
+
+Any schedulable node with roughly 8 GB of memory free. It does **not** need a
+GPU: the Dockerfile stubs `amdgpu-arch` to return `gfx950`, because Mooncake's
+CMake otherwise calls it to autodetect the architecture and fails on a GPU-less
+node.
 
 ---
 
@@ -64,11 +129,8 @@ sed -e "s#__IMAGE__#<registry>/mooncake-nof-mi355x:v0.3.12.post1#g" \
 ```
 
 `__IMAGE__` is the full destination including tag. `__PULL_SECRET__` is the
-name of a `dockerconfigjson` Secret with push rights to that registry.
-
-This works with any OCI registry: a cloud registry, a private Harbor, or
-anything else kaniko can authenticate to. Nothing here is specific to one
-provider.
+Secret you created in [step 1](#1-registry-credentials) — the same name goes
+into both pod specs later.
 
 ### 3. Watch it
 

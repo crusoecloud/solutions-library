@@ -122,8 +122,27 @@ Kernel     6.8.12-322.crusoe.amd64
 Platform   Crusoe Managed Kubernetes, 2+ Ready nodes
 ```
 
-Plus `kubectl`, a registry you can push to, and a matching `dockerconfigjson`
-pull secret.
+Plus `kubectl` and a container registry.
+
+### Registry access
+
+You need one `docker-registry` Secret, used twice: the build pod pushes the
+image with it, and both validation pods pull the image with it. The manifests
+substitute the same `__PULL_SECRET__` name into all three.
+
+```bash
+kubectl -n <namespace> create secret docker-registry <secret-name> \
+  --docker-server=<registry-host> \
+  --docker-username=<username> \
+  --docker-password=<token>
+```
+
+On Crusoe's CCR the username is your **account email address**, not the user
+UUID, and the password is a token from `crusoe registry tokens create`. Worked
+example and the full image-path format in
+[BUILD.md](./BUILD.md#1-registry-credentials).
+
+Any OCI registry works. Nothing here is tied to one provider.
 
 ### The ionic RDMA provider
 
