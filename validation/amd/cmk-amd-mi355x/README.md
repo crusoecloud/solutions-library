@@ -10,6 +10,7 @@ nodepool or investigating a suspected fabric/GPU problem on one.
 | Directory | Purpose |
 |---|---|
 | [validation-suite/](./validation-suite/) | Reproducible acceptance bundle: per-node kernel/driver/firmware verification against the deployed Crusoe software bundle, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute / straggler / XGMI / ECC health. The suite's README lists the exact tested versions. |
+| [kv-cache/](./kv-cache/) | Distributed KV cache over the Pollara fabric: SPDK NVMe-oF over RoCE, and a Mooncake NVMe storage tier that pools local drives across nodes so cache spills to disk instead of being recomputed (42 GB/s cross-node measured). Each subdirectory has its own README and runbook. |
 
 ## Prerequisites
 

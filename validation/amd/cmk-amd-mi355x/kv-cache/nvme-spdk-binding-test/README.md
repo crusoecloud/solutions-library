@@ -4,7 +4,7 @@ Comprehensive validation of SPDK (Storage Performance Development Kit) on AMD MI
 
 ## Test Suite Overview
 
-This suite includes two progressive tests:
+This suite includes three progressive tests:
 
 ### Test 1: Basic SPDK Device Binding
 Validates fundamental SPDK capabilities:
@@ -28,6 +28,19 @@ Validates end-to-end SPDK NVMe-oF over RDMA fabric:
 
 **Duration:** ~10-12 minutes (includes SPDK build)
 **See:** [NVMEOF-RDMA.md](NVMEOF-RDMA.md)
+
+### Test 3: Two-Node RDMA Performance Validation
+Comprehensive performance test measuring RDMA vs PCIe performance:
+- Two-node automated test (target + initiator)
+- Fabric control tests (ib_write_bw, ib_write_lat)
+- PCIe baseline measurements (4 tests)
+- RDMA performance measurements (4 tests)
+- Automated report generation with efficiency analysis
+- Validates line-rate performance over RDMA fabric
+
+**Duration:** ~25-30 minutes (includes SPDK builds on both nodes)
+**See:** [PERFORMANCE-TEST.md](PERFORMANCE-TEST.md)
+**Script:** `./run-nvmeof-performance-validation.sh <kubeconfig> <target-node> <initiator-node>`
 
 ## Why This Matters
 

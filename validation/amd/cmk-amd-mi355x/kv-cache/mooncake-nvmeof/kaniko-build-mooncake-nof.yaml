@@ -1,0 +1,61 @@
+# Kaniko build pod for Mooncake NVMe-oF image
+# Builds Dockerfile.mooncake-nof-mi355x with mooncake-ipv6-adrfam.patch
+#
+# Prerequisites:
+#   kubectl create configmap mooncake-nof-build-context \
+#     --from-file=Dockerfile=Dockerfile.mooncake-nof-mi355x \
+#     --from-file=libionic-rdmav34.so --from-file=libionic.so.1 \
+#     --from-file=ionic.driver
+#
+# Apply:
+#   kubectl apply -f kaniko-build-mooncake-nof.yaml
+#   kubectl logs -f kaniko-mooncake-nof -c kaniko
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kaniko-mooncake-nof
+  labels: { app: kaniko-build-mooncake-nof }
+spec:
+  restartPolicy: Never
+  nodeName: <target-node>
+  tolerations: [ { operator: "Exists" } ]
+  volumes:
+    - { name: cm, configMap: { name: mooncake-nof-build-context } }
+    - { name: context, emptyDir: {} }
+    - { name: output, hostPath: { path: /tmp/mooncake-image, type: DirectoryOrCreate } }
+  initContainers:
+    - name: prep-context
+      image: mirror.gcr.io/library/busybox:1.36
+      command: ["/bin/sh","-c"]
+      args:
+        - |
+          set -eux
+          cp -L /cm/Dockerfile /context/Dockerfile
+          # ionic userspace RDMA provider — without these the image cannot
+          # see the Pollara NICs and no NVMe-oF listener will come up
+          cp -L /cm/libionic-rdmav34.so /cm/libionic.so.1 /cm/ionic.driver /context/
+          test -s /context/libionic-rdmav34.so
+          test -s /context/libionic.so.1
+          echo "--- assembled build context ---"; ls -laR /context
+      volumeMounts:
+        - { name: cm, mountPath: /cm }
+        - { name: context, mountPath: /context }
+  containers:
+    - name: kaniko
+      # NOTE: :latest is a mutable tag and this pod holds registry push
+      # credentials. Pin a released version or a digest before any
+      # repeated or automated use.
+      image: gcr.io/kaniko-project/executor:latest
+      args:
+        - --dockerfile=/context/Dockerfile
+        - --context=dir:///context
+        - --no-push
+        - --tar-path=/output/mooncake-nof-mi355x.tar
+        - --verbosity=info
+      resources:
+        requests: { cpu: "4", memory: 8Gi }
+        limits:   { memory: 32Gi }
+      volumeMounts:
+        - { name: context, mountPath: /context }
+        - { name: output, mountPath: /output }

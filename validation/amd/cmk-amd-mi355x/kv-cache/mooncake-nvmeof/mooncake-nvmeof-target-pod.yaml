@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mooncake-nvmeof-target
+  namespace: default
+  labels:
+    app: mooncake-nvmeof
+    role: target
+spec:
+  nodeName: <target-node>
+  hostNetwork: true
+  hostPID: true
+  hostIPC: true
+  restartPolicy: Never
+
+  imagePullSecrets:
+  - name: __PULL_SECRET__
+
+  containers:
+  - name: mooncake
+    image: __IMAGE__
+    imagePullPolicy: IfNotPresent
+    command: ["sleep", "infinity"]
+
+    securityContext:
+      privileged: true
+      capabilities:
+        add:
+        - SYS_MODULE
+        - SYS_RAWIO
+        - SYS_ADMIN
+        - IPC_LOCK
+        - SYS_RESOURCE
+        - NET_ADMIN
+
+    resources:
+      limits:
+        memory: 32Gi
+      requests:
+        memory: 32Gi
+
+    volumeMounts:
+    - { name: hugepages, mountPath: /dev/hugepages }
+    - { name: dshm, mountPath: /dev/shm }
+    - { name: ibdev, mountPath: /dev/infiniband }
+    - { name: devvfio, mountPath: /dev/vfio }
+    - { name: hosttmp, mountPath: /hosttmp }
+    - { name: cgroup, mountPath: /sys/fs/cgroup }
+    - { name: imagetar, mountPath: /tmp/mooncake-image }
+
+  volumes:
+  - { name: hugepages, hostPath: { path: /dev/hugepages, type: Directory } }
+  - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 8Gi } }
+  - { name: ibdev, hostPath: { path: /dev/infiniband, type: Directory } }
+  - { name: devvfio, hostPath: { path: /dev/vfio, type: DirectoryOrCreate } }
+  - { name: hosttmp, hostPath: { path: /tmp, type: Directory } }
+  - { name: cgroup, hostPath: { path: /sys/fs/cgroup, type: Directory } }
+  - { name: imagetar, hostPath: { path: /tmp/mooncake-image, type: Directory } }
+
+  tolerations:
+  - operator: "Exists"
