@@ -155,8 +155,9 @@ every listener fails. You need three files, copied off any running MI355X node:
 /etc/libibverbs.d/ionic.driver
 ```
 
-Place them flat next to the Dockerfile before building. The provider ABI is
-rdma-core **v34**, so bundle a compatible rdma-core in your image.
+Put them in `src/ionic-provider/`, next to the Dockerfile, before building.
+The provider ABI is rdma-core **v34**, so bundle a compatible rdma-core in
+your image.
 
 ### Pod requirements
 
@@ -178,15 +179,15 @@ listener can come up.
 Detail in [BUILD.md](./BUILD.md). In short:
 
 ```bash
-# context must be flat: Dockerfile + the three ionic files
+# the build context is assembled flat from src/ by the kaniko pod
 kubectl create configmap build-context \
-  --from-file=Dockerfile=Dockerfile.mooncake-nof-mi355x \
-  --from-file=libionic-rdmav34.so --from-file=libionic.so.1 \
-  --from-file=ionic.driver
+  --from-file=Dockerfile=src/Dockerfile.mooncake-nof-mi355x \
+  --from-file=src/ionic-provider/libionic-rdmav34.so --from-file=src/ionic-provider/libionic.so.1 \
+  --from-file=src/ionic-provider/ionic.driver
 
 sed -e "s#__IMAGE__#<registry>/mooncake-nof-mi355x:v1#g" \
     -e "s#__PULL_SECRET__#<pull-secret>#g" \
-    kaniko-build-mooncake-nof.yaml | kubectl apply -f -
+    src/kaniko-build-mooncake-nof.yaml | kubectl apply -f -
 ```
 
 Build flags:
@@ -211,7 +212,7 @@ rejects.
 sed -e "s#__IMAGE__#<registry>/mooncake-nof-mi355x:v1#g" \
     -e "s#__PULL_SECRET__#<pull-secret>#g" \
     -e "s#<target-node>#$TARGET#g" \
-    mooncake-nvmeof-target-pod.yaml | kubectl apply -f -
+    src/mooncake-nvmeof-target-pod.yaml | kubectl apply -f -
 
 kubectl exec <pod> -- ibv_devinfo | grep ionic    # expect ionic_0..ionic_7
 ```
@@ -297,7 +298,7 @@ for i in range(7):
 
 Confirm in the master log that segment descriptors read `adrfam:IPv6`, and that
 the counter reaches your pool size. On IPv6 fabrics this needs
-[`mooncake-ipv6-adrfam.patch`](./mooncake-ipv6-adrfam.patch), since upstream
+[`src/mooncake-ipv6-adrfam.patch`](./src/mooncake-ipv6-adrfam.patch), since upstream
 hardcodes `adrfam:IPv4`.
 
 ### 6. Measure
@@ -542,7 +543,7 @@ so it is functional, not cosmetic.
 Patch both functions together. `set_unregister_by_endpoint()` rebuilds the
 identical string and matches on it exactly, so patching only the register side
 leaves segments unremovable. Fix:
-[`mooncake-ipv6-adrfam.patch`](./mooncake-ipv6-adrfam.patch).
+[`src/mooncake-ipv6-adrfam.patch`](./src/mooncake-ipv6-adrfam.patch).
 
 ### SPDK does not normalise IPv6 in listener matching
 
@@ -586,15 +587,22 @@ No IPv4 GID at any index, which is what makes both upstream bugs matter here.
 
 ## Files
 
-| | |
-|---|---|
-| `Dockerfile.mooncake-nof-mi355x` | ROCm 7.14 + SPDK + Mooncake `USE_NOF` |
-| `BUILD.md` | build and registry push |
-| `kaniko-build-mooncake-nof.yaml` | in-cluster build |
-| `mooncake-nvmeof-{target,initiator}-pod.yaml` | validation pods |
-| `mooncake-ipv6-adrfam.patch` | IPv6 address-family fix |
-| `ibv-devinfo-ionic0.txt` | Pollara VF capabilities |
-| `ionic-provider/` | `ionic.driver` stub. The two `.so` files are **not** in this repo — copy them off a running node, see [prerequisites](#the-ionic-rdma-provider) |
+```
+README.md                      this guide
+BUILD.md                       build and registry setup
+ibv-devinfo-ionic0.txt         Pollara VF capabilities (QP/MR/CQ limits)
+src/
+  Dockerfile.mooncake-nof-mi355x     ROCm 7.14 + SPDK + Mooncake USE_NOF
+  kaniko-build-mooncake-nof.yaml     in-cluster build
+  mooncake-nvmeof-target-pod.yaml    validation pod, NVMe-oF target
+  mooncake-nvmeof-initiator-pod.yaml validation pod, initiator
+  mooncake-ipv6-adrfam.patch         IPv6 fix, for sending upstream
+  ionic-provider/                    ionic.driver stub
+```
+
+The two `libionic*.so` files are **not** in this repo. Copy them into
+`src/ionic-provider/` from a running MI355X node before building — see
+[prerequisites](#the-ionic-rdma-provider).
 
 ## Related
 

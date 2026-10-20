@@ -72,7 +72,7 @@ You should see your registry host and an `auth` field.
 
 ### 2. The ionic provider files
 
-Place these three flat next to the Dockerfile:
+Put these three in `src/ionic-provider/`:
 
 ```
 libionic-rdmav34.so
@@ -104,19 +104,21 @@ node.
 
 ### 1. Create the build context
 
-The context is flat: the Dockerfile plus the three ionic files, nothing else.
+The context is flat even though the sources live in `src/`: kaniko receives
+the Dockerfile and the three ionic files side by side, which is why the
+Dockerfile's COPY lines use bare filenames.
 
 ```bash
 kubectl create configmap mooncake-nof-build-context \
-  --from-file=Dockerfile=Dockerfile.mooncake-nof-mi355x \
-  --from-file=libionic-rdmav34.so \
-  --from-file=libionic.so.1 \
-  --from-file=ionic.driver \
+  --from-file=Dockerfile=src/Dockerfile.mooncake-nof-mi355x \
+  --from-file=src/ionic-provider/libionic-rdmav34.so \
+  --from-file=src/ionic-provider/libionic.so.1 \
+  --from-file=src/ionic-provider/ionic.driver \
   -n <namespace>
 ```
 
 The IPv6 address-family fix is applied in-build with `sed`, so
-`mooncake-ipv6-adrfam.patch` does **not** belong in the context. It is kept in
+`src/mooncake-ipv6-adrfam.patch` does **not** belong in the context. It is kept in
 the repo as the artifact to send upstream.
 
 ### 2. Run the build
@@ -124,7 +126,7 @@ the repo as the artifact to send upstream.
 ```bash
 sed -e "s#__IMAGE__#<registry>/mooncake-nof-mi355x:v0.3.12.post1#g" \
     -e "s#__PULL_SECRET__#<your-push-secret>#g" \
-    kaniko-build-mooncake-nof.yaml \
+    src/kaniko-build-mooncake-nof.yaml \
   | kubectl apply -n <namespace> -f -
 ```
 
@@ -243,7 +245,7 @@ the direct push.
 
 ## Next
 
-Deploy with `mooncake-nvmeof-target-pod.yaml` and
-`mooncake-nvmeof-initiator-pod.yaml`, substituting `__IMAGE__`,
+Deploy with `src/mooncake-nvmeof-target-pod.yaml` and
+`src/mooncake-nvmeof-initiator-pod.yaml`, substituting `__IMAGE__`,
 `__PULL_SECRET__` and the node names. Then follow the
 [runbook](./README.md#run).
