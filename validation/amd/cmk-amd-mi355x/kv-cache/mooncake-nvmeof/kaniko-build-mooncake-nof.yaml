@@ -18,12 +18,18 @@ metadata:
   labels: { app: kaniko-build-mooncake-nof }
 spec:
   restartPolicy: Never
-  nodeName: <target-node>
+  # No nodeName pin: the build pushes to a registry, so it can run on any
+  # schedulable node. It does not need a GPU (the Dockerfile stubs
+  # amdgpu-arch). Pin a node only if your registry is reachable from some
+  # nodes and not others.
   tolerations: [ { operator: "Exists" } ]
   volumes:
     - { name: cm, configMap: { name: mooncake-nof-build-context } }
     - { name: context, emptyDir: {} }
-    - { name: output, hostPath: { path: /tmp/mooncake-image, type: DirectoryOrCreate } }
+    - name: docker-config
+      secret:
+        secretName: __PULL_SECRET__
+        items: [ { key: .dockerconfigjson, path: config.json } ]
   initContainers:
     - name: prep-context
       image: mirror.gcr.io/library/busybox:1.36
@@ -50,12 +56,13 @@ spec:
       args:
         - --dockerfile=/context/Dockerfile
         - --context=dir:///context
-        - --no-push
-        - --tar-path=/output/mooncake-nof-mi355x.tar
+        - --destination=__IMAGE__
+        - --cache=true
+        - --compressed-caching=false
         - --verbosity=info
       resources:
         requests: { cpu: "4", memory: 8Gi }
         limits:   { memory: 32Gi }
       volumeMounts:
         - { name: context, mountPath: /context }
-        - { name: output, mountPath: /output }
+        - { name: docker-config, mountPath: /kaniko/.docker }

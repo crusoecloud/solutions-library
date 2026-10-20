@@ -1,27 +1,45 @@
-# Building the Mooncake NVMe-oF Image for MI355X
+# Building the Mooncake NVMe-oF image for MI355X
 
-This directory contains the Dockerfile and patch for building Mooncake v0.3.12.post1 with:
-- NVMe-oF SSD pool support (`USE_NOF=ON`)
-- HIP + dmabuf support for AMD MI355X (gfx950)
-- IPv6 address family auto-detection patch
-- ROCm 7.14.1 base (via AMD's vLLM image)
+Builds Mooncake `v0.3.12.post1` with `USE_NOF` (SPDK NVMe-oF) and `USE_HIP` on
+ROCm, for AMD Instinct MI355X.
 
-## Files
+The build runs in-cluster with kaniko and pushes straight to your registry.
+Roughly 30 to 45 minutes, most of it compiling SPDK and Mooncake.
 
-- `Dockerfile.mooncake-nof-mi355x` - Multi-stage build with SPDK v23.01.1 + Mooncake
-- `mooncake-ipv6-adrfam.patch` - Fixes hardcoded IPv4 assumption in ssd_register_client.cpp
+---
 
-## Build with Kaniko (in-cluster)
+## Before you start
 
-### Prerequisites
+You need:
 
-1. A Crusoe Managed Kubernetes cluster with access to a container registry
-2. Registry push credentials as a Kubernetes Secret (e.g., `gcr-push-secret`)
-3. kubectl access to the cluster
+- A Kubernetes cluster with a node that can build (no GPU required, see below)
+- A container registry you can push to
+- Registry push credentials as a `dockerconfigjson` Secret in the namespace
+- The **three ionic provider files** placed flat next to the Dockerfile:
 
-### Build Steps
+  ```
+  libionic-rdmav34.so
+  libionic.so.1
+  ionic.driver
+  ```
 
-1. **Create ConfigMap with build context:**
+  These are not in this repo. Copy them off any running MI355X node from
+  `/usr/lib/x86_64-linux-gnu/libibverbs/`, `/usr/lib/x86_64-linux-gnu/` and
+  `/etc/libibverbs.d/` respectively. Without them the image cannot see the
+  Pollara NICs and every RDMA step fails. See the README's
+  [prerequisites](./README.md#the-ionic-rdma-provider).
+
+The build node does **not** need a GPU. The Dockerfile stubs `amdgpu-arch` to
+return `gfx950`, because Mooncake's CMake otherwise calls it to autodetect the
+architecture and fails on a GPU-less node.
+
+---
+
+## Build
+
+### 1. Create the build context
+
+The context is flat: the Dockerfile plus the three ionic files, nothing else.
 
 ```bash
 kubectl create configmap mooncake-nof-build-context \
@@ -32,130 +50,123 @@ kubectl create configmap mooncake-nof-build-context \
   -n <namespace>
 ```
 
-2. **Create kaniko build pod:**
+The IPv6 address-family fix is applied in-build with `sed`, so
+`mooncake-ipv6-adrfam.patch` does **not** belong in the context. It is kept in
+the repo as the artifact to send upstream.
 
-Using `kaniko-build-mooncake-nof.yaml` in this directory, or inline:
+### 2. Run the build
 
 ```bash
-# Set your registry and secret name
-REGISTRY="<your-registry>"
-IMAGE_NAME="mooncake-nof-mi355x:v0.3.12.post1"
-PULL_SECRET="<your-push-secret>"
-
-# Create the build pod
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: kaniko-mooncake-nof
-  namespace: <namespace>
-spec:
-  restartPolicy: Never
-  initContainers:
-  - name: copy-context
-    image: busybox
-    command:
-    - sh
-    - -c
-    - |
-      mkdir -p /workspace
-      cp -L /build-context/* /workspace/
-      ls -la /workspace
-    volumeMounts:
-    - name: build-context
-      mountPath: /build-context
-    - name: workspace
-      mountPath: /workspace
-  containers:
-  - name: kaniko
-    # NOTE: :latest is a mutable tag and this pod holds registry push
-    # credentials. Pin a released version or a digest before any
-    # repeated or automated use.
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-    - --context=/workspace
-    - --dockerfile=/workspace/Dockerfile
-    - --destination=${REGISTRY}/${IMAGE_NAME}
-    - --cache=true
-    - --compressed-caching=false
-    volumeMounts:
-    - name: workspace
-      mountPath: /workspace
-    - name: docker-config
-      mountPath: /kaniko/.docker
-  volumes:
-  - name: build-context
-    configMap:
-      name: mooncake-nof-build-context
-  - name: workspace
-    emptyDir: {}
-  - name: docker-config
-    secret:
-      secretName: ${PULL_SECRET}
-      items:
-      - key: .dockerconfigjson
-        path: config.json
-EOF
+sed -e "s#__IMAGE__#<registry>/mooncake-nof-mi355x:v0.3.12.post1#g" \
+    -e "s#__PULL_SECRET__#<your-push-secret>#g" \
+    kaniko-build-mooncake-nof.yaml \
+  | kubectl apply -n <namespace> -f -
 ```
 
-3. **Monitor the build:**
+`__IMAGE__` is the full destination including tag. `__PULL_SECRET__` is the
+name of a `dockerconfigjson` Secret with push rights to that registry.
+
+This works with any OCI registry: a cloud registry, a private Harbor, or
+anything else kaniko can authenticate to. Nothing here is specific to one
+provider.
+
+### 3. Watch it
 
 ```bash
 kubectl logs -f kaniko-mooncake-nof -n <namespace>
 ```
 
-The build takes approximately 30-45 minutes and includes:
-- SPDK v23.01.1 compilation
-- Mooncake compilation with HIP, dmabuf, and NVMe-oF support
-- Installation of mooncake_master, mooncake_client, and nvmf_tgt binaries
+---
 
-## Build Verification
+## What a good build looks like
 
-The Dockerfile includes sanity checks that verify:
-1. `mooncake.engine` Python module is HIP-linked (`libamdhip64`, `libhsa-runtime64`)
-2. No CUDA linkage (`libcudart` absent)
-3. `mooncake_client` binary is HIP-linked
-4. HIP dmabuf MR registration is enabled (build log check)
+Four checkpoints, in order:
 
-## Usage
+| | What it proves |
+|---|---|
+| `HIP dmabuf MR registration enabled` in the cmake log | HIP and dmabuf configured |
+| SPDK and DPDK static libraries copied to `/usr/local/lib` | the `USE_NOF` link will resolve |
+| `[ xx%] Built target mooncake_store` | `USE_NOF` actually links |
+| `spdk-rpc --help` succeeds | the RPC client runs |
 
-After building, deploy pods using this image for Mooncake NVMe-oF validation:
+The Dockerfile also asserts at build time, so the build **fails** rather than
+producing a broken image if any of these are wrong:
 
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: mooncake-nvmeof-test
-spec:
-  containers:
-  - name: mooncake
-    image: <your-registry>/mooncake-nof-mi355x:v0.3.12.post1
-    # ... additional configuration
+- `mooncake.engine` is linked against `libamdhip64` and `libhsa-runtime64`
+- `libcudart` is absent from both the Python module and `mooncake_client`
+- `nvmf_tgt`, `spdk_nvme_perf` and `spdk-rpc` are present and executable
+
+> Check `mooncake_client`, not `mooncake_master`, for HIP linkage.
+> `mooncake_master` is the control plane and does no GPU work, so it links
+> neither HIP nor CUDA. Checking the master gives a false negative.
+
+---
+
+## What the image contains
+
+```
+/usr/local/bin/nvmf_tgt            SPDK NVMe-oF target
+/usr/local/bin/spdk_nvme_perf      benchmark (use this, not fio)
+/usr/local/bin/spdk-rpc            wrapper running rpc.py under Python 3.12
+/usr/local/bin/mooncake_master     Mooncake control plane
+/usr/local/bin/mooncake_client     Mooncake client
+/usr/local/share/spdk/scripts/     SPDK RPC scripts
+/usr/local/share/spdk/python/      their imports — rpc.py needs ../python
+python site-packages/mooncake/     Python bindings (engine, store)
 ```
 
-The image provides:
-- `/usr/local/bin/nvmf_tgt` - SPDK NVMe-oF target
-- `/usr/local/bin/mooncake_master` - Mooncake control plane
-- `/usr/local/bin/mooncake_client` - Mooncake client for SSD registration
-- `/usr/local/share/spdk/scripts/` - SPDK RPC scripts
-- Python `mooncake` module in site-packages
+The `spdk-rpc` wrapper exists because the vendored SPDK uses
+`action='store_true'` on a positional argument, which Python 3.14 rejects. The
+base image's Python is 3.14, so the wrapper runs `rpc.py` under the system
+Python 3.12 instead. Patching SPDK's CLI would be the wrong fix: there is
+likely more than one such argument, and changing them alters the RPC
+interface.
 
-## Base Image
+Base image:
 
-`docker.io/rocm/vllm:rocm7.14.1_cdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0`
+```
+docker.io/rocm/vllm:rocm7.14.1_cdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0
+```
 
-This base provides ROCm 7.14.1 which supports AMD MI355X (gfx950) architecture.
+ROCm 7.14.1, which supports gfx950. **Do not substitute ROCm 6.x** — it
+predates MI355X and the build will not produce a working image.
 
-## Pushing to CCR
+SPDK is whatever version the Mooncake submodule pins at `v0.3.12.post1`;
+`dependencies.sh --with-spdk` fetches and builds it, including isa-l.
 
-After the kaniko build completes and produces the tar file, push to CCR:
+---
+
+## Alternative: build to a tar, push separately
+
+Only needed when the build node cannot reach the registry directly. Change the
+kaniko args from `--destination=__IMAGE__` to:
+
+```yaml
+- --no-push
+- --tar-path=/output/mooncake-nof-mi355x.tar
+```
+
+with an `/output` volume, then push the tar from somewhere that can:
 
 ```bash
-# From inside the pod that has the tar file:
 skopeo copy \
-  --dest-authfile /path/to/ccr-auth.json \
-  docker-archive:/tmp/mooncake-image/mooncake-nof-mi355x.tar \
-  docker://__IMAGE__
+  --dest-authfile /path/to/registry-auth.json \
+  docker-archive:/path/to/mooncake-nof-mi355x.tar \
+  docker://<registry>/mooncake-nof-mi355x:v0.3.12.post1
+```
+
+The auth file:
+
+```json
+{
+  "auths": {
+    "<registry-host>": {
+      "username": "<your-registry-user>",
+      "password": "<your-registry-token>",
+      "auth": "<base64 of username:password>"
+    }
+  }
+}
 ```
 
 If the push fails on certificate verification, fix the trust chain rather than
@@ -163,15 +174,14 @@ adding `--dest-tls-verify=false`. That flag disables verification of the
 registry's certificate and sends your push credentials over an unverified
 connection. Mount the CA bundle into the pod instead.
 
-The auth file contains:
-```json
-{
-  "auths": {
-    "<registry-host>": {
-      "username": "<your-registry-user>",
-      "password": "<CCR_TOKEN>",
-      "auth": "<BASE64_ENCODED_USERNAME:PASSWORD>"
-    }
-  }
-}
-```
+The image is large, so this path means moving tens of gigabytes by hand. Prefer
+the direct push.
+
+---
+
+## Next
+
+Deploy with `mooncake-nvmeof-target-pod.yaml` and
+`mooncake-nvmeof-initiator-pod.yaml`, substituting `__IMAGE__`,
+`__PULL_SECRET__` and the node names. Then follow the
+[runbook](./README.md#run).
