@@ -19,6 +19,11 @@ kubeconfig*
 .env
 .env.*
 
+# Validation run output — regenerated on each run, never committed.
+# Matches the convention in validation/amd/cmk-amd-mi355x/validation-suite/
+**/logs/
+**/results/
+
 # Session logs and scratch output
 *.log
 session-*.md
