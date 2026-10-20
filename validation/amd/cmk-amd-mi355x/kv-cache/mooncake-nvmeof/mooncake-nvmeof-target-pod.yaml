@@ -44,18 +44,16 @@ spec:
     - { name: dshm, mountPath: /dev/shm }
     - { name: ibdev, mountPath: /dev/infiniband }
     - { name: devvfio, mountPath: /dev/vfio }
-    - { name: hosttmp, mountPath: /hosttmp }
     - { name: cgroup, mountPath: /sys/fs/cgroup }
-    - { name: imagetar, mountPath: /tmp/mooncake-image }
+    - { name: kmod, mountPath: /lib/modules, readOnly: true }
 
   volumes:
   - { name: hugepages, hostPath: { path: /dev/hugepages, type: Directory } }
   - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 8Gi } }
   - { name: ibdev, hostPath: { path: /dev/infiniband, type: Directory } }
   - { name: devvfio, hostPath: { path: /dev/vfio, type: DirectoryOrCreate } }
-  - { name: hosttmp, hostPath: { path: /tmp, type: Directory } }
   - { name: cgroup, hostPath: { path: /sys/fs/cgroup, type: Directory } }
-  - { name: imagetar, hostPath: { path: /tmp/mooncake-image, type: Directory } }
+  - { name: kmod, hostPath: { path: /lib/modules, type: Directory } }
 
   tolerations:
   - operator: "Exists"
