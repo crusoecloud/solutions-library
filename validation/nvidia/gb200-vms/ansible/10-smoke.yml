@@ -1,0 +1,210 @@
+# Single-node smoke test on every GB200 node in parallel; on each node the steps run back to
+# back (never concurrently - GEMM and NCCL share the GPUs).
+#
+#   1. env    driver/CUDA/DOCA vs bundle-gb200-1.0.env, 4 GPUs, ECC/row remap, NVLink fabric
+#             state + clique, IMEX service/channel, 4 IB rails, limits, dmesg Xid
+#   2. gemm   dcgmproftester tensor-core GEMM on all 4 GPUs for 60 s (TFLOPS per GPU)
+#   3. nccl   all_reduce_perf 2G-32G over the node's 4 GPUs (gate avg >= 640, reference ~681)
+# Fleet check: every node must report the same NVLink ClusterUUID + CliqueId (one domain).
+#
+# Usage (from the repo root or ansible/):
+#   ansible-playbook ansible/10-smoke.yml
+#   ansible-playbook ansible/10-smoke.yml -l gb200-val-03,gb200-val-07
+#   ansible-playbook ansible/10-smoke.yml -e steps=env            # any of env,gemm,nccl
+#   ansible-playbook ansible/10-smoke.yml -e dcgm_diag=true       # + dcgmi diag -r 2 (~3 min)
+#   ansible-playbook ansible/10-smoke.yml -e gemm_seconds=120
+#
+# Results: results/smoke-<ts>/<node>/... and results/smoke-<ts>/summary.{txt,csv}
+
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group gb200 must exist and be non-empty
+      ansible.builtin.assert:
+        that: groups['gb200'] | default([]) | length > 0
+        fail_msg: >-
+          No hosts in group 'gb200'. Run from the repo root or from ansible/, or pass
+          -i inventory/hosts.ini (written by 'terraform apply').
+        quiet: true
+    - name: Open-file limit must cover the parallel SSH workers (forks)
+      vars:
+        nofile: "{{ lookup('pipe', 'ulimit -n') }}"
+      ansible.builtin.assert:
+        that: nofile == 'unlimited' or nofile | int >= 2048
+        fail_msg: >-
+          Open-file limit is {{ nofile }}. Run 'ulimit -n 4096' in this shell and retry,
+          or lower parallelism with -f 10.
+        quiet: true
+
+- name: Single-node smoke
+  hosts: gb200
+  gather_facts: false
+  vars:
+    steps: "env,gemm,nccl"
+    gemm_seconds: 60
+    dcgm_diag: false
+    ts: "{{ hostvars['localhost']['smoke_ts'] | default(lookup('pipe', 'date +%Y%m%d-%H%M')) }}"
+    remote_results: "/home/ubuntu/validation/results/smoke-{{ ts }}"
+    local_results: "{{ playbook_dir }}/../results/smoke-{{ ts }}"
+  pre_tasks:
+    - name: Pin one timestamp for the whole run
+      ansible.builtin.set_fact:
+        smoke_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
+
+  tasks:
+    - name: Sync validation scripts
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/"
+        dest: /home/ubuntu/validation/
+        mode: preserve
+
+    - name: Results dir
+      ansible.builtin.file:
+        path: "{{ remote_results }}"
+        state: directory
+        mode: "0755"
+
+    # ---------------------------------------------------------------- 1. env
+    - name: env_verify
+      when: "'env' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/env
+        ./env_verify.sh > {{ remote_results }}/env_verify.txt 2>&1; rc=$?
+        grep -E '[|](FAIL|WARN)$' {{ remote_results }}/env_verify.txt | grep -v '|summary|'
+        grep '^FABRIC|' {{ remote_results }}/env_verify.txt
+        tail -1 {{ remote_results }}/env_verify.txt
+        exit $rc
+      args: { executable: /bin/bash }
+      register: env
+      failed_when: false
+      changed_when: false
+
+    # ---------------------------------------------------------------- 2. GEMM
+    - name: GEMM (dcgmproftester tensor core)
+      when: "'gemm' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/gemm
+        ./run_dcgm_gemm.sh -d {{ gemm_seconds }} -o {{ remote_results }} > {{ remote_results }}/gemm.txt 2>&1; rc=$?
+        grep -E '^GEMM' {{ remote_results }}/gemm.txt
+        exit $rc
+      args: { executable: /bin/bash }
+      register: gemm
+      async: 900
+      poll: 15
+      failed_when: false
+      changed_when: false
+
+    - name: DCGM diagnostics level 2 (opt-in)
+      when: dcgm_diag | bool
+      ansible.builtin.shell: |
+        # The 'software' test reports a Fabric Manager false positive on GB200 VMs; run the rest.
+        dcgmi diag -r memory,diagnostic,pcie,memory_bandwidth,targeted_stress,targeted_power \
+          > {{ remote_results }}/dcgm_diag.txt 2>&1; rc=$?
+        grep -E -i 'fail|warn|error' {{ remote_results }}/dcgm_diag.txt | head -20
+        exit $rc
+      args: { executable: /bin/bash }
+      register: diag
+      async: 1800
+      poll: 30
+      failed_when: false
+      changed_when: false
+
+    # ---------------------------------------------------------------- 3. NCCL 1 node
+    - name: NCCL single-node all_reduce (4 GPUs)
+      when: "'nccl' in steps"
+      ansible.builtin.shell: |
+        cd ~/validation/nccl
+        ./run_nccl_gb200.sh -c all_reduce -H {{ private_ip }} -o {{ remote_results }} \
+          --tag nccl-ar-1n-{{ inventory_hostname }} > {{ remote_results }}/nccl_1n.txt 2>&1; rc=$?
+        grep -E '^RESULT|^VERDICT|^  [A-Za-z].*: [0-9]+ +->' {{ remote_results }}/nccl_1n.txt
+        exit $rc
+      args: { executable: /bin/bash }
+      register: nccl
+      async: 1200
+      poll: 15
+      failed_when: false
+      changed_when: false
+
+    - name: Fetch results
+      ansible.posix.synchronize:
+        mode: pull
+        src: "{{ remote_results }}/"
+        dest: "{{ local_results }}/{{ inventory_hostname }}/"
+      failed_when: false
+
+    - name: Per-node verdicts
+      vars:
+        rc_word: "{{ {0: 'PASS', 1: 'FAIL'} }}"
+        fabric: "{{ (env.stdout_lines | default([]) | select('match', '^FABRIC[|]') | first | default('FABRIC|-|-|-|-|-')).split('|') }}"
+      ansible.builtin.set_fact:
+        v_env: "{{ 'SKIP' if env.skipped | default(false) else ('PASS' if env.rc == 0 else 'FAIL') }}"
+        v_env_detail: >-
+          {{ '' if env.skipped | default(false)
+             else (env.stdout_lines | select('search', '[|]FAIL$') | map('split', '|') | map(attribute=1) | join(' ')) }}
+        v_cluster: "{{ fabric[4] }}"
+        v_clique: "{{ fabric[5] }}"
+        v_gemm: "{{ 'SKIP' if gemm.skipped | default(false) else (rc_word[gemm.rc | default(2)] | default('ERROR')) }}"
+        v_gemm_min: >-
+          {{ '' if gemm.skipped | default(false)
+             else (gemm.stdout | default('') | regex_findall('GEMM[|][^|]+[|]gpu[0-9]+[|]([0-9]+)') | map('int') | min | default('?', true)) }}
+        v_diag: "{{ 'SKIP' if diag.skipped | default(true) else ('PASS' if diag.rc == 0 else 'FAIL') }}"
+        v_nccl: "{{ 'SKIP' if nccl.skipped | default(false) else (rc_word[nccl.rc | default(2)] | default('HANG/ERROR')) }}"
+        v_busbw: >-
+          {{ '' if nccl.skipped | default(false)
+             else (nccl.stdout | default('') | regex_search('avg_busbw=([0-9.]+)', '\1') | default(['?'], true) | first) }}
+
+    - name: Overall node verdict
+      ansible.builtin.set_fact:
+        v_node: "{{ 'FAIL' if ([v_env, v_gemm, v_diag, v_nccl] | select('in', ['FAIL', 'ERROR', 'HANG/ERROR']) | list | length > 0) else 'PASS' }}"
+
+# Runs on gb200 (once, delegated to the control machine) rather than on localhost, so a
+# '-l <node>,<node>' run still writes summary.csv - 30-multinode.yml reads it.
+- name: Summary
+  hosts: gb200
+  gather_facts: false
+  run_once: true
+  vars:
+    local_results: "{{ playbook_dir }}/../results/smoke-{{ hostvars['localhost']['smoke_ts'] }}"
+    ran: "{{ groups['gb200'] | map('extract', hostvars) | selectattr('v_node', 'defined') | map(attribute='inventory_hostname') | list }}"
+    cliques: "{{ ran | map('extract', hostvars, 'v_cluster') | zip(ran | map('extract', hostvars, 'v_clique')) | map('join', '/') | unique | list }}"
+  tasks:
+    - name: Write summary.csv
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ local_results }}/summary.csv"
+        content: |
+          node,vm_id,private_ip,nvlink_domain_id,clique,env,gemm,gemm_min_tflops,dcgm_diag,nccl_1n,nccl_1n_busbw_gbps,verdict,env_fail_checks
+          {% for h in ran %}
+          {{ h }},{{ hostvars[h].vm_id }},{{ hostvars[h].private_ip }},{{ hostvars[h].nvlink_domain_id | default('-') }},{{ hostvars[h].v_clique }},{{ hostvars[h].v_env }},{{ hostvars[h].v_gemm }},{{ hostvars[h].v_gemm_min }},{{ hostvars[h].v_diag }},{{ hostvars[h].v_nccl }},{{ hostvars[h].v_busbw }},{{ hostvars[h].v_node }},{{ hostvars[h].v_env_detail }}
+          {% endfor %}
+        mode: "0644"
+
+    - name: Write summary.txt
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ local_results }}/summary.txt"
+        content: |
+          {{ '%-16s %-5s %-6s %-9s %-5s %-10s %-9s %s' | format('node', 'env', 'gemm', 'gemm_min', 'diag', 'nccl_1n', 'busbw', 'VERDICT') }}
+          {% for h in ran %}
+          {{ '%-16s %-5s %-6s %-9s %-5s %-10s %-9s %s' | format(h, hostvars[h].v_env, hostvars[h].v_gemm, hostvars[h].v_gemm_min, hostvars[h].v_diag, hostvars[h].v_nccl, hostvars[h].v_busbw, hostvars[h].v_node) }}
+          {% endfor %}
+
+          NVLink domain: {{ 'ONE clique ' ~ cliques[0] if cliques | length == 1 else 'FAIL - ' ~ (cliques | length) ~ ' cliques: ' ~ (cliques | join(', ')) }}
+          PASS: {{ ran | map('extract', hostvars, 'v_node') | select('eq', 'PASS') | list | length }}
+          FAIL: {{ ran | map('extract', hostvars, 'v_node') | select('eq', 'FAIL') | list | length }}
+          results: {{ local_results }}
+        mode: "0644"
+
+    - name: Show summary
+      delegate_to: localhost
+      ansible.builtin.command: cat {{ local_results }}/summary.txt
+      register: summary_txt
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ summary_txt.stdout_lines }}"

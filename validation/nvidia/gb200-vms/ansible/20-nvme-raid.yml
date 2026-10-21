@@ -1,0 +1,214 @@
+# RAID0 across all local NVMe drives of each GB200 node, XFS, mounted at /scratch/local.
+#
+#   ansible-playbook ansible/20-nvme-raid.yml --check                # PREVIEW: report every node's drives and
+#                                                                    #   what would be erased; changes nothing
+#   ansible-playbook ansible/20-nvme-raid.yml -l <node>              # one node first (builds it if all blank)
+#   ansible-playbook ansible/20-nvme-raid.yml -e nvme_raid_wipe=true # ERASE existing filesystems/mounts on
+#                                                                    #   the NVMe drives, then build the array
+#   ansible-playbook ansible/20-nvme-raid.yml -e scratch_alias=/mnt/nvme   # also link an old path to it
+#
+# Safety: the boot disk (vda) is never touched; a drive in use by a process is never wiped
+# (stop the workload first); an existing healthy /dev/md/scratch mounted at the mount point is
+# left alone. Local NVMe is ephemeral: /scratch/local is erased on VM stop/start, host reboot or
+# migration (the array is recreated empty at boot); it survives a guest reboot.
+
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group gb200 must exist and be non-empty
+      ansible.builtin.assert:
+        that: groups['gb200'] | default([]) | length > 0
+        fail_msg: "No hosts in group 'gb200'. Run from the repo root or ansible/, or pass -i inventory/hosts.ini."
+        quiet: true
+
+- name: NVMe RAID0 scratch
+  hosts: gb200
+  gather_facts: false
+  become: true
+  vars:
+    scratch_mount: /scratch/local
+    scratch_owner: ubuntu
+    scratch_mode: "1777"
+    scratch_alias: ""
+    nvme_raid_wipe: false
+    raid_name: scratch
+  tasks:
+    - name: Inspect NVMe drives
+      ansible.builtin.shell: |
+        set -o pipefail
+        md_ok=0
+        if [ -e /dev/md/{{ raid_name }} ] && findmnt -n -S /dev/md/{{ raid_name }} -T {{ scratch_mount }} >/dev/null 2>&1; then md_ok=1; fi
+        n=0; busy=""; used=""
+        root=$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null)
+        for d in /sys/block/nvme*n*; do
+          [ -e "$d" ] || continue
+          [[ "$(basename "$d")" =~ ^nvme[0-9]+n[0-9]+$ ]] || continue   # whole namespaces only
+          [ "$(basename "$d")" = "$root" ] && continue                  # never the boot disk
+          n=$((n+1)); dev=/dev/$(basename "$d")
+          sig=$(blkid -p -o value -s TYPE "$dev" 2>/dev/null || true)
+          mnt=$(lsblk -nr -o MOUNTPOINT "$dev" | grep . | tr '\n' ',' || true)
+          inuse=$( [ -n "$mnt" ] && for m in ${mnt//,/ }; do fuser -m "$m" 2>/dev/null; done | wc -w || echo 0)
+          [ -n "$sig" ] && [ "$sig" != linux_raid_member ] && used="$used $(basename "$dev"):$sig:${mnt%,}:$(df -h --output=used "$dev" 2>/dev/null | tail -1 | tr -d ' ')"
+          [ "${inuse:-0}" -gt 0 ] && busy="$busy ${mnt%,}"
+        done
+        echo "count=$n md_ok=$md_ok"
+        echo "used=${used# }"
+        echo "busy=${busy# }"
+      args: { executable: /bin/bash }
+      register: inspect
+      changed_when: false
+      check_mode: false   # read-only; runs in --check too
+
+    - name: Parse inspection
+      ansible.builtin.set_fact:
+        nvme_count: "{{ inspect.stdout_lines[0] | regex_search('count=(\\d+)', '\\1') | first | int }}"
+        md_ok: "{{ (inspect.stdout_lines[0] | regex_search('md_ok=(\\d)', '\\1') | first) == '1' }}"
+        nvme_used: "{{ inspect.stdout_lines[1] | regex_replace('^used=', '') }}"
+        nvme_busy: "{{ inspect.stdout_lines[2] | regex_replace('^busy=', '') }}"
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: >-
+          {{ nvme_count }} NVMe drives;
+          {{ 'array already mounted at ' ~ scratch_mount if md_ok | bool else 'no array yet' }};
+          {{ ('in use: ' ~ nvme_used) if nvme_used else 'all drives blank' }}
+          {{ ('; BUSY: ' ~ nvme_busy) if nvme_busy else '' }}
+
+    - name: Refuse to erase data without nvme_raid_wipe=true
+      ansible.builtin.assert:
+        that: ansible_check_mode or md_ok | bool or nvme_used == '' or nvme_raid_wipe | bool
+        fail_msg: >-
+          NVMe drives on {{ inventory_hostname }} hold data ({{ nvme_used }}). Re-run with
+          -e nvme_raid_wipe=true to ERASE them and build the RAID0 (irreversible).
+        quiet: true
+
+    - name: Refuse to wipe drives that processes are using
+      ansible.builtin.assert:
+        that: md_ok | bool or nvme_busy == ''
+        fail_msg: "Processes are using {{ nvme_busy }} on {{ inventory_hostname }}; stop them first (fuser -vm <mount>)."
+        quiet: true
+
+    - name: Wipe existing filesystems on the NVMe drives
+      when: not (md_ok | bool) and nvme_used != '' and nvme_raid_wipe | bool
+      ansible.builtin.shell: |
+        set -e
+        root=$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null)
+        for d in /sys/block/nvme*n*; do
+          [[ "$(basename "$d")" =~ ^nvme[0-9]+n[0-9]+$ ]] || continue
+          [ "$(basename "$d")" = "$root" ] && continue
+          dev=/dev/$(basename "$d")
+          for m in $(lsblk -nr -o MOUNTPOINT "$dev" | grep .); do umount "$m"; done
+          uuid=$(blkid -p -o value -s UUID "$dev" 2>/dev/null || true)
+          [ -n "$uuid" ] && sed -i "\|UUID=$uuid|d" /etc/fstab
+          sed -i "\|^$dev[[:space:]]|d" /etc/fstab
+          wipefs -a "$dev" >/dev/null
+          mdadm --zero-superblock "$dev" 2>/dev/null || true
+          echo "wiped $dev"
+        done
+      args: { executable: /bin/bash }
+      register: wiped
+
+    - name: Install scratch-raid.sh
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/raid/scratch-raid.sh"
+        dest: /usr/local/sbin/scratch-raid.sh
+        mode: "0755"
+
+    - name: Install systemd units
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item.name }}"
+        mode: "0644"
+        content: "{{ item.content }}"
+      loop:
+        - name: scratch-raid.service
+          content: |
+            [Unit]
+            Description=Assemble or create the local NVMe RAID0 (/dev/md/{{ raid_name }})
+            DefaultDependencies=no
+            After=local-fs-pre.target systemd-udevd.service
+            Before=local-fs.target scratch-local.mount
+
+            [Service]
+            Type=oneshot
+            RemainAfterExit=yes
+            Environment=SCRATCH_RAID_NAME={{ raid_name }}
+            ExecStart=/usr/local/sbin/scratch-raid.sh
+
+            [Install]
+            WantedBy=local-fs.target
+        - name: scratch-local.mount
+          content: |
+            [Unit]
+            Description=Local NVMe RAID0 scratch ({{ scratch_mount }})
+            Requires=scratch-raid.service
+            After=scratch-raid.service
+
+            [Mount]
+            What=/dev/md/{{ raid_name }}
+            Where={{ scratch_mount }}
+            Type=xfs
+            Options=noatime
+
+            [Install]
+            WantedBy=local-fs.target
+        - name: scratch-perms.service
+          content: |
+            [Unit]
+            Description=Owner and mode of {{ scratch_mount }} (re-applied after an erased-disk boot)
+            Requires=scratch-local.mount
+            After=scratch-local.mount
+
+            [Service]
+            Type=oneshot
+            RemainAfterExit=yes
+            ExecStart=/bin/chown {{ scratch_owner }}:{{ scratch_owner }} {{ scratch_mount }}
+            ExecStart=/bin/chmod {{ scratch_mode }} {{ scratch_mount }}
+
+            [Install]
+            WantedBy=multi-user.target
+      register: units
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: units.changed
+
+    - name: Enable and start (never restarted, so a mounted array is not disturbed)
+      when: not ansible_check_mode   # units are not installed in --check
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: [scratch-raid.service, scratch-local.mount, scratch-perms.service]
+
+    - name: Optional alias (e.g. /mnt/nvme) -> scratch mount
+      when: scratch_alias | length > 0
+      ansible.builtin.shell: |
+        set -e
+        a={{ scratch_alias }}
+        if [ -L "$a" ]; then ln -sfn {{ scratch_mount }} "$a"; echo linked; exit 0; fi
+        if [ -d "$a" ]; then
+          mountpoint -q "$a" && { echo "$a is still a mount point"; exit 1; }
+          rmdir "$a"   # fails if not empty, by design
+        fi
+        mkdir -p "$(dirname "$a")"; ln -s {{ scratch_mount }} "$a"; echo linked
+      args: { executable: /bin/bash }
+      register: alias
+      changed_when: "'linked' in alias.stdout"
+
+    - name: Verify
+      when: not ansible_check_mode
+      ansible.builtin.shell: |
+        findmnt -n -o SOURCE,FSTYPE,SIZE,OPTIONS {{ scratch_mount }}
+        stat -c '%U:%G %a' {{ scratch_mount }}
+        mdadm --detail /dev/md/{{ raid_name }} | awk -F': *' '/Raid Level|Raid Devices|Chunk Size|State :/{printf "%s=%s ", $1, $2} END{print ""}' | tr -s ' '
+      args: { executable: /bin/bash }
+      register: verify
+      changed_when: false
+      failed_when: verify.rc != 0 or 'xfs' not in verify.stdout
+
+    - name: Result
+      when: not ansible_check_mode
+      ansible.builtin.debug:
+        msg: "{{ verify.stdout_lines }}"

@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars. Only project_id and ssh_public_key_path are required;
+# subnet, transport network and partition are looked up / created automatically.
+
+project_id          = "<project-id>"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub" # the only key authorized on the VMs
+
+# location        = "eu-iceland1-a"
+# name_prefix     = "gb200-val"          # VMs: <prefix>-01..NN, <prefix>-cpu-01
+# gpu_node_count  = 14                   # 4 GPUs each; all in one NVLink domain (max 18)
+# gpu_node_type   = "gb200-186gb-nvl-ib.4x"
+# gpu_image       = "ubuntu24.04-nvidia-b.gb200.1.0:latest"
+# cpu_node_count  = 0                    # optional CPU VM(s) in the same subnet; not used by the tests
+# cpu_node_type   = "c1a.32x"
+# cpu_image       = "ubuntu24.04:latest"
+
+# The rack: required when gpu_node_count > 1 (a single canary may omit it). Pick a domain whose
+# available_nodes covers gpu_node_count:
+#   crusoe networking nvl-domains list --project-id <project-id>
+nvlink_domain_id = "<nvlink-domain-id>"
+
+# Reuse an existing IB partition instead of creating "<prefix>-ib":
+#   crusoe networking transport-partitions list --project-id <project-id>
+# transport_partition_id = "<transport-partition-id>"
+
+# vpc_subnet_id = "<vpc-subnet-id>"      # default: the project's first subnet in location
+
+# GB200 VMs whose public IP was switched to static outside Terraform (the API rejects changing
+# it back to dynamic, so list them here to keep plans clean):
+# static_public_ip_nodes = ["<prefix>-03"]

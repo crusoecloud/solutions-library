@@ -1,0 +1,197 @@
+# Prep: node-to-node SSH, MPI hostfile, validation scripts, wait for GPUs, and IMEX (required
+# for multi-node NVLink) on every GB200 node; reachability check on the CPU node(s).
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group gb200 must exist and be non-empty
+      ansible.builtin.assert:
+        that: groups['gb200'] | default([]) | length > 0
+        fail_msg: >-
+          No hosts in group 'gb200'. Run from the repo root or from ansible/ (both have an
+          ansible.cfg pointing at inventory/hosts.ini), or pass -i inventory/hosts.ini.
+          inventory/hosts.ini is written by 'terraform apply' (or by hand, see README).
+        quiet: true
+
+    - name: Open-file limit must cover the parallel SSH workers (forks)
+      vars:
+        nofile: "{{ lookup('pipe', 'ulimit -n') }}"
+      ansible.builtin.assert:
+        that: nofile == 'unlimited' or nofile | int >= 2048
+        fail_msg: >-
+          Open-file limit is {{ nofile }}. With forks=40 Ansible runs out of file handles and
+          crashes with "process object is closed" (macOS terminals default to 256).
+          Run 'ulimit -n 4096' in this shell and retry, or lower parallelism with -f 10.
+        quiet: true
+
+- name: Prep GB200 nodes
+  hosts: gb200
+  gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir }}/.."
+    imex_ready_timeout_s: 180
+  tasks:
+    # 'terraform apply' returns before the VMs finish booting; sshd can start a minute later.
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command: cloud-init status --wait
+      register: cloud_init
+      changed_when: false
+      failed_when: cloud_init.rc not in [0, 2]   # 2 = done with recoverable errors
+
+    - name: Install cluster private key for node-to-node SSH (mpirun)
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/keys/cluster_ssh_key"
+        dest: /home/ubuntu/.ssh/id_ed25519
+        mode: "0600"
+
+    - name: Authorize cluster public key
+      ansible.builtin.lineinfile:
+        path: /home/ubuntu/.ssh/authorized_keys
+        line: "{{ lookup('file', repo_root + '/keys/cluster_ssh_key.pub') }}"
+        create: true
+        mode: "0600"
+
+    - name: SSH client config for the private subnet
+      ansible.builtin.blockinfile:
+        path: /home/ubuntu/.ssh/config
+        create: true
+        mode: "0600"
+        block: |
+          Host 172.* 10.* 192.168.*
+              StrictHostKeyChecking no
+              UserKnownHostsFile /dev/null
+              LogLevel ERROR
+              IdentityFile ~/.ssh/id_ed25519
+
+    # Peers = GB200 nodes reachable in this run (an unreachable / stopped VM is left out of
+    # the hostfile and the IMEX domain instead of blocking it).
+    - name: Record reachable GB200 peers
+      ansible.builtin.set_fact:
+        imex_peers: "{{ ansible_play_hosts | map('extract', hostvars, 'private_ip') | list }}"
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
+
+    - name: MPI hostfile (slots=4) and node list (reachable peers only)
+      ansible.builtin.copy:
+        dest: "/home/ubuntu/{{ item.dest }}"
+        content: "{{ item.content }}"
+        mode: "0644"
+      loop:
+        - { dest: hostfile, content: "{{ hostvars['localhost'].imex_peers | map('regex_replace', '$', ' slots=4') | join('\n') }}\n" }
+        - { dest: nodes, content: "{{ hostvars['localhost'].imex_peers | join('\n') }}\n" }
+
+    - name: Validation scripts
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/scripts/"
+        dest: /home/ubuntu/validation/
+        mode: preserve
+
+    - name: Wait for 4 GPUs
+      ansible.builtin.shell: nvidia-smi -L 2>/dev/null | grep -c '^GPU'
+      register: gpus
+      retries: 6
+      delay: 30
+      until: gpus.stdout | int == 4
+      changed_when: false
+
+    # ---------------------------------------------------------------- IMEX
+    - name: IMEX
+      become: true
+      block:
+        - name: IMEX peer list (reachable GB200 private IPs only)
+          ansible.builtin.copy:
+            content: "{{ hostvars['localhost'].imex_peers | join('\n') }}\n"
+            dest: /etc/nvidia-imex/nodes_config.cfg
+            owner: root
+            group: root
+            mode: "0644"
+          register: imex_cfg
+
+        - name: Create IMEX channel0 at every boot
+          ansible.builtin.copy:
+            dest: /etc/modprobe.d/nvidia-imex-channel.conf
+            content: "options nvidia NVreg_CreateImexChannel0=1\n"
+            mode: "0644"
+          register: imex_modprobe
+
+        - name: Rebuild initramfs so the channel option applies at boot
+          ansible.builtin.command: update-initramfs -u
+          when: imex_modprobe.changed
+          changed_when: true
+
+        - name: Create channel0 now if missing
+          ansible.builtin.shell: |
+            set -e
+            [ -e /dev/nvidia-caps-imex-channels/channel0 ] && { echo present; exit 0; }
+            major=$(awk '$2=="nvidia-caps-imex-channels"{print $1}' /proc/devices)
+            [ -n "$major" ] || { echo "nvidia-caps-imex-channels not in /proc/devices"; exit 1; }
+            mkdir -p /dev/nvidia-caps-imex-channels
+            mknod /dev/nvidia-caps-imex-channels/channel0 c "$major" 0
+            echo created
+          register: ch0
+          changed_when: "'created' in ch0.stdout"
+
+        - name: channel0 readable/writable by the test user
+          ansible.builtin.file:
+            path: /dev/nvidia-caps-imex-channels/channel0
+            mode: "0666"
+
+        - name: Enable and (re)start nvidia-imex
+          ansible.builtin.systemd:
+            name: nvidia-imex
+            enabled: true
+            state: restarted
+          when: imex_cfg.changed or ch0.changed
+
+        - name: Ensure nvidia-imex is running
+          ansible.builtin.systemd:
+            name: nvidia-imex
+            enabled: true
+            state: started
+
+- name: Verify the IMEX domain from the first reachable GB200 node
+  hosts: gb200
+  gather_facts: false
+  vars:
+    expected: "{{ hostvars['localhost'].imex_peers | length }}"
+  tasks:
+    - name: nvidia-imex-ctl -N reports Domain UP, every node READY and Connected
+      run_once: true
+      ansible.builtin.shell: |
+        out=$(nvidia-imex-ctl -N 2>&1)
+        ready=$(echo "$out" | grep -c -E 'READY')
+        up=$(echo "$out" | grep -c -iE 'Domain State: *UP')
+        # connectivity matrix rows: "<n> C C C ..." -- any non-C cell (I/N/R/D/A, !V!/!M!/!A!/!R!) is a broken pair
+        bad=$(echo "$out" | awk '/^ *[0-9]+ +([CINDRA]|![VMAR]!)( +([CINDRA]|![VMAR]!))+ *$/ {for(i=2;i<=NF;i++) if($i!="C") b++} END{print b+0}')
+        echo "ready=$ready/{{ expected }} domain_up=$up bad_pairs=$bad"
+        [ "$ready" -ge {{ expected }} ] && [ "$up" -ge 1 ] && [ "$bad" = 0 ]
+      args: { executable: /bin/bash }
+      register: imex
+      retries: "{{ (imex_ready_timeout_s | default(180) | int / 15) | int }}"
+      delay: 15
+      until: imex.rc == 0
+      changed_when: false
+
+    - name: IMEX status
+      run_once: true
+      ansible.builtin.debug:
+        msg: "{{ imex.stdout }}"
+
+- name: CPU nodes reachable and can reach the GB200 nodes
+  hosts: cpu
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+
+    - name: Reach the first GB200 node's SSH port over the private network
+      ansible.builtin.shell: timeout 5 bash -c 'echo > /dev/tcp/{{ hostvars[groups['gb200'][0]].private_ip }}/22' && echo ok
+      args: { executable: /bin/bash }
+      register: reach
+      changed_when: false

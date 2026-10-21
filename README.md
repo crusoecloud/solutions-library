@@ -48,6 +48,10 @@ A set of ready-to-apply Kubernetes MPIJob manifests that run the `all_reduce_per
 
 A Kubernetes-native health check for InfiniBand fabrics that runs one pod per GPU worker node, performing per-HCA `ib_write_bw` loopback tests plus single- and multi-node NCCL all_reduce, and flags any HCA running below line rate. Use it before a long training run, or to investigate a suspected straggler node, on any SKU (H200, B200, etc.) without manual configuration.
 
+[NVIDIA GB200 NVL72 VM Validation Smoke Test](./validation/nvidia/gb200-vms/)
+
+A Terraform + Ansible smoke test for a GB200 NVL72 rack on Crusoe VMs. It provisions up to 18 GB200 VMs pinned to one NVLink domain, sets up IMEX for multi-node NVLink, checks every node in parallel (software versions, GPUs, ECC, NVLink fabric, IB rails, local NVMe, tensor-core GEMM, 4-GPU NCCL), then runs NCCL all_reduce and all_gather across the rack and verifies the traffic stayed on NVLink — about 10 minutes end to end. Optional playbooks build a RAID0 scratch volume from the local NVMe drives and benchmark it with fio.
+
 #### AMD
 
 [AMD MI355X Validation Suite for Crusoe Managed Kubernetes](./validation/amd/cmk-amd-mi355x/)

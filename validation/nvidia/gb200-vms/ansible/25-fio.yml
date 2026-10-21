@@ -1,0 +1,147 @@
+# Storage smoke benchmark: local NVMe RAID0 (/scratch/local) vs the OS disk, per GB200 node.
+# Runs scripts/storage/run_fio.sh (large/small files, sequential + random, read/write/mixed);
+# every file fio writes is deleted when each job ends and again on exit.
+#
+#   ansible-playbook ansible/25-fio.yml -l <node>,<node>                     # pick idle nodes (recommended)
+#   ansible-playbook ansible/25-fio.yml -e fio_runtime=30                     # seconds per job (default 20)
+#   ansible-playbook ansible/25-fio.yml -e fio_targets=scratch                # scratch | os | scratch,os
+#
+# ~8 min per node with defaults (8 jobs x 2 targets x 20 s, plus test-file layout). Nodes run in parallel.
+# The benchmark saturates the local disks: run it on nodes that are not serving a workload.
+# Results: results/fio-<ts>/<node>/*.json and results/fio-<ts>/summary.{txt,csv}
+
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group gb200 must exist and be non-empty
+      ansible.builtin.assert:
+        that: groups['gb200'] | default([]) | length > 0
+        fail_msg: "No hosts in group 'gb200'. Run from the repo root or ansible/, or pass -i inventory/hosts.ini."
+        quiet: true
+
+- name: fio storage smoke
+  hosts: gb200
+  gather_facts: false
+  vars:
+    fio_runtime: 20
+    fio_targets: "scratch,os"
+    ts: "{{ hostvars['localhost']['fio_ts'] | default(lookup('pipe', 'date +%Y%m%d-%H%M')) }}"
+    remote_results: "/home/ubuntu/validation/results/fio-{{ ts }}"
+    local_results: "{{ playbook_dir }}/../results/fio-{{ ts }}"
+  pre_tasks:
+    - name: Pin one timestamp for the whole run
+      ansible.builtin.set_fact:
+        fio_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
+
+  tasks:
+    - name: Install fio if missing
+      become: true
+      ansible.builtin.apt:
+        name: fio
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Sync validation scripts
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/"
+        dest: /home/ubuntu/validation/
+        mode: preserve
+
+    - name: Drive model
+      ansible.builtin.shell: |
+        for d in /sys/block/nvme*n*; do
+          [[ "$(basename "$d")" =~ ^nvme[0-9]+n[0-9]+$ ]] && cat "$d/device/model" 2>/dev/null
+        done | sed 's/[[:space:]]*$//' | sort | uniq -c | awk '{c=$1; $1=""; sub(/^ /,""); printf "%dx %s ", c, $0}'
+      args: { executable: /bin/bash }
+      register: drives
+      changed_when: false
+
+    - name: Run fio
+      ansible.builtin.shell: |
+        targets=()
+        {% if 'scratch' in fio_targets %}mountpoint -q /scratch/local && targets+=(-t scratch:/scratch/local) || echo "FIO_ERROR|$(hostname -s)|scratch|/scratch/local is not mounted (run 20-nvme-raid.yml)"{% endif %}
+
+        {% if 'os' in fio_targets %}targets+=(-t os:/var/tmp){% endif %}
+
+        mkdir -p {{ remote_results }}
+        ~/validation/storage/run_fio.sh "${targets[@]}" -r {{ fio_runtime }} -o {{ remote_results }} \
+          > {{ remote_results }}/fio.txt 2>&1
+        grep -E '^(FIO|FIO_ERROR)[|]' {{ remote_results }}/fio.txt
+      args: { executable: /bin/bash }
+      register: fio
+      async: 3600
+      poll: 20
+      failed_when: false
+      changed_when: false
+
+    - name: Nothing left behind
+      ansible.builtin.shell: ls -d /scratch/local/fio-smoke-* /var/tmp/fio-smoke-* 2>/dev/null || true
+      register: leftovers
+      changed_when: false
+      failed_when: leftovers.stdout | length > 0
+
+    - name: Fetch results
+      ansible.posix.synchronize:
+        mode: pull
+        src: "{{ remote_results }}/"
+        dest: "{{ local_results }}/{{ inventory_hostname }}/"
+      failed_when: false
+
+    - name: Keep parsed lines
+      ansible.builtin.set_fact:
+        fio_lines: "{{ fio.stdout_lines | default([]) }}"
+        drive_type: "{{ drives.stdout | trim }}"
+
+# Runs on gb200 (once, delegated to the control machine) rather than on localhost, so a
+# '-l <node>,<node>' run still writes the summary.
+- name: Summary
+  hosts: gb200
+  gather_facts: false
+  run_once: true
+  vars:
+    local_results: "{{ playbook_dir }}/../results/fio-{{ hostvars['localhost']['fio_ts'] }}"
+    ran: "{{ groups['gb200'] | map('extract', hostvars) | selectattr('fio_lines', 'defined') | map(attribute='inventory_hostname') | list }}"
+  tasks:
+    - name: Write summary.csv
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ local_results }}/summary.csv"
+        mode: "0644"
+        content: |
+          node,drive_type,target,job,read_MBps,write_MBps,read_iops,write_iops,read_p99_us,write_p99_us
+          {% for h in ran %}{% for l in hostvars[h].fio_lines if l.startswith('FIO|') %}{% set f = l.split('|') %}
+          {{ h }},{{ hostvars[h].drive_type }},{{ f[2] }},{{ f[3] }},{{ f[4] }},{{ f[5] }},{{ f[6] }},{{ f[7] }},{{ f[8] }},{{ f[9] }}
+          {% endfor %}{% endfor %}
+
+    - name: Write summary.txt
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ local_results }}/summary.txt"
+        mode: "0644"
+        content: |
+          {% for h in ran %}
+          == {{ h }}  ({{ hostvars[h].drive_type }})
+          {{ '%-8s %-18s %9s %9s %10s %10s %9s %9s' | format('target', 'job', 'rd MB/s', 'wr MB/s', 'rd IOPS', 'wr IOPS', 'rd p99us', 'wr p99us') }}
+          {% for l in hostvars[h].fio_lines %}{% set f = l.split('|') %}{% if f[0] == 'FIO' %}
+          {{ '%-8s %-18s %9s %9s %10s %10s %9s %9s' | format(f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9]) }}
+          {% else %}
+          {{ l }}
+          {% endif %}{% endfor %}
+
+          {% endfor %}
+          results: {{ local_results }}
+
+    - name: Show summary
+      delegate_to: localhost
+      ansible.builtin.command: cat {{ local_results }}/summary.txt
+      register: s
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ s.stdout_lines }}"

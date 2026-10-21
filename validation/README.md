@@ -8,6 +8,7 @@ Solutions are grouped by GPU vendor: `nvidia/` and `amd/`.
 |---|---|
 | [cmk-nccltests](./nvidia/cmk-nccltests/) | SKU-tuned NCCL all_reduce MPIJobs (B200, B300, GB200, H100, H200) |
 | [ib-health-probe-cmk](./nvidia/ib-health-probe-cmk/) | Per-HCA InfiniBand health probe for CMK |
+| [gb200-vms](./nvidia/gb200-vms/) | Terraform + Ansible smoke test for a GB200 NVL72 rack of VMs: per-node checks, then NCCL all_reduce / all_gather over multi-node NVLink (~10 min) |
 | [cmk-amd-mi355x](./amd/cmk-amd-mi355x/) | AMD MI355X acceptance and validation suite |
 | [ib-write-test-mi355x](./amd/ib-write-test-mi355x/) | Parallel `ib_write_bw` sweep across MI355X nodes |
 | [mi355x-vms](./amd/mi355x-vms/) | Terraform + Ansible smoke test for MI355X VMs: per-node checks, then RCCL all_reduce / all_gather across all nodes (~12 min) |
