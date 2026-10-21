@@ -385,7 +385,7 @@ and master, and compare checksums.
 ### 8. Clean up
 
 Unbind the drives, set `enable_unsafe_noiommu_mode` back to `0`, remove
-`/dev/vfio/0`. See `../nvme-spdk-binding-test/cleanup-spdk-nvmeof.sh`.
+`/dev/vfio/0`. See `../nvme-spdk-binding-test/src/cleanup-spdk-nvmeof.sh`.
 
 ---
 
