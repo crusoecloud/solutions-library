@@ -40,6 +40,7 @@ RUN apt-get update \
       libcurl4-openssl-dev libhiredis-dev liburing-dev libjemalloc-dev libmsgpack-dev \
       libzmq3-dev libzstd-dev libasio-dev libxxhash-dev \
       nasm meson python3-pyelftools libaio-dev libcunit1-dev libcmocka-dev libiscsi-dev libelf-dev \
+      kmod iproute2 pciutils \
  && rm -rf /var/lib/apt/lists/* \
  && ldconfig
 

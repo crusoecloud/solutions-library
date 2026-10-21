@@ -117,7 +117,7 @@ Mooncake has **two unrelated NVMe-over-fabrics code paths**. You want `USE_NOF`.
 ```
 GPU        8x AMD Instinct MI355X (gfx950)
 NIC        8x AMD Pensando Pollara 400, RoCEv2, rail-isolated
-NVMe       8 local drives, 7 usable (one holds containerd)
+NVMe       8 local drives, 7 usable (one holds the node's OS/container storage)
 Kernel     6.8.12-322.crusoe.amd64
 Platform   Crusoe Managed Kubernetes, 2+ Ready nodes
 ```
@@ -237,20 +237,50 @@ mkdir -p /mnt/ht && mount -t hugetlbfs -o pagesize=2M nodev /mnt/ht
 
 ### 3. Bind the drives
 
+**First, work out which drives are free.** One of the eight holds the node's
+OS and container storage, and binding it will break the node. Do not assume a
+fixed PCI address: the mount point and the BDF both vary between nodes. On one
+node it is mounted at `/var/lib/containerd`, on another at `/mnt/nvme`.
+
+List every NVMe controller with its BDF and any mountpoint:
+
+```bash
+for d in /sys/class/nvme/nvme*; do
+  bdf=$(basename "$(readlink -f "$d/device")")
+  blk=$(ls "$d" | grep -o 'nvme[0-9]*n[0-9]*' | head -1)
+  mnt=$(lsblk -no MOUNTPOINT "/dev/$blk" 2>/dev/null | grep -v '^$' | head -1)
+  echo "$bdf  $blk  ${mnt:-free}"
+done
+```
+
+Anything showing a mountpoint is in use. Bind only the ones marked `free`.
+
+**Then bind them:**
+
 ```bash
 modprobe vfio-pci
 echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
 mkdir -p /dev/vfio && mknod /dev/vfio/0 c 234 0; chmod 666 /dev/vfio/0
 
-# per drive:
+# per free drive:
+BDF=<bdf>
+VENDOR=$(cat /sys/bus/pci/devices/$BDF/vendor)
+DEVICE=$(cat /sys/bus/pci/devices/$BDF/device)
+
+# release it from the kernel nvme driver first, or the bind below fails
+echo "$BDF" > /sys/bus/pci/drivers/nvme/unbind 2>/dev/null || true
+
 echo "${VENDOR#0x} ${DEVICE#0x}" > /sys/bus/pci/drivers/vfio-pci/new_id
-echo <BDF> > /sys/bus/pci/drivers/vfio-pci/bind
+echo "$BDF" > /sys/bus/pci/drivers/vfio-pci/bind
 ```
 
-`/dev/vfio/<group>` is **not** auto-created in no-IOMMU mode. Skip the `mknod`
-and DPDK reports `Cannot find device` for a drive that is correctly bound.
+Two things that bite here:
 
-Leave the containerd drive alone: `findmnt -no SOURCE /var/lib/containerd`.
+**The unbind is not optional.** A drive still claimed by the kernel `nvme`
+driver cannot be bound to `vfio-pci`, and the error does not say so clearly.
+
+**`/dev/vfio/<group>` is not auto-created in no-IOMMU mode.** Skip the `mknod`
+and DPDK reports `Cannot find device` for a drive that is correctly bound.
 
 ### 4. Target, transport, namespaces
 
@@ -514,6 +544,9 @@ an existence error, not a permissions error.
 | No `ionic_*` in `ibv_devinfo` | missing ionic provider |
 | `rdma_bind_addr() failed` | missing provider, or no `hostNetwork` |
 | `Cannot find device <BDF>` | `/dev/vfio/<group>` not created in no-IOMMU mode |
+| bind to `vfio-pci` fails or reports busy | drive still claimed by the kernel `nvme` driver; unbind it first |
+| `modprobe: command not found` | image predates the `kmod` package being added |
+| `ip: command not found` | image predates the `iproute2` package being added |
 
 ---
 
