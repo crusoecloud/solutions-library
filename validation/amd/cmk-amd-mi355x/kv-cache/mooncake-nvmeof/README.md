@@ -187,6 +187,9 @@ listener can come up.
 
 ---
 
+> Running this with a coding agent? [AGENT.md](./AGENT.md) has a prompt that
+> points here and adds the guardrails that matter.
+
 ## Build
 
 Detail in [BUILD.md](./BUILD.md). In short:

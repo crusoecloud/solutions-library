@@ -119,6 +119,9 @@ list, and the OS drive is never placed in that list.
 
 All three scripts live in [`src/`](./src/).
 
+> Running these with a coding agent? [AGENT.md](./AGENT.md) has a prompt per
+> test that points here and adds the guardrails that matter.
+
 ### Test 1 — device binding
 
 ```bash
