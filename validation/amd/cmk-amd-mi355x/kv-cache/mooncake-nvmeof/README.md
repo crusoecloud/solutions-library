@@ -124,6 +124,18 @@ Platform   Crusoe Managed Kubernetes, 2+ Ready nodes
 
 Plus `kubectl` and a container registry.
 
+Confirm the nodes really are MI355X before going further. The build itself
+needs no GPU, but everything after it does, and finding out late is expensive:
+
+```bash
+kubectl get nodes -o json \
+  | jq -r '.items[] | "\(.metadata.name)  gpu=\(.status.allocatable["amd.com/gpu"] // "none")"'
+```
+
+Each node you intend to use should report `gpu=8`. A node reporting `none`
+either has no AMD GPUs or is missing the device plugin, and nothing past the
+build will work on it.
+
 ### Registry access
 
 You need one `docker-registry` Secret, used twice: the build pod pushes the
@@ -138,9 +150,10 @@ kubectl -n <namespace> create secret docker-registry <secret-name> \
 ```
 
 On Crusoe's CCR the username is your **account email address**, not the user
-UUID, and the password is a token from `crusoe registry tokens create`. Worked
-example and the full image-path format in
-[BUILD.md](./BUILD.md#1-registry-credentials).
+UUID, and the password is a token from `crusoe registry tokens create`. You
+also need an existing repository path — `crusoe registry repositories list`
+gives it. Worked example and the full image-path format in
+[BUILD.md](./BUILD.md#1-find-your-registry-path).
 
 Any OCI registry works. Nothing here is tied to one provider.
 
@@ -209,6 +222,10 @@ rejects.
 ### 1. Deploy and confirm the provider
 
 ```bash
+kubectl get nodes                      # pick your two MI355X nodes
+TARGET=<target-node-name>
+INITIATOR=<initiator-node-name>
+
 sed -e "s#__IMAGE__#<registry>/mooncake-nof-mi355x:v1#g" \
     -e "s#__PULL_SECRET__#<pull-secret>#g" \
     -e "s#<target-node>#$TARGET#g" \

@@ -12,7 +12,32 @@ Roughly 30 to 45 minutes, most of it compiling SPDK and Mooncake.
 
 Three things: a registry secret, the ionic provider files, and a build node.
 
-### 1. Registry credentials
+### 1. Find your registry path
+
+The image destination must be an existing repository. Pushing to a path whose
+project does not exist fails late, after the whole build, with:
+
+```
+unexpected status code 404 Not Found:
+{"error":[{"code":"not_found","message":"project 'mooncake-nof-mi355x' not found"}]}
+```
+
+On Crusoe, list what you have:
+
+```bash
+crusoe registry repositories list
+```
+
+```
+id                                    name      location    url
+8a17cc2f-...                          amd-355x  us-east2-a  registry.us-east2-a.ccr.crusoecloudcompute.com/amd-355x.4da9452b
+```
+
+The `url` column is your `__IMAGE__` prefix. The full destination is
+`<url>/mooncake-nof-mi355x:<tag>`. On other registries, use whatever path you
+already have push rights to.
+
+### 2. Registry credentials
 
 The build pushes the finished image, and the validation pods pull it back.
 **The build needs push rights, the pods need pull rights.** One secret with
@@ -70,7 +95,7 @@ kubectl -n <namespace> get secret <secret-name> \
 
 You should see your registry host and an `auth` field.
 
-### 2. The ionic provider files
+### 3. The ionic provider files
 
 Put these three in `src/ionic-provider/`:
 
@@ -91,7 +116,7 @@ They are not in this repo. Copy them off any running MI355X node:
 Without them the image cannot see the Pollara NICs and every RDMA step fails.
 See the README's [prerequisites](./README.md#the-ionic-rdma-provider).
 
-### 3. A build node
+### 4. A build node
 
 Any schedulable node with roughly 8 GB of memory free. It does **not** need a
 GPU: the Dockerfile stubs `amdgpu-arch` to return `gfx950`, because Mooncake's
@@ -159,6 +184,10 @@ producing a broken image if any of these are wrong:
 - `mooncake.engine` is linked against `libamdhip64` and `libhsa-runtime64`
 - `libcudart` is absent from both the Python module and `mooncake_client`
 - `nvmf_tgt`, `spdk_nvme_perf` and `spdk-rpc` are present and executable
+
+> Kaniko does not always surface stdout from a Python heredoc, so the
+> `sanity OK` line may not appear in the build log even when the checks ran.
+> A failed assertion stops the build, so reaching the next step is the proof.
 
 > Check `mooncake_client`, not `mooncake_master`, for HIP linkage.
 > `mooncake_master` is the control plane and does no GPU work, so it links
