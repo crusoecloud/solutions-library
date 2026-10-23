@@ -22,7 +22,7 @@ only the datasource ConfigMap is created so the existing Grafana sidecar can dis
 
 Grafana must be deployed from the `grafana/grafana` Helm chart (or compatible)
 with the datasource sidecar enabled (`sidecar.datasources.enabled: true`). This requirement is met by
-the '[grafana-cmk](../grafana-cmk/)' solution in this repo (Crusoe Solutions Library), which is what we recommend.
+the '[grafana-cmk](../grafana-cmk/)' solution in this repo (Crusoe Solutions Library), which is what we recommend - so go ahead and install grafana-cmk if you haven't already, then continue with this Readme.
 
 ---
 
