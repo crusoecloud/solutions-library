@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Credentials — never commit these
+*.kubeconfig
+kubeconfig*
+*-config.yml
+*.pem
+*.key
+.env
+.env.*
+
+# Validation run output — regenerated on each run, never committed.
+# Matches the convention in validation/amd/cmk-amd-mi355x/validation-suite/
+**/logs/
+**/results/
+
+# Session logs and scratch output
+*.log
+session-*.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Vendor RDMA provider binaries — pending redistribution review.
+# Copy them off a running MI355X node; see mooncake-nvmeof/README.md.
+**/ionic-provider/*.so
+**/ionic-provider/*.so.*

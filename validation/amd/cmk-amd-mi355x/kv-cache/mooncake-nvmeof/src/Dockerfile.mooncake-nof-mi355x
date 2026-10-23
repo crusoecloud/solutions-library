@@ -1,0 +1,142 @@
+# Mooncake 0.3.12.post1 with NVMe-oF (HIP dmabuf + SPDK) for MI355X / gfx950
+# Adds NVMe-oF SSD pool support + IPv6 address family fix to the vLLM+Mooncake base.
+#
+# Base: AMD's public ROCm vLLM image for MI355X/gfx950 (vLLM 0.23.0, ROCm 7.14, py3.14).
+# This Dockerfile extends it with:
+#   - SPDK with RDMA transport (version pinned by Mooncake submodule, for NVMe-oF target)
+#   - Mooncake USE_NOF=ON (NVMe-oF SSD pool support)
+#   - IPv6 address family auto-detection patch (mooncake-ipv6-adrfam.patch)
+#
+# BUILD CONTEXT IS FLAT. Next to this Dockerfile you need the three ionic
+# provider files (see the COPY block below). The IPv6 address-family fix is
+# applied in-build with sed, so mooncake-ipv6-adrfam.patch is NOT needed in the
+# context — it is kept in the repo as the artifact to send upstream.
+#
+#   docker build -t <your-registry>/mooncake-nof-mi355x:v1 -f Dockerfile.mooncake-nof-mi355x .
+#
+FROM docker.io/rocm/vllm:rocm7.14.1_cdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0
+
+ARG MOONCAKE_TAG=v0.3.12.post1
+
+# --- ionic RDMA userspace provider (stock images cannot see the Pollara NICs) ---
+# Without these, ibv_devinfo lists no ionic_* devices, rdma_bind_addr() fails,
+# and no NVMe-oF listener can come up. Copy them off any running MI355X node:
+#   /usr/lib/x86_64-linux-gnu/libibverbs/libionic-rdmav34.so
+#   /usr/lib/x86_64-linux-gnu/libionic.so.1
+#   /etc/libibverbs.d/ionic.driver
+# and place them flat next to this Dockerfile. Provider ABI is rdma-core v34.
+COPY libionic-rdmav34.so /usr/lib/x86_64-linux-gnu/libibverbs/libionic-rdmav34.so
+COPY libionic.so.1       /usr/lib/x86_64-linux-gnu/libionic.so.1
+COPY ionic.driver        /etc/libibverbs.d/ionic.driver
+
+# --- C++ build deps for Mooncake + SPDK + ibverbs ---
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential cmake ninja-build git wget unzip pkg-config patchelf autoconf automake libtool \
+      ibverbs-utils rdma-core libibverbs-dev libibverbs1 librdmacm-dev \
+      libnuma-dev libunwind-dev libpython3-dev libc6-dev \
+      libboost-all-dev libgoogle-glog-dev libgflags-dev libjsoncpp-dev libyaml-cpp-dev \
+      libssl-dev uuid-dev libgrpc-dev libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
+      libcurl4-openssl-dev libhiredis-dev liburing-dev libjemalloc-dev libmsgpack-dev \
+      libzmq3-dev libzstd-dev libasio-dev libxxhash-dev \
+      nasm meson python3-pyelftools libaio-dev libcunit1-dev libcmocka-dev libiscsi-dev libelf-dev \
+      kmod iproute2 pciutils \
+ && rm -rf /var/lib/apt/lists/* \
+ && ldconfig
+
+# The build container may have no GPU (e.g. kaniko); Mooncake's CMake calls amdgpu-arch to
+# auto-detect the arch, which fails without a device. Stub it to gfx950 (MI355X).
+RUN printf '#!/bin/sh\necho gfx950\n' > /usr/local/bin/amdgpu-arch && chmod +x /usr/local/bin/amdgpu-arch
+
+# --- SPDK with RDMA transport (required for NVMe-oF) ---
+# Mooncake's dependencies.sh --with-spdk builds SPDK (version pinned by Mooncake submodule)
+# and isa-l. Mooncake's CMake links libspdk_*.a and librte_*.a from /usr/local/lib.
+RUN set -eux; \
+    git clone https://github.com/kvcache-ai/Mooncake.git /opt/Mooncake; \
+    cd /opt/Mooncake; git checkout "${MOONCAKE_TAG}"; \
+    bash dependencies.sh --with-spdk; \
+    # Copy SPDK, DPDK, and isa-l static libraries for Mooncake build: \
+    cp extern/spdk/isa-l/.libs/*.a /usr/local/lib/; \
+    cp extern/spdk/build/lib/*.a /usr/local/lib/; \
+    cp extern/spdk/dpdk/build/lib/*.a /usr/local/lib/; \
+    ldconfig
+
+# --- Mooncake 0.3.12.post1 from source (HIP + dmabuf + NVMe-oF + IPv6 fix) ---
+# ROCm in this image is a pip SDK (_rocm_sdk_devel), not /opt/rocm; symlink it so Mooncake's
+# CMake (which resolves HIP + hsa-runtime64 under /opt/rocm) finds them - hsa-runtime64 is
+# REQUIRED for the dmabuf path (the build asserts it below).
+RUN _RO=$(python3 -c "import glob;print(glob.glob('/opt/python/lib/python3.*/site-packages/_rocm_sdk_devel')[0])") \
+ && ln -sfn "$_RO" /opt/rocm
+ENV ROCM_PATH=/opt/rocm \
+    PATH=/opt/rocm/bin:$PATH \
+    CMAKE_PREFIX_PATH=/opt/rocm/lib/cmake \
+    PYTORCH_ROCM_ARCH=gfx950
+RUN set -eux; \
+    cd /opt/Mooncake; git submodule update --init --recursive; \
+    # Apply IPv6 address family auto-detection (sed avoids line-number drift from patch): \
+    sed -i 's|" adrfam:IPv4 ns:"|" adrfam:" + std::string(traddr.find('\'':'\'') != std::string::npos ? "IPv6" : "IPv4") + " ns:"|g' \
+        mooncake-store/src/ssd_register_client.cpp; \
+    # Assert the substitution worked (silent failure = build failure): \
+    test "$(grep -c 'adrfam:IPv4 ns:' mooncake-store/src/ssd_register_client.cpp)" = "0"; \
+    test "$(grep -c 'traddr.find' mooncake-store/src/ssd_register_client.cpp)" = "2"; \
+    # Mooncake needs find_package(yalantinglibs CONFIG) -> build+install the submodule: \
+    cd /opt/Mooncake/extern/yalantinglibs; mkdir -p build; cd build; \
+    cmake .. -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARK=OFF -DBUILD_UNIT_TESTS=OFF; \
+    cmake --build . -j"$(nproc)"; cmake --install .; \
+    cd /opt/Mooncake; mkdir build; cd build; \
+    cmake .. -DUSE_HIP=ON -DUSE_HIP_DMABUF=ON -DUSE_CUDA=OFF -DENABLE_MULTI_PROTOCOL=ON \
+             -DUSE_NOF=ON \
+             -DWITH_STORE=ON -DBUILD_UNIT_TESTS=OFF -DWITH_P2P_STORE=OFF \
+             -DCMAKE_HIP_ARCHITECTURES=gfx950 -DGPU_TARGETS=gfx950 2>&1 | tee /tmp/mccfg.log; \
+    grep -q "HIP dmabuf MR registration enabled" /tmp/mccfg.log; \
+    cmake --build . -j"$(nproc)"; \
+    SP="$(python3 -c 'import site; print(site.getsitepackages()[0])')/mooncake"; \
+    mkdir -p "$SP"; \
+    cp /opt/Mooncake/mooncake-wheel/mooncake/*.py "$SP/"; \
+    cp /opt/Mooncake/build/mooncake-integration/engine.cpython-*.so "$SP/"; \
+    cp /opt/Mooncake/build/mooncake-integration/store.cpython-*.so "$SP/" || true; \
+    cp /opt/Mooncake/build/mooncake-common/libasio.so /usr/local/lib/ || true; \
+    # Copy mooncake_master and mooncake_client binaries: \
+    cp /opt/Mooncake/build/mooncake-store/src/mooncake_master /usr/local/bin/; \
+    cp /opt/Mooncake/build/mooncake-store/src/mooncake_client /usr/local/bin/; \
+    # Copy SPDK binaries (nvmf_tgt, spdk_nvme_perf, etc.), scripts, and python for rpc.py: \
+    cp /opt/Mooncake/extern/spdk/build/bin/* /usr/local/bin/; \
+    mkdir -p /usr/local/share/spdk; \
+    cp -r /opt/Mooncake/extern/spdk/scripts /usr/local/share/spdk/; \
+    cp -r /opt/Mooncake/extern/spdk/python /usr/local/share/spdk/; \
+    # rpc.py is from old SPDK (Mooncake submodule pin) incompatible with Python 3.14 (ROCm image default). \
+    # Ubuntu 24.04 system Python is 3.12. Create wrapper to use system Python instead of modifying SPDK: \
+    printf '#!/bin/sh\nexec /usr/bin/python3 /usr/local/share/spdk/scripts/rpc.py "$@"\n' \
+        > /usr/local/bin/spdk-rpc && chmod +x /usr/local/bin/spdk-rpc; \
+    ldconfig; \
+    rm -rf /opt/Mooncake/build/CMakeFiles
+
+# --- build-time sanity: Mooncake is HIP-linked + NVMe-oF support compiled in ---
+RUN python3 - <<'PY'
+import subprocess
+from mooncake import engine
+libs = subprocess.check_output(["ldd", engine.__file__]).decode()
+assert "libamdhip64" in libs and "libhsa-runtime64" in libs, "mooncake not HIP-linked"
+assert "libcudart" not in libs, "mooncake pulls in CUDA"
+# Verify mooncake_client is HIP-linked:
+client_libs = subprocess.check_output(["ldd", "/usr/local/bin/mooncake_client"]).decode()
+assert "libamdhip64" in client_libs, "mooncake_client not HIP-linked"
+assert "libcudart" not in client_libs, "mooncake_client pulls in CUDA"
+print("sanity OK: Mooncake HIP + NVMe-oF binaries installed")
+PY
+
+# Verify SPDK binaries and rpc.py are executable and functional
+RUN test -x /usr/local/bin/spdk_nvme_perf \
+ && test -x /usr/local/bin/nvmf_tgt \
+ && spdk-rpc --help > /dev/null \
+ && echo "sanity OK: SPDK binaries and rpc.py functional"
+
+# AMD requires the DMA-BUF registration path (no nvidia-peermem loaded); the default
+# WITH_NVIDIA_PEERMEM=1 gives "Failed to register memory ... Bad address [14]".
+ENV WITH_NVIDIA_PEERMEM=0
+
+LABEL maintainer="crusoe-solutions" \
+      purpose="mooncake-nvmeof-ionic-mi355x" \
+      base="rocm/vllm:rocm7.14.1_cdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0" \
+      mooncake_tag="v0.3.12.post1" \
+      features="USE_NOF=ON,USE_HIP=ON,USE_HIP_DMABUF=ON,IPv6-patch"
