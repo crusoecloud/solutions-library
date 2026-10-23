@@ -18,7 +18,7 @@ only the datasource ConfigMap is created so the existing Grafana sidecar can dis
 | Tool | Version |
 |------|---------|
 | Helm | ≥ 3.10 |
-| kubectl | matching cluster version |
+| kubectl | matching cluster version, and kubeconfig current context set to your CMK cluster |
 
 Grafana must be deployed from the `grafana/grafana` Helm chart (or compatible)
 with the datasource sidecar enabled (`sidecar.datasources.enabled: true`). This requirement is met by
@@ -30,6 +30,7 @@ the '[grafana-cmk](../grafana-cmk/)' solution in this repo (Crusoe Solutions Lib
 
 ```bash
 # 1. Add upstream Helm repositories
+# grafana chart is already added if you installed the grafana-cmk solution
 helm repo add grafana  https://grafana.github.io/helm-charts
 helm repo add fluent   https://fluent.github.io/helm-charts
 helm repo update
@@ -39,7 +40,6 @@ helm dependency update ./cmk-logging
 
 # 3. Install into the same namespace as Grafana
 #    (the example below uses "monitoring", as used by grafana-cmk; adjust to match your setup if different)
-export KUBECONFIG=$(pwd)/config
 
 helm upgrade --install cmk-logging ./cmk-logging \
   --namespace monitoring \
