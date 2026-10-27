@@ -1,0 +1,41 @@
+# NOTE: The Dockerfile does NOT use this patch file because line numbers drift
+# across different git checkouts even though v0.3.12.post1 is immutable. The build
+# uses sed with literal string matching instead. This patch is kept in the repo
+# as the artifact to send upstream to demonstrate the required change.
+#
+# Applied by Dockerfile with:
+#   sed -i 's|" adrfam:IPv4 ns:"|" adrfam:" + std::string(traddr.find(':') != std::string::npos ? "IPv6" : "IPv4") + " ns:"|g'
+#
+--- a/mooncake-store/src/ssd_register_client.cpp
++++ b/mooncake-store/src/ssd_register_client.cpp
+@@ -26,10 +26,12 @@ int NoFRegisterClient::set_register(const std::string &nqn, size_t nsid,
+     }
+
+     const auto config = NoFRegisterConfig::FromEnvironment();
++    const bool is_ipv6 = traddr.find(':') != std::string::npos;
+
+     std::string te_endpoint =
+         "traddr:" + traddr + " trsvcid:" + std::to_string(trsvcid) +
+         " subnqn:" + nqn + " trtype:" + config.transport_type +
+-        " adrfam:IPv4 ns:" + std::to_string(nsid);
++        " adrfam:" + std::string(is_ipv6 ? "IPv6" : "IPv4") +
++        " ns:" + std::to_string(nsid);
+
+     NoFSegment segment;
+     segment.base = base;
+@@ -62,11 +64,13 @@ int NoFRegisterClient::set_unregister_by_endpoint(
+
+     const auto config = NoFRegisterConfig::FromEnvironment();
+
++    const bool is_ipv6 = traddr.find(':') != std::string::npos;
++
+     // Build the te_endpoint string to match registered segments
+     std::string te_endpoint =
+         "traddr:" + traddr + " trsvcid:" + std::to_string(trsvcid) +
+         " subnqn:" + nqn + " trtype:" + config.transport_type +
+-        " adrfam:IPv4 ns:" + std::to_string(nsid);
++        " adrfam:" + std::string(is_ipv6 ? "IPv6" : "IPv4") +
++        " ns:" + std::to_string(nsid);
+
+     LOG(INFO) << "Built te_endpoint: " << te_endpoint;
+

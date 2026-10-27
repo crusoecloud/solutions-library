@@ -52,7 +52,7 @@ A Kubernetes-native health check for InfiniBand fabrics that runs one pod per GP
 
 [AMD MI355X Validation Suite for Crusoe Managed Kubernetes](./validation/amd/cmk-amd-mi355x/)
 
-A reproducible acceptance bundle for AMD Instinct MI355X nodepools with Pensando Pollara 400 AI NICs on CMK. It covers per-node kernel/driver/firmware verification against the deployed Crusoe software bundle, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), a 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute/straggler/XGMI/ECC health — with reference pass bars from Crusoe's internal dry-run.
+A reproducible acceptance bundle for AMD Instinct MI355X nodepools with Pensando Pollara 400 AI NICs on CMK. It covers per-node kernel/driver/firmware verification against the deployed Crusoe software bundle, per-rail RDMA bandwidth (host-memory and GPU-direct dma-buf), a 2-node RCCL all-reduce with the Crusoe + mlcommons tuning envelope, and per-GPU compute/straggler/XGMI/ECC health — with reference pass bars from Crusoe's internal dry-run. Also includes a KV cache tier for inference: SPDK NVMe-oF served over the Pollara RoCE fabric, and a Mooncake store that pools local NVMe across nodes so KV cache spills to disk instead of being recomputed, measured at 42 GB/s cross-node.
 
 [AMD MI355X VM Validation Smoke Test](./validation/amd/mi355x-vms/)
 
