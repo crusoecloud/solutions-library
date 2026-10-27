@@ -1,0 +1,81 @@
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: nds-transcode-gpu
+spec:
+  type: Python
+  mode: cluster
+  image: "<your image tag here>"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_transcode.py"
+  arguments:
+    - "/data/tpcds-sf1000"         # input_prefix (CSV data from nds_gen_data.py)
+    - "/data/tpcds-sf1000-parquet" # output_prefix
+    - "/data/transcode-report.txt" # report_file
+    - "--input_format"
+    - "csv"
+    - "--output_format"
+    - "parquet"
+    - "--output_mode"
+    - "overwrite"
+  sparkVersion: "4.2.0"
+  restartPolicy:
+    type: Never
+  volumes:
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: data-disk
+    - name: spark-logs
+      persistentVolumeClaim:
+        claimName: spark-logs-pvc
+  driver:
+    cores: 4
+    memory: "32768m"
+    serviceAccount: spark-operator-spark
+    volumeMounts:
+      - name: data-volume
+        mountPath: "/data"
+      - name: spark-logs
+        mountPath: /mnt/spark-logs
+  executor:
+    cores: 4
+    instances: 16
+    memory: "32768m"
+    memoryOverhead: "24576"
+    gpu:
+      name: "nvidia.com/gpu"
+      quantity: 1
+    volumeMounts:
+      - name: data-volume
+        mountPath: "/data"
+      - name: spark-logs
+        mountPath: /mnt/spark-logs
+  sparkConf:
+    # RAPIDS GPU plugin
+    "spark.plugins": "com.nvidia.spark.SQLPlugin"
+    "spark.executor.resource.gpu.amount": "1"
+    "spark.executor.resource.gpu.vendor": "nvidia.com"
+    "spark.executor.resource.gpu.discoveryScript": "/opt/spark/bin/getGpusResources.sh"
+    "spark.rapids.shuffle.enabled": "true"
+    "spark.shuffle.manager": "com.nvidia.spark.rapids.spark420.RapidsShuffleManager"
+    "spark.rapids.shuffle.transport.enabled": "true"
+    # Allow multiple concurrent GPU tasks per executor
+    "spark.task.resource.gpu.amount": "0.12"
+    "spark.rapids.sql.concurrentGpuTasks": "8"
+    # Memory
+    "spark.local.dir": "/tmp/spark-local"
+    "spark.rapids.memory.pinnedPool.size": "8g"
+    # SQL / compatibility
+    "spark.sql.shuffle.partitions": "2000"
+    "spark.sql.files.maxPartitionBytes": "512m"
+    "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED"
+    "spark.sql.legacy.charVarcharAsString": "true"
+    "spark.rapids.sql.incompatibleOps.enabled": "true"
+    "spark.rapids.sql.variableFloatAgg.enabled": "true"
+    "spark.rapids.sql.csv.read.decimal.enabled": "true"
+    "spark.rapids.sql.explain": "NOT_ON_GPU"
+    "spark.kubernetes.executor.deleteOnTermination": "true"
+    # Event logging
+    "spark.eventLog.enabled": "true"
+    "spark.eventLog.dir": "file:///mnt/spark-logs"
+    "spark.eventLog.compress": "true"

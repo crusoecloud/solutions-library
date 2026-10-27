@@ -1,0 +1,82 @@
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: nds-power-cpu
+spec:
+  type: Python
+  mode: cluster
+  image: "<your image tag here>"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_power.py"
+  arguments:
+    - "/data/tpcds-sf1000-parquet" # input_prefix
+    - "/data/query_streams/query_4.sql"
+    - "/data/mytime-cpu.csv" # report_file
+  sparkVersion: "4.2.0"
+  restartPolicy:
+    type: Never
+  volumes:
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: data-disk
+    - name: spark-logs
+      persistentVolumeClaim:
+        claimName: spark-logs-pvc
+    - name: spark-local-dir-scratch
+      hostPath:
+        path: /mnt/raid0/spark-local
+        type: DirectoryOrCreate
+  driver:
+    cores: 8
+    memory: "32768m"
+    serviceAccount: spark-operator-spark
+    initContainers:
+      - name: set-dir-permissions
+        image: busybox
+        command: ["chmod", "777", "/mnt/raid0/spark-local"]
+        volumeMounts:
+          - name: spark-local-dir-scratch
+            mountPath: /mnt/raid0/spark-local
+        securityContext:
+          runAsUser: 0
+    volumeMounts:
+      - name: data-volume
+        mountPath: "/data"
+      - name: spark-logs
+        mountPath: /mnt/spark-logs
+      - name: spark-local-dir-scratch
+        mountPath: /tmp/spark-local
+  executor:
+    cores: 80
+    instances: 16
+    memory: "300g"
+    nodeSelector:
+      crusoe.ai/nodepool.name: h100-nodepool
+    initContainers:
+      - name: set-dir-permissions
+        image: busybox
+        command: ["chmod", "777", "/mnt/raid0/spark-local"]
+        volumeMounts:
+          - name: spark-local-dir-scratch
+            mountPath: /mnt/raid0/spark-local
+        securityContext:
+          runAsUser: 0
+    volumeMounts:
+      - name: data-volume
+        mountPath: "/data"
+      - name: spark-logs
+        mountPath: /mnt/spark-logs
+      - name: spark-local-dir-scratch
+        mountPath: /tmp/spark-local
+  sparkConf:
+    # SQL / compatibility
+    "spark.local.dir": "/tmp/spark-local"
+    "spark.sql.shuffle.partitions": "2000"
+    "spark.sql.files.maxPartitionBytes": "512m"
+    "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED"
+    "spark.sql.legacy.charVarcharAsString": "true"
+    "spark.kubernetes.executor.deleteOnTermination": "true"
+    # Event logging
+    "spark.eventLog.enabled": "true"
+    "spark.eventLog.dir": "file:///mnt/spark-logs"
+    "spark.eventLog.compress": "true"
