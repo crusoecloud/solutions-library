@@ -12,15 +12,16 @@ spec:
             claimName: "data-disk"
       containers:
         - name: nds-data-gen
-          image: "<your image tag here>"
+         # Update image with your own registry/tag
+          image: "ghcr.io/datadoc24/spark-4-cudf:v10"
           imagePullPolicy: IfNotPresent
           command:
             - python3
             - /opt/spark-benchmarks/nds/nds_gen_data.py
             - "local"
-            - "1000" #1 TB of synthentic data, to start with
+            - "3000" # 3 TB of synthentic data, to start with
             - "100"
-            - "/data/tpcds-sf1000"
+            - "/data/tpcds-sf3000"
             - "--overwrite_output"
           volumeMounts:
             - name: data-volume

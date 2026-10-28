@@ -2,7 +2,9 @@
 
 # TPC-DS Benchmarking on Crusoe Cloud
 
-This solution demonstrates the performance gains achievable by accelerating Apache Spark SQL workloads using the [NVIDIA cuDF Spark plugin](https://nvidia.github.io/cudf-spark/) (Rapids) on GPU nodes provided by Crusoe Cloud. It uses the retail industry-standard [TPC-DS ('Decision Support') benchmark](https://www.tpc.org/tpcds/default5.asp) to generate realistic, large-scale synthetic retail data and runs two classes of workload — CSV-to-Parquet transcoding and the TPC-DS Power benchmark — with and without GPU acceleration so that the difference in throughput is directly measurable. To make adoption as easy as possible, the cuDF plugin accelerates Spark SQL execution on the GPU **with no changes to the Spark job code itself**. At the Kubernetes level, the spark application specs are tailored to the GPU or CPU use case as applicable - e.g for the GPU case, each Spark executor can only use a single GPU. so we specify 8 pods per node, whereas in the CPU use case the pods-per-node is determined by the optimum amount of host vCPU and memory for the task at hand.
+Crusoe Cloud GPUs are not just for AI training and inference! As volumes of raw data continue to grow, running traditional analytics/ETL workloads and AI-adjacent tasks such as feature engineering on those datasets using CPUs alone is becoming prohibitively slow and costly. Fortunately, the parallel nature of many SQL operations lends itself to GPU architecture, and using GPUs to query massive datasets with the aid of [NVIDIA's cuDF](https://nvidia.github.io/cudf-spark/) (cuda for Data Frames) Spark plugin can yield huge performance gains and cost savings. This solution demonstrates the performance gains achievable by accelerating Apache Spark SQL workloads using cuDF (f.k.a Rapids) Crusoe Cloud's NVIDIA H100 nodes. It uses the retail industry-standard [TPC-DS ('Decision Support') benchmark](https://www.tpc.org/tpcds/default5.asp) to generate realistic, large-scale synthetic retail data and runs two workloads — CSV-to-Parquet transcoding and the TPC-DS Power benchmark — with and without GPU acceleration, so that the difference in throughput is directly measurable. As well as allowing queries to benefit from the parallel processing power of GPUs, cuDF also includes the Rapids Shuffle Manager, which leverages RDMA to perform shuffles. 
+
+To make adoption as easy as possible, the cuDF plugin accelerates Spark SQL execution on the GPU **with no changes to the Spark job code itself** - you'll see that the Python scripts used for each workload are identical between the CPU and GPU cases. At the Kubernetes level, the sparkapplication specs are tailored to the GPU or CPU use case as applicable - e.g for the GPU case, each Spark executor can only use a single GPU. so we specify 8 pods per node, whereas in the CPU use case the pods-per-node is determined by the optimum amount of host vCPU and memory for the task at hand.
 
 ---
 
@@ -10,7 +12,7 @@ This solution demonstrates the performance gains achievable by accelerating Apac
 
 | Requirement | Notes |
 |---|---|
-| Crusoe Managed Kubernetes (CMK) cluster with GPU nodes | H100, H200 and B200 will all work; examples are tuned for H100 |
+| A Crusoe Managed Kubernetes (CMK) cluster with GPU nodes | H100, H200 and B200 will all work; examples are tuned for H100 |
 | Ephemeral storage (`containerd`) set to `false` on the GPU node pool | The node's NVMe drives will be raided and used for Spark's local storage, including shuffle |
 | [Crusoe Shared Disk storage class](https://github.com/crusoecloud/crusoe-csi-driver) installed | Used for the data and spark logging PVCs |
 | NVMe RAID 0 on all GPU nodes | Apply `raid0-ds.yaml` from this directory; see also [How To Setup RAID0 Storage on CMK](https://support.crusoecloud.com/hc/en-us/articles/35590026497563-How-To-Setup-Raid0-Storage-on-Crusoe-Managed-Kubernetes-CMK) |
@@ -50,24 +52,24 @@ cudf-for-spark-sql/
 
 ## Step 1 — Build and Push the Container Image
 
-The single container image bundles Apache Spark, the cuDF Rapids plugin, the NDS benchmark scripts, and the compiled TPC-DS data-generation tools. Unfortunately we cannot provide a pre-built version of this image because of the TPC-DS licensing terms, but the download is free and the build process is quick.
+The single container image bundles Apache Spark, the cuDF Rapids plugin, the NDS benchmark scripts, and the compiled TPC-DS data-generation tools. Unfortunately we cannot provide a pre-built version of this image because of the TPC-DS licensing terms, but the download is free and the build process is fairly quick.
 
 Collect the following into the `image/` directory before building:
 
 | Artifact | Source |
 |---|---|
 | Apache Spark 4.2.0 source (extracted as `spark/`) | https://spark.apache.org/downloads.html |
-| NDS benchmark code (adapted to build in our chosen base image) | https://github.com/datadoc24/cudf-spark-benchmarks |
+| NDS benchmark code (updated Makefile to build in our chosen base image) | https://github.com/datadoc24/cudf-spark-benchmarks |
 | cuDF Rapids plugin JAR (`rapids-4-spark_2.13-*.jar`) | https://nvidia.github.io/cudf-spark/docs/download.html |
 | TPC-DS DSGen 4.0.0 tools (extracted as `DSGen-software-code-4.0.0/`) | Complete the download form at https://www.tpc.org/TPC_Documents_Current_Versions/download_programs/tools-download-request5.asp?bm_type=TPC-DS&bm_vers=4.0.0&mode=CURRENT-ONLY |
 
 
-Once all artifacts are in place, build using docker, podman etc and push the image:
+Once all artifacts are in place, build using docker or podman and push the image:
 
 ```bash
 cd image/
-docker build -f Dockerfile.cuda -t <your-registry>/spark-cudf:latest .
-docker push <your-registry>/spark-cudf:latest
+podman build -f Dockerfile.cuda -t <your-registry>/spark-cudf:latest .
+podman push <your-registry>/spark-cudf:latest
 ```
 
 Update the `image:` field in each YAML file to point to your registry and tag before proceeding.
@@ -82,7 +84,7 @@ kubectl apply -f utility-pod.yaml
 ```
 
 - `data-disk` (50 TiB, `ReadWriteMany`) — stores generated CSV data and transcoded Parquet output.
-- `spark-logs-pvc` (1 TiB, `ReadWriteMany`) — stores Spark event logs, shared with the History Server.
+- `spark-logs` (1 TiB, `ReadWriteMany`) — stores Spark event logs, shared with the History Server.
 
 The utility pod mounts both PVCs and can be used to inspect their contents at any point:
 

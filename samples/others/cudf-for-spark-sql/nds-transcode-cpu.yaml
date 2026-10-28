@@ -5,12 +5,13 @@ metadata:
 spec:
   type: Python
   mode: cluster
-  image: "<your image tag here>"
+  # Update image with your own registry/tag
+  image: "ghcr.io/datadoc24/spark-4-cudf:v10"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_transcode.py"
   arguments:
-    - "/data/tpcds-sf1000"         # input_prefix (CSV data from nds_gen_data.py)
-    - "/data/tpcds-sf1000-parquet" # output_prefix
+    - "/data/tpcds-sf3000"         # input_prefix (CSV data from nds_gen_data.py)
+    - "/data/tpcds-sf3000-parquet" # output_prefix
     - "/data/transcode-report.txt" # report_file
     - "--input_format"
     - "csv"
@@ -27,9 +28,13 @@ spec:
         claimName: data-disk
     - name: spark-logs
       persistentVolumeClaim:
-        claimName: spark-logs-pvc
+        claimName: spark-logs
+    - name: spark-local-dir-scratch
+      hostPath:
+        path: /mnt/raid0
+        type: Directory
   driver:
-    cores: 4
+    cores: 16
     memory: "32768m"
     serviceAccount: spark-operator-spark
     volumeMounts:
@@ -37,27 +42,30 @@ spec:
         mountPath: "/data"
       - name: spark-logs
         mountPath: /mnt/spark-logs
+      - name: spark-local-dir-scratch
+        mountPath: /tmp/spark-local
   executor:
-    cores: 4
+    cores: 64
+    # we can have 2 large pods per gpu node each with a lot of cores and memory
+    # but no GPU for this example
     instances: 16
-    memory: "32768m"
+    memory: "300g"
     memoryOverhead: "24576"
     volumeMounts:
       - name: data-volume
         mountPath: "/data"
       - name: spark-logs
         mountPath: /mnt/spark-logs
+      - name: spark-local-dir-scratch
+        mountPath: /tmp/spark-local
   sparkConf:
-    # Memory
-    "spark.rapids.memory.pinnedPool.size": "4g"
+    # Local storage on NVMe RAID
+    "spark.local.dir": "/tmp/spark-local"
     # SQL / compatibility
     "spark.sql.shuffle.partitions": "2000"
     "spark.sql.files.maxPartitionBytes": "512m"
     "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED"
     "spark.sql.legacy.charVarcharAsString": "true"
-    "spark.rapids.sql.incompatibleOps.enabled": "true"
-    "spark.rapids.sql.variableFloatAgg.enabled": "true"
-    "spark.rapids.sql.explain": "NOT_ON_GPU"
     # Event logging
     "spark.eventLog.enabled": "true"
     "spark.eventLog.dir": "file:///mnt/spark-logs"

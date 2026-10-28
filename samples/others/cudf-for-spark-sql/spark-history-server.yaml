@@ -1,20 +1,3 @@
----
-# 1. PVC for Spark event logs (shared between History Server and Spark apps)
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: spark-logs-pvc
-  namespace: default
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: crusoe-csi-driver-fs-sc
-  resources:
-    requests:
-      storage: 1Ti
-
----
-# 2. Spark History Server Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,8 +17,8 @@ spec:
     spec:
       containers:
         - name: spark-history-server
-          # Use the same image as your Spark apps so versions are aligned
-          image: "<your image tag here>"
+          # Update image with your own registry/tag
+          image: "ghcr.io/datadoc24/spark-4-cudf:v10"
           imagePullPolicy: IfNotPresent
           command:
             - /opt/spark/bin/spark-class
@@ -80,7 +63,7 @@ spec:
       volumes:
         - name: spark-logs
           persistentVolumeClaim:
-            claimName: spark-logs-pvc
+            claimName: spark-logs
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -89,7 +72,6 @@ spec:
                   - key: nvidia.com/gpu.present
                     operator: DoesNotExist
 ---
-# 3. LoadBalancer Service for the History Server UI
 apiVersion: v1
 kind: Service
 metadata:

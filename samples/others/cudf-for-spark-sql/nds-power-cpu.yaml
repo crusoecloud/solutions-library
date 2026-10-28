@@ -4,14 +4,14 @@ metadata:
   name: nds-power-cpu
 spec:
   type: Python
-  mode: cluster
-  image: "<your image tag here>"
+  # Update image with your own registry/tag
+  image: "ghcr.io/datadoc24/spark-4-cudf:v10"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_power.py"
   arguments:
-    - "/data/tpcds-sf1000-parquet" # input_prefix
-    - "/data/query_streams/query_4.sql"
-    - "/data/mytime-cpu.csv" # report_file
+    - "/data/tpcds-sf3000-parquet" # input_prefix
+    - "/data/query_streams/query_0.sql"
+    - "/data/benchmark-time-cpu.csv" # report_file
   sparkVersion: "4.2.0"
   restartPolicy:
     type: Never
@@ -21,24 +21,15 @@ spec:
         claimName: data-disk
     - name: spark-logs
       persistentVolumeClaim:
-        claimName: spark-logs-pvc
+        claimName: spark-logs
     - name: spark-local-dir-scratch
       hostPath:
-        path: /mnt/raid0/spark-local
+        path: /mnt/raid0
         type: DirectoryOrCreate
   driver:
     cores: 8
     memory: "32768m"
     serviceAccount: spark-operator-spark
-    initContainers:
-      - name: set-dir-permissions
-        image: busybox
-        command: ["chmod", "777", "/mnt/raid0/spark-local"]
-        volumeMounts:
-          - name: spark-local-dir-scratch
-            mountPath: /mnt/raid0/spark-local
-        securityContext:
-          runAsUser: 0
     volumeMounts:
       - name: data-volume
         mountPath: "/data"
@@ -51,16 +42,8 @@ spec:
     instances: 16
     memory: "300g"
     nodeSelector:
+      # for this example we want to use the GPU nodes but not the gpus themselves
       crusoe.ai/nodepool.name: h100-nodepool
-    initContainers:
-      - name: set-dir-permissions
-        image: busybox
-        command: ["chmod", "777", "/mnt/raid0/spark-local"]
-        volumeMounts:
-          - name: spark-local-dir-scratch
-            mountPath: /mnt/raid0/spark-local
-        securityContext:
-          runAsUser: 0
     volumeMounts:
       - name: data-volume
         mountPath: "/data"

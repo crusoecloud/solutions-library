@@ -20,7 +20,8 @@ spec:
                 operator: DoesNotExist
   containers:
     - name: utility
-      image: "<your image tag here>"
+      # Update image with your own registry/tag
+      image: "ghcr.io/datadoc24/spark-4-cudf:v10"
       command: ["/bin/sleep", "infinity"]
       volumeMounts:
         - mountPath: "/mnt/spark-logs"
