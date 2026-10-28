@@ -1,0 +1,30 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: utility-pod
+spec:
+  volumes:
+    - name: spark-logs
+      persistentVolumeClaim:
+        claimName: spark-logs
+    - name: data
+      persistentVolumeClaim:
+        claimName: data-disk
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.present
+                operator: DoesNotExist
+  containers:
+    - name: utility
+      # Update image with your own registry/tag
+      image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+      command: ["/bin/sleep", "infinity"]
+      volumeMounts:
+        - mountPath: "/mnt/spark-logs"
+          name: spark-logs
+        - mountPath: "/data"
+          name: data

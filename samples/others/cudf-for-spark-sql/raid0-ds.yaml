@@ -1,0 +1,281 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: raid-setup
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: raid-setup
+  template:
+    metadata:
+      labels:
+        name: raid-setup
+    spec:
+      hostPID: true
+      hostNetwork: true
+      containers:
+        - name: raid-setup
+          image: 'ubuntu:22.04'
+          securityContext:
+            privileged: true
+          command:
+            - /bin/bash
+            - '-c'
+          args:
+            - >
+              set -euo pipefail
+
+              echo "Starting RAID setup script (using host mount namespace)..."
+
+
+              # Remove Fluent Bit repository file to avoid GPG errors
+
+              echo "Removing Fluent Bit repository file..."
+
+              rm -f /etc/apt/sources.list.d/fluent-bit.list 2>/dev/null || true
+
+
+              # Update and install required packages
+
+              echo "Updating apt repositories..."
+
+              apt-get update -o Acquire::AllowInsecureRepositories=true -o
+              Acquire::AllowDowngradeToInsecureRepositories=true 2>&1 || true
+
+
+              echo "Installing nvme-cli, mdadm, gawk, xfsprogs, and
+              util-linux..."
+
+              DEBIAN_FRONTEND=noninteractive apt-get install -y nvme-cli mdadm
+              gawk xfsprogs util-linux 2>&1
+
+
+              echo "info: detecting NVMe drives by-id..."
+
+
+              # Collect all nvme-* symlinks from host's /dev/disk/by-id
+
+              all_symlinks=$(ls -1 /host-disk-by-id/nvme-* 2>/dev/null | grep
+              -vE '(-part[0-9]+$|_[0-9]+$)' || true)
+
+
+              if [ -z "$all_symlinks" ]; then
+                echo "WARNING: No NVMe drives detected"
+                echo "INFO: RAID setup skipped - no NVMe devices available."
+                echo "Entering sleep mode..."
+                exec sleep infinity
+              fi
+
+
+              # Deduplicate symlinks
+
+              nvme_devices=""
+
+              seen_targets=""
+
+
+              echo "info: processing symlinks..."
+
+              for symlink in $all_symlinks; do
+                target=$(readlink "$symlink" || echo "")
+                if [ -z "$target" ]; then
+                  echo "warning: could not read symlink $symlink, skipping"
+                  continue
+                fi
+
+                if [[ "$target" =~ ^/ ]]; then
+                  abs_target="$target"
+                else
+                  device_name=$(basename "$target")
+                  abs_target="/dev/$device_name"
+                fi
+
+                if [ ! -b "$abs_target" ]; then
+                  echo "warning: device $abs_target does not exist, skipping"
+                  continue
+                fi
+
+                if ! echo "$seen_targets" | grep -q -w "$abs_target"; then
+                  nvme_devices="$nvme_devices $abs_target"
+                  seen_targets="$seen_targets $abs_target"
+                  echo "info: found device: $abs_target (from symlink: $(basename $symlink))"
+                fi
+              done
+
+
+              nvme_devices=$(echo "$nvme_devices" | xargs)
+
+              num_nvme=$(echo "$nvme_devices" | wc -w)
+
+
+              if [ "$num_nvme" -eq 0 ]; then
+                echo "ERROR: No valid NVMe block devices found"
+                echo "Entering sleep mode..."
+                exec sleep infinity
+              fi
+
+
+              echo "info: found $num_nvme NVMe drive(s): $nvme_devices"
+
+
+              total_size=0
+
+              for dev in $nvme_devices; do
+                if [ ! -b "$dev" ]; then
+                  echo "ERROR: Device $dev is not a block device"
+                  exit 1
+                fi
+                size=$(blockdev --getsize64 $dev 2>/dev/null || echo 0)
+                size_gb=$(echo "$size" | awk '{printf "%.2f", $1/1024/1024/1024}')
+                total_size=$((total_size + size))
+                echo "info: verified: $dev (${size_gb} GB)"
+              done
+
+
+              raid_size_gb=$(echo "$total_size" | awk '{printf "%.2f",
+              $1/1024/1024/1024}')
+
+              echo "info: total RAID0 capacity will be: ${raid_size_gb} GB"
+
+
+              if [ -b /dev/md/ephemeral ]; then
+                echo "info: md dev already exists, checking if active..."
+                if mdadm --detail /dev/md/ephemeral >/dev/null 2>&1; then
+                  echo "info: RAID array is active and healthy"
+                  skip_raid_creation=true
+                else
+                  echo "warning: md dev exists but not healthy, attempting reassemble..."
+                  mdadm --stop /dev/md/ephemeral 2>/dev/null || true
+                  if mdadm --assemble /dev/md/ephemeral $nvme_devices 2>/dev/null; then
+                    echo "info: RAID array reassembled successfully"
+                    skip_raid_creation=true
+                  else
+                    echo "info: reassemble failed, recreating RAID array"
+                    mdadm --zero-superblock $nvme_devices 2>/dev/null || true
+                    rm -f /dev/md/ephemeral
+                    skip_raid_creation=false
+                  fi
+                fi
+              else
+                skip_raid_creation=false
+              fi
+
+
+              if [ "$skip_raid_creation" != "true" ]; then
+                echo "info: creating RAID0 with $num_nvme device(s)"
+                if ! mdadm --create /dev/md/ephemeral \
+                  --force \
+                  --name=ephemeral \
+                  --level=0 \
+                  --raid-devices=$num_nvme \
+                  $nvme_devices; then
+                  echo "error: failed to create RAID array"
+                  exit 1
+                fi
+                echo "info: RAID array created successfully"
+              fi
+
+
+              echo "info: waiting for device to settle..."
+
+              udevadm settle 2>/dev/null || sleep 2
+
+              sleep 2
+
+
+              if [ ! -b /dev/md/ephemeral ]; then
+                echo "error: /dev/md/ephemeral not created"
+                exit 1
+              fi
+
+
+              if blkid -p -u filesystem /dev/md/ephemeral 2>/dev/null | grep -q
+              xfs; then
+                echo "info: already formatted with XFS"
+              else
+                echo "info: creating XFS filesystem..."
+                if ! mkfs.xfs -f /dev/md/ephemeral; then
+                  echo "error: failed to create XFS filesystem"
+                  exit 1
+                fi
+                echo "info: XFS filesystem created"
+              fi
+
+
+              echo "info: creating mount point on host..."
+
+              nsenter --mount=/proc/1/ns/mnt -- mkdir -p /mnt/raid0
+
+
+              if nsenter --mount=/proc/1/ns/mnt -- mountpoint -q /mnt/raid0;
+              then
+                echo "info: /mnt/raid0 is already mounted on host"
+                current_mount=$(nsenter --mount=/proc/1/ns/mnt -- mount | grep "/mnt/raid0" | awk '{print $1}')
+                echo "info: currently mounted device: $current_mount"
+                if [ "$current_mount" != "/dev/md/ephemeral" ] && [ "$current_mount" != "/dev/md127" ]; then
+                  echo "warning: wrong device mounted, remounting..."
+                  nsenter --mount=/proc/1/ns/mnt -- umount /mnt/raid0 || true
+                  echo "info: mounting RAID array on host..."
+                  nsenter --mount=/proc/1/ns/mnt -- mount /dev/md/ephemeral /mnt/raid0
+                fi
+              else
+                echo "info: mounting RAID array on host..."
+                nsenter --mount=/proc/1/ns/mnt -- mount /dev/md/ephemeral /mnt/raid0
+                echo "info: mounted successfully on host"
+              fi
+
+
+              nsenter --mount=/proc/1/ns/mnt -- chmod 777 /mnt/raid0
+
+              echo "info: verifying mount on host..."
+
+              nsenter --mount=/proc/1/ns/mnt -- mountpoint -q /mnt/raid0
+
+              nsenter --mount=/proc/1/ns/mnt -- df -h /mnt/raid0
+
+
+              echo "============================================"
+
+              echo "info: RAID setup completed successfully!"
+
+              echo "============================================"
+
+
+              while true; do
+                sleep 300
+                if ! nsenter --mount=/proc/1/ns/mnt -- mountpoint -q /mnt/raid0; then
+                  echo "WARNING: /mnt/raid0 is no longer mounted! Attempting remount..."
+                  if nsenter --mount=/proc/1/ns/mnt -- mount /dev/md/ephemeral /mnt/raid0; then
+                    echo "INFO: Successfully remounted /mnt/raid0"
+                    nsenter --mount=/proc/1/ns/mnt -- chmod 777 /mnt/raid0
+                  else
+                    echo "ERROR: Failed to remount /mnt/raid0"
+                  fi
+                fi
+              done
+          volumeMounts:
+            - name: host-dev
+              mountPath: /dev
+            - name: host-disk
+              mountPath: /host-disk-by-id
+              readOnly: true
+            - name: host-etc
+              mountPath: /etc
+            - name: data-mount
+              mountPath: /mnt/raid0
+              mountPropagation: Bidirectional
+      volumes:
+        - name: host-dev
+          hostPath:
+            path: /dev
+        - name: host-disk
+          hostPath:
+            path: /dev/disk/by-id
+        - name: host-etc
+          hostPath:
+            path: /etc
+        - name: data-mount
+          hostPath:
+            path: /mnt/raid0
+            type: DirectoryOrCreate

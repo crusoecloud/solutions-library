@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-history-server
+  namespace: default
+  labels:
+    app: spark-history-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-history-server
+  template:
+    metadata:
+      labels:
+        app: spark-history-server
+    spec:
+      containers:
+        - name: spark-history-server
+          # Update image with your own registry/tag
+          image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /opt/spark/bin/spark-class
+            - org.apache.spark.deploy.history.HistoryServer
+          env:
+            - name: SPARK_DAEMON_MEMORY
+              value: "6g"
+            - name: SPARK_HISTORY_OPTS
+              value: >-
+                -Dspark.history.fs.logDirectory=file:///mnt/spark-logs
+                -Dspark.history.ui.port=18080
+                -Dspark.history.retainedApplications=100
+                -Dspark.history.fs.cleaner.enabled=true
+                -Dspark.history.fs.cleaner.interval=1d
+                -Dspark.history.fs.cleaner.maxAge=7d
+          ports:
+            - name: ui
+              containerPort: 18080
+              protocol: TCP
+          volumeMounts:
+            - name: spark-logs
+              mountPath: /mnt/spark-logs
+          resources:
+            requests:
+              cpu: "4"
+              memory: "4Gi"
+            limits:
+              cpu: "8"
+              memory: "8Gi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 18080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 18080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: spark-logs
+          persistentVolumeClaim:
+            claimName: spark-logs
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: DoesNotExist
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-history-server
+  namespace: default
+  labels:
+    app: spark-history-server
+spec:
+  type: LoadBalancer
+  selector:
+    app: spark-history-server
+  ports:
+    - name: ui
+      port: 18080
+      targetPort: 18080
+      protocol: TCP

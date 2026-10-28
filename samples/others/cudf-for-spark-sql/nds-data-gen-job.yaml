@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nds-data-generation
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: "data-disk"
+      containers:
+        - name: nds-data-gen
+         # Update image with your own registry/tag
+          image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /opt/spark-benchmarks/nds/nds_gen_data.py
+            - "local"
+            - "3000" # 3 TB of synthentic data, to start with
+            - "100"
+            - "/data/tpcds-sf3000"
+            - "--overwrite_output"
+          volumeMounts:
+            - name: data-volume
+              mountPath: "/data"

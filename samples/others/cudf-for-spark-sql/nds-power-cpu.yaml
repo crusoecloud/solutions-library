@@ -1,0 +1,65 @@
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: nds-power-cpu
+spec:
+  type: Python
+  # Update image with your own registry/tag
+  image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_power.py"
+  arguments:
+    - "/data/tpcds-sf3000-parquet" # input_prefix
+    - "/data/query_streams/query_0.sql"
+    - "/data/benchmark-time-cpu.csv" # report_file
+  sparkVersion: "4.2.0"
+  restartPolicy:
+    type: Never
+  volumes:
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: data-disk
+    - name: spark-logs
+      persistentVolumeClaim:
+        claimName: spark-logs
+    - name: spark-local-dir-scratch
+      hostPath:
+        path: /mnt/raid0
+        type: DirectoryOrCreate
+  driver:
+    cores: 8
+    memory: "32768m"
+    serviceAccount: spark-operator-spark
+    volumeMounts:
+      - name: data-volume
+        mountPath: "/data"
+      - name: spark-logs
+        mountPath: /mnt/spark-logs
+      - name: spark-local-dir-scratch
+        mountPath: /tmp/spark-local
+  executor:
+    cores: 80
+    instances: 16
+    memory: "300g"
+    nodeSelector:
+      # for this example we want to use the GPU nodes but not the gpus themselves
+      crusoe.ai/nodepool.name: h100-nodepool
+    volumeMounts:
+      - name: data-volume
+        mountPath: "/data"
+      - name: spark-logs
+        mountPath: /mnt/spark-logs
+      - name: spark-local-dir-scratch
+        mountPath: /tmp/spark-local
+  sparkConf:
+    # SQL / compatibility
+    "spark.local.dir": "/tmp/spark-local"
+    "spark.sql.shuffle.partitions": "2000"
+    "spark.sql.files.maxPartitionBytes": "512m"
+    "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED"
+    "spark.sql.legacy.charVarcharAsString": "true"
+    "spark.kubernetes.executor.deleteOnTermination": "true"
+    # Event logging
+    "spark.eventLog.enabled": "true"
+    "spark.eventLog.dir": "file:///mnt/spark-logs"
+    "spark.eventLog.compress": "true"

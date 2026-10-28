@@ -1,0 +1,70 @@
+# ---- Builder stage: compile tpcds-gen (native binary + jar) ----
+FROM nvidia/cuda:12.9.0-devel-ubuntu22.04 AS tpcds-builder
+
+ENV DEBIAN_FRONTEND="noninteractive"
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc make maven openjdk-17-jdk flex byacc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY cudf-spark-benchmarks/nds/tpcds-gen /build/tpcds-gen
+COPY DSGen-software-code-4.0.0 /tpcds-home
+WORKDIR /build/tpcds-gen
+RUN TPCDS_HOME=/tpcds-home make && mvn package -DskipTests
+
+# ---- Main stage ----
+FROM nvidia/cuda:12.9.0-devel-ubuntu22.04
+ARG spark_uid=185
+
+# Install Java and Python dependencies
+ENV DEBIAN_FRONTEND="noninteractive"
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk openjdk-17-jre \
+    python3 python3-pip wget tini \
+    && ln -s /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME /usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH $PATH:/usr/lib/jvm/java-17-openjdk-amd64/bin
+
+RUN set -ex && \
+    ln -s /lib /lib64 && \
+    mkdir -p /opt/spark && \
+    mkdir -p /opt/spark/jars && \
+    mkdir -p /opt/spark/examples && \
+    mkdir -p /opt/spark/work-dir && \
+    mkdir -p /opt/sparkRapidsPlugin && \
+    mkdir -p /opt/query-templates && \
+    touch /opt/spark/RELEASE && \
+    rm /bin/sh && \
+    ln -sv /bin/bash /bin/sh && \
+    echo "auth required pam_wheel.so use_uid" >> /etc/pam.d/su && \
+    chgrp root /etc/passwd && chmod ug+rw /etc/passwd && \
+    useradd -u ${spark_uid} -g root -m spark
+
+COPY spark/jars /opt/spark/jars
+COPY spark/bin /opt/spark/bin
+COPY spark/sbin /opt/spark/sbin
+COPY spark/kubernetes/dockerfiles/spark/entrypoint.sh /opt/
+COPY spark/examples /opt/spark/examples
+COPY spark/data /opt/spark/data
+COPY cudf-spark-benchmarks /opt/spark-benchmarks
+COPY --from=tpcds-builder /tpcds-home/query_templates /opt/query-templates
+COPY --from=tpcds-builder /build/tpcds-gen/target /opt/spark-benchmarks/nds/tpcds-gen/target
+
+COPY rapids-4-spark_2.13-*.jar /opt/spark/jars/
+COPY getGpusResources.sh /opt/sparkRapidsPlugin
+RUN chmod +x /opt/sparkRapidsPlugin/getGpusResources.sh
+
+RUN mkdir -p /opt/spark/python
+COPY spark/python/pyspark /opt/spark/python/pyspark
+COPY spark/python/lib /opt/spark/python/lib
+
+ENV SPARK_HOME /opt/spark
+
+WORKDIR /opt/spark/work-dir
+RUN chmod g+w /opt/spark/work-dir
+
+ENTRYPOINT [ "/opt/entrypoint.sh" ]
+
+# Specify the User that the actual main process will run as
+USER ${spark_uid}
