@@ -157,6 +157,10 @@ A Helm chart that deploys JupyterHub on a CMK cluster behind a Crusoe LoadBalanc
 
 The `langchain-crusoe` package integrates Crusoe's [Managed Inference](https://www.crusoe.ai/cloud/managed-inference) service with [LangChain](https://www.langchain.com/), providing a `ChatCrusoe` class for drop-in access to models like Llama 3.3, DeepSeek V3/R1, Qwen3, Gemma 3, and Kimi-K2 through a standard LangChain interface.
 
+[GPU-accelerated Apache Spark SQL analytics with NVIDIA cuDF](./samples/others/cudf-for-spark-sql/)
+
+Use cuDF on Crusoe Cloud NVIDIA GPUs to accelerate terabyte-scale (and larger) analytics workloads on Apache Spark
+
 ## Contributing
 
 Adding a new solution or improving an existing one? See [CONTRIBUTING.md](./CONTRIBUTING.md) for directory conventions, README requirements, and the automated checks that run on every PR.
