@@ -161,6 +161,10 @@ The `langchain-crusoe` package integrates Crusoe's [Managed Inference](https://w
 
 Use cuDF on Crusoe Cloud NVIDIA GPUs to accelerate terabyte-scale (and larger) analytics workloads on Apache Spark
 
+### Code linked from Support Knowledgebase articles
+
+[CMK as OIDC provider](./kb-linked-examples/cmk-as-oidc-provider/)
+
 ## Contributing
 
 Adding a new solution or improving an existing one? See [CONTRIBUTING.md](./CONTRIBUTING.md) for directory conventions, README requirements, and the automated checks that run on every PR.
