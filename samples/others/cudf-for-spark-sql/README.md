@@ -197,9 +197,9 @@ Each run produces a timing CSV report on the data PVC (e.g. `/data/mytime-3.csv`
 
 ## Step 7 — Review Results
 
-**Spark History Server** — compare total application duration and per-stage timings between GPU and CPU runs for both the transcoding and Power benchmark jobs. In this screen shot, we see the difference in performance: 8 minutes for GPU-accelerated Parquet transcode and 15 minutes for the GPU-accelerated benchmark, vs 40 and 27 minutes respectively for the same nodepool without using the GPUs.
+**Spark History Server** — compare total application duration and per-stage timings between GPU and CPU runs for both the transcoding and Power benchmark jobs. In this screen shot, we see the difference in performance, for the 30TB benchmark scale: 1.3 hours for GPU-accelerated Parquet transcode and 1 hour for the GPU-accelerated benchmark, vs 5.1 hours and 4.6 hours respectively for the same pool of H100 nodes without using the GPUs.
 
-<img width="1632" height="436" alt="image" src="https://github.com/user-attachments/assets/3033c146-0eda-496a-8dc6-05847ccc25ca" />
+<img width="1268" height="435" alt="image" src="https://github.com/user-attachments/assets/5f140a5a-ab1b-4bd3-955a-cdfc0f99c589" />
 
 
 **Grafana dashboards** — if the `grafana-cmk` observability stack is deployed on your cluster, use the GPU utilisation dashboards to confirm that the cuDF plugin is fully exercising the Crusoe Cloud GPU nodes during the benchmark runs. High, sustained GPU utilisation during the GPU benchmark runs (and its absence during CPU runs) is a direct visual indicator of the acceleration in action.
