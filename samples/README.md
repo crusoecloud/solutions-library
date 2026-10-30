@@ -13,3 +13,4 @@ Solutions are grouped into `training/`, `inference/` and `others/`.
 | [create-vms-and-run-nccl-test](./others/create-vms-and-run-nccl-test/) | Provision VMs and run an NCCL test with Terraform and Ansible |
 | [jupyterhub-with-crusoe-auth-helmchart](./others/jupyterhub-with-crusoe-auth-helmchart/) | JupyterHub with Crusoe authentication |
 | [langchain-crusoe](./others/langchain-crusoe/) | LangChain integration for Crusoe Managed Inference |
+|[cudf-for-spark-sql](./others/cudf-for-spark-sql/)| NVIDA cuDF (cuda for Data Frames) example with TPC-DS benchmarking on Apache Spark|
