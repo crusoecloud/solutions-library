@@ -6,7 +6,7 @@ spec:
   type: Python
   mode: cluster
   # Update image with your own registry/tag
-  image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+  image: "ghcr.io/datadoc24/spark-4-cudf:v12"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_transcode.py"
   arguments:
@@ -19,6 +19,8 @@ spec:
     - "parquet"
     - "--output_mode"
     - "overwrite"
+    - "--app_name"
+    - "NDS CPU-only Transcode"
   sparkVersion: "4.2.0"
   restartPolicy:
     type: Never
@@ -28,7 +30,7 @@ spec:
         claimName: data-disk
     - name: spark-logs
       persistentVolumeClaim:
-        claimName: spark-logs
+        claimName: spark-logs-pvc
     - name: spark-local-dir-scratch
       hostPath:
         path: /mnt/raid0

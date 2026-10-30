@@ -5,13 +5,15 @@ metadata:
 spec:
   type: Python
   # Update image with your own registry/tag
-  image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+  image: "ghcr.io/datadoc24/spark-4-cudf:v12"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_power.py"
   arguments:
     - "/data/tpcds-sf3000-parquet" # input_prefix
     - "/data/query_streams/query_0.sql"
     - "/data/benchmark-time-cpu.csv" # report_file
+    - "--app_name"
+    - "NDS Power Run CPU-only"
   sparkVersion: "4.2.0"
   restartPolicy:
     type: Never

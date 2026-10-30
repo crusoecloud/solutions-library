@@ -6,12 +6,12 @@ spec:
   type: Python
   mode: cluster
   # Update image with your own registry/tag
-  image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+  image: "ghcr.io/datadoc24/spark-4-cudf:v12"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_transcode.py"
   arguments:
     - "/data/tpcds-sf3000"         # input_prefix (CSV data from nds_gen_data.py)
-    - "/data/tpcds-sf3001-parquet" # output_prefix
+    - "/data/tpcds-sf3000-parquet" # output_prefix
     - "/data/transcode-report.txt" # report_file
     - "--input_format"
     - "csv"
@@ -19,6 +19,8 @@ spec:
     - "parquet"
     - "--output_mode"
     - "overwrite"
+    - "--app_name"
+    - "NDS GPU Transcode"
   sparkVersion: "4.2.0"
   restartPolicy:
     type: Never
@@ -48,7 +50,7 @@ spec:
     cores: 16
     instances: 64
     memory: "64g"
-    memoryOverhead: "24576"
+    memoryOverhead: "32768"
     gpu:
       name: "nvidia.com/gpu"
       quantity: 1
@@ -69,21 +71,21 @@ spec:
     "spark.shuffle.manager": "com.nvidia.spark.rapids.spark420.RapidsShuffleManager"
     "spark.rapids.shuffle.transport.enabled": "true"
     # Allow multiple concurrent GPU tasks per executor
-    "spark.task.resource.gpu.amount": "0.25"
-    "spark.rapids.sql.concurrentGpuTasks": "4"
+    "spark.task.resource.gpu.amount": "0.5"
+    "spark.rapids.sql.concurrentGpuTasks": "2"
     # Memory
     "spark.local.dir": "/tmp/spark-local"
-    "spark.rapids.memory.pinnedPool.size": "8g"
+    "spark.rapids.memory.pinnedPool.size": "4g"
     # SQL / compatibility
-    "spark.sql.shuffle.partitions": "2000"
-    "spark.sql.files.maxPartitionBytes": "1g"
+    "spark.sql.shuffle.partitions": "4000"
+    "spark.sql.files.maxPartitionBytes": "512m"
     "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED"
     "spark.sql.legacy.charVarcharAsString": "true"
     "spark.rapids.sql.incompatibleOps.enabled": "true"
     "spark.rapids.sql.variableFloatAgg.enabled": "true"
     "spark.rapids.sql.csv.read.decimal.enabled": "true"
     "spark.rapids.sql.explain": "NOT_ON_GPU"
-    "spark.kubernetes.executor.deleteOnTermination": "true"
+    "spark.kubernetes.executor.deleteOnTermination": "false"
     # Event logging
     "spark.eventLog.enabled": "true"
     "spark.eventLog.dir": "file:///mnt/spark-logs"

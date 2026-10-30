@@ -18,7 +18,7 @@ spec:
       containers:
         - name: spark-history-server
           # Update image with your own registry/tag
-          image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+          image: "ghcr.io/datadoc24/spark-4-cudf:v12"
           imagePullPolicy: IfNotPresent
           command:
             - /opt/spark/bin/spark-class

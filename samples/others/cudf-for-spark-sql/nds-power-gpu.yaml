@@ -6,13 +6,15 @@ spec:
   type: Python
   mode: cluster
   # Update image with your own registry/tag
-  image: "ghcr.io/datadoc24/spark-4-cudf:v10"
+  image: "ghcr.io/datadoc24/spark-4-cudf:v12"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark-benchmarks/nds/nds_power.py"
   arguments:
     - "/data/tpcds-sf3000-parquet" # input_prefix
     - "/data/query_streams/query_0.sql"
     - "/data/benchmark-time-gpu.csv" # report_file
+    - "--app_name"
+    - "NDS Power Run on GPUs"
   sparkVersion: "4.2.0"
   restartPolicy:
     type: Never
@@ -63,14 +65,14 @@ spec:
     "spark.shuffle.manager": "com.nvidia.spark.rapids.spark420.RapidsShuffleManager"
     "spark.rapids.shuffle.transport.enabled": "true"
     # Allow multiple concurrent GPU tasks per executor (1/4 = 4 tasks per GPU, 20 GB HBM3 each)
-    "spark.task.resource.gpu.amount": "0.25"
-    "spark.rapids.sql.concurrentGpuTasks": "4"
+    "spark.task.resource.gpu.amount": "0.5"
+    "spark.rapids.sql.concurrentGpuTasks": "2"
     # Memory
     "spark.local.dir": "/tmp/spark-local"
-    "spark.rapids.memory.pinnedPool.size": "24g"  # 24 GB pinned pool for H100 bandwidth
+    "spark.rapids.memory.pinnedPool.size": "4g"  # 4 GB pinned pool for H100 bandwidth
     # SQL / compatibility
-    "spark.sql.shuffle.partitions": "2000"
-    "spark.sql.files.maxPartitionBytes": "1g"  # larger partitions to fill H100 GPU memory
+    "spark.sql.shuffle.partitions": "4000"
+    "spark.sql.files.maxPartitionBytes": "512m"  # larger partitions to fill H100 GPU memory
     "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED"
     "spark.sql.legacy.charVarcharAsString": "true"
     "spark.rapids.sql.incompatibleOps.enabled": "true"
