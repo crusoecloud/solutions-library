@@ -47,7 +47,7 @@ spec:
       - name: spark-local-dir-scratch
         mountPath: /tmp/spark-local
   executor:
-    cores: 64
+    cores: 80
     # we can have 2 large pods per gpu node each with a lot of cores and memory
     # but no GPU for this example
     instances: 16
