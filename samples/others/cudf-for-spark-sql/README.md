@@ -201,6 +201,11 @@ Each run produces a timing CSV report on the data PVC (e.g. `/data/mytime-3.csv`
 
 <img width="1268" height="435" alt="image" src="https://github.com/user-attachments/assets/5f140a5a-ab1b-4bd3-955a-cdfc0f99c589" />
 
+Grafana Dashboard showing GPU utilization during the 1-hour NDS Power run on GPUs:
+
+<img width="1011" height="814" alt="image" src="https://github.com/user-attachments/assets/aad270f7-ef81-4e5d-9527-5d9814b48ea6" />
+
+
 
 **Grafana dashboards** — if the `grafana-cmk` observability stack is deployed on your cluster, use the GPU utilisation dashboards to confirm that the cuDF plugin is fully exercising the Crusoe Cloud GPU nodes during the benchmark runs. High, sustained GPU utilisation during the GPU benchmark runs (and its absence during CPU runs) is a direct visual indicator of the acceleration in action.
 
