@@ -1,0 +1,10 @@
+# GitLab approvers (code_owner_approval_required is on for main via the devx project module).
+# GitHub reads .github/CODEOWNERS instead, with GitHub handles.
+* @mburbey @rmathews3
+
+# The checks and the gate itself: no weakening them without an owner's approval.
+/.gitlab-ci.yml @mburbey @rmathews3
+/.gitlab/CODEOWNERS @mburbey @rmathews3
+/.github/CODEOWNERS @mburbey @rmathews3
+/scripts/ @mburbey @rmathews3
+/STANDARDS.md @mburbey @rmathews3

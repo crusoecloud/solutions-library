@@ -1,0 +1,3 @@
+# Review owners on GitHub. Changes are authored and approved in the internal GitLab
+# repo and mirrored here; GitLab reads .gitlab/CODEOWNERS with its own handles.
+* @mikeburbey @rjmathews

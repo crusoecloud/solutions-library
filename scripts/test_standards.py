@@ -99,9 +99,9 @@ class Confidential(unittest.TestCase):
             (Path(d) / "a.md").write_text(text)
             return cc.scan(Path(d), ["a.md"], cc.load_patterns(cc.DENYLIST))
 
-    def test_shipped_flags_staff_email_and_internal_url(self):
+    def test_shipped_flags_staff_email_and_marker(self):
         self.assertEqual(len(self.shipped("jane@crusoeenergy.com")), 1)
-        self.assertEqual(len(self.shipped("https://gitlab.com/crusoeenergy/x")), 1)
+        self.assertEqual(len(self.shipped("this is Internal Use Only")), 1)
 
     def test_shipped_allows_placeholders(self):
         for ok in ("user@crusoeenergy.com", "YOUR_EMAIL@crusoe.ai", "support@crusoe.ai",
