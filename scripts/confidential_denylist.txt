@@ -1,0 +1,13 @@
+# One regex per line, case-insensitive. Public hosts like crusoe.ai are fine; only internal ones belong here.
+# Add terms via MR (CODEOWNERS reviews this file).
+internal use only
+company[ -]confidential
+(strictly )?confidential and proprietary
+do not (share|distribute) (externally|outside)
+gitlab\.com/crusoeenergy
+atlassian\.net/(browse|wiki)
+\.ts\.net
+slack\.com/archives
+app\.lumos\.app
+# Staff emails; role/placeholder addresses are fine.
+\b(?!(support|user|your[_.-]?email|you|noreply|security|docs)@)[\w.+-]+@crusoe(energy)?\.(ai|com)

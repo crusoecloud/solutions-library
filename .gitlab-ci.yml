@@ -1,0 +1,71 @@
+# MR hygiene checks for the Crusoe Solutions Library. Nothing reaches the public
+# GitHub mirror unless these pass and a CODEOWNER approves (see STANDARDS.md).
+# Pin every image by digest before go-live (tags below are placeholders).
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+stages: [check]
+
+default:
+  image: python:3.12  # full image: includes git, which scripts/changes.py needs
+  interruptible: true
+
+# Full history so scripts/changes.py can diff against the MR base.
+variables:
+  GIT_DEPTH: "0"
+
+.py_check:
+  stage: check
+
+unit-tests:
+  extends: .py_check
+  script:
+    - python3 -m unittest discover -s scripts -p 'test_*.py'
+
+structure:
+  extends: .py_check
+  script:
+    - python3 scripts/check_solutions_structure.py
+
+standards:
+  extends: .py_check
+  script:
+    - python3 scripts/check_standards.py
+
+confidential:
+  extends: .py_check
+  script:
+    - python3 scripts/check_confidential.py
+
+secrets:
+  stage: check
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.21.2
+    entrypoint: [""]
+  # MR-only, and only this MR's commits: history before the mirror was set up is reviewed
+  # separately, and main only receives MRs that already passed (no usable before-SHA there).
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - gitleaks detect --source . --redact --verbose --log-opts="$CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD"
+
+dependencies:
+  stage: check
+  image:
+    name: aquasec/trivy:0.58.1
+    entrypoint: [""]
+  script:
+    - trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 .
+
+# Existing manifests are legitimately privileged (GPU/RDMA access), so this reports without blocking.
+misconfig:
+  stage: check
+  allow_failure: true
+  image:
+    name: aquasec/trivy:0.58.1
+    entrypoint: [""]
+  script:
+    - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 1 .

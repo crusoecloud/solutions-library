@@ -1,0 +1,54 @@
+{
+  "data-transfer/cross-region-shared-disk-data-transfer": [
+    "missing-section:quick start"
+  ],
+  "kb-linked-examples/cmk-as-oidc-provider": [
+    "missing-section:prerequisites"
+  ],
+  "networking/site-to-site-vpn": [
+    "banned-file:CLAUDE.md",
+    "missing-section:prerequisites"
+  ],
+  "observability/crusoe-splunk-hec": [
+    "missing-section:prerequisites"
+  ],
+  "observability/grafana-cmk": [
+    "missing-section:quick start"
+  ],
+  "samples/inference/crusoe-kserve-example": [
+    "banned-file:CLAUDE.md",
+    "missing-section:quick start"
+  ],
+  "samples/others/cmk-amd-rocm-playpen": [
+    "missing-section:prerequisites"
+  ],
+  "samples/others/create-vms-and-run-nccl-test": [
+    "missing-section:prerequisites",
+    "missing-section:quick start"
+  ],
+  "samples/others/cudf-for-spark-sql": [
+    "missing-section:quick start"
+  ],
+  "samples/others/jupyterhub-with-crusoe-auth-helmchart": [
+    "missing-section:prerequisites",
+    "missing-section:quick start"
+  ],
+  "samples/others/langchain-crusoe": [
+    "missing-section:prerequisites"
+  ],
+  "samples/training/torchtitan-llama3_1-kubernetes-pytorchjob": [
+    "missing-section:prerequisites"
+  ],
+  "slurm/crusoe-managed-slurm-accounting": [
+    "missing-section:quick start"
+  ],
+  "slurm/slurm-custom-image": [
+    "missing-section:prerequisites"
+  ],
+  "validation/amd/ib-write-test-mi355x": [
+    "missing-section:quick start"
+  ],
+  "validation/nvidia/ib-health-probe-cmk": [
+    "missing-section:prerequisites"
+  ]
+}

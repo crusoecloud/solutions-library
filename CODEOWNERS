@@ -1,1 +1,9 @@
-* @youngjeong46 @chinmaybaikar @smazigh @datadoc24
+# Every change needs approval from one of these owners (code_owner_approval_required
+# is on for main via the devx project module). Nothing mirrors to GitHub unmerged.
+* @mburbey @rmathews3
+
+# The checks and the gate itself: no weakening them without an owner's approval.
+/.gitlab-ci.yml @mburbey @rmathews3
+/CODEOWNERS @mburbey @rmathews3
+/scripts/ @mburbey @rmathews3
+/STANDARDS.md @mburbey @rmathews3
