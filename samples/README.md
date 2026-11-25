@@ -10,7 +10,6 @@ Solutions are grouped into `training/`, `inference/` and `others/`.
 | [torchtitan-llama3_1-kubernetes-pytorchjob](./training/torchtitan-llama3_1-kubernetes-pytorchjob/) | TorchTitan Llama 3.1 PyTorchJob benchmark |
 | [crusoe-kserve-example](./inference/crusoe-kserve-example/) | Serve Hugging Face models with KServe and vLLM |
 | [cmk-amd-rocm-playpen](./others/cmk-amd-rocm-playpen/) | AMD ROCm playpen on CMK |
-| [create-vms-and-run-nccl-test](./others/create-vms-and-run-nccl-test/) | Provision VMs and run an NCCL test with Terraform and Ansible |
 | [jupyterhub-with-crusoe-auth-helmchart](./others/jupyterhub-with-crusoe-auth-helmchart/) | JupyterHub with Crusoe authentication |
 | [langchain-crusoe](./others/langchain-crusoe/) | LangChain integration for Crusoe Managed Inference |
 |[cudf-for-spark-sql](./others/cudf-for-spark-sql/)| NVIDA cuDF (cuda for Data Frames) example with TPC-DS benchmarking on Apache Spark|

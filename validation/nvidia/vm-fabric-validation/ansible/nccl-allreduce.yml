@@ -1,0 +1,78 @@
+# Multi-node NCCL test across all GPUs of all nodes, started from the first node.
+# Run from the module root after terraform apply: ansible-playbook ansible/nccl-allreduce.yml
+# Other collectives: -e collective=all_gather (reduce_scatter, alltoall, ...)
+- name: Check inventory
+  ansible.builtin.import_playbook: check-inventory.yml
+
+- name: NCCL multi-node test
+  hosts: nodes[0]
+  gather_facts: false
+  vars:
+    collective: all_reduce
+    log_name: "nccl-{{ collective }}-{{ run_ts }}.txt"
+    node_log: "{{ validation_dir }}/{{ log_name }}"
+    local_log: "{{ playbook_dir }}/../results/{{ log_name }}"
+  tasks:
+    - name: Set the run timestamp
+      ansible.builtin.set_fact:
+        run_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      run_once: true
+
+    - name: Skip on a single node
+      ansible.builtin.include_tasks: tasks/skip-single-node.yml
+      vars:
+        skip_test: "nccl {{ collective }}"
+        skip_hint: "For one node, run ansible/nccl-single-node.yml."
+
+    - name: Create the validation folder
+      ansible.builtin.file:
+        path: "{{ validation_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render nccltest.sh for this SKU
+      ansible.builtin.template:
+        src: templates/nccltest.sh.j2
+        dest: "{{ validation_dir }}/nccltest.sh"
+        mode: "0755"
+
+    - name: Run nccltest.sh
+      ansible.builtin.shell: "{{ validation_dir }}/nccltest.sh > {{ node_log }} 2>&1"
+      environment:
+        NCCL_COLLECTIVE: "{{ collective }}"
+      async: 3600
+      poll: 15
+      register: nccl_run
+      failed_when: false
+      changed_when: true
+
+    - name: Copy the log to results/
+      ansible.builtin.fetch:
+        src: "{{ node_log }}"
+        dest: "{{ local_log }}"
+        flat: true
+
+    - name: Read the average bus bandwidth
+      ansible.builtin.set_fact:
+        avg_busbw: "{{ lookup('file', local_log) | regex_search('#\\s*Avg bus bandwidth\\s*:\\s*([0-9.]+)', '\\1') | default([], true) | first | default('') }}"
+
+    - name: Result
+      ansible.builtin.debug:
+        msg:
+          - "{{ collective }} avg bus bandwidth: {{ (avg_busbw ~ ' GB/s') if avg_busbw else 'not found' }} (exit {{ (nccl_run.rc | default(-1)) }})"
+          - "Full log on node: {{ node_log }} ({{ inventory_hostname }})"
+          - "Local copy: results/{{ local_log | basename }}"
+
+    - name: Update consolidated_output.txt
+      ansible.builtin.include_tasks: tasks/consolidated-row.yml
+      vars:
+        row_test: "nccl {{ collective }}"
+        row_result: "{{ 'OK' if (nccl_run.rc | default(-1)) == 0 and avg_busbw else 'ERROR' }}"
+        row_value: "{{ (avg_busbw ~ ' GB/s') if avg_busbw else 'no result' }}"
+        row_nodes: "{{ groups['nodes'] | length }}"
+        row_log: "{{ log_name }}"
+        summary_hosts: "{{ groups['nodes'] }}"
+    - name: Fail if the test failed
+      ansible.builtin.fail:
+        msg: "nccltest.sh failed (exit {{ (nccl_run.rc | default(-1)) }}) or printed no result, see {{ local_log }}"
+      when: (nccl_run.rc | default(-1)) != 0 or avg_busbw == ''

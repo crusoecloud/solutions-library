@@ -1,0 +1,84 @@
+# DCGM diagnostics on each node, all nodes in parallel. Uses the DCGM that the image ships;
+# nothing is installed. If the nvidia-dcgm service exists but is stopped, it is started.
+# Run from the module root: ansible-playbook ansible/dcgm-diag.yml
+# Default -r 2: software, memory, PCIe (about 6 min on 8x B300).
+# Option: -e dcgm_level=3 adds diagnostic, targeted stress/power and memory bandwidth tests.
+- name: Check inventory
+  ansible.builtin.import_playbook: check-inventory.yml
+
+- name: DCGM diagnostics
+  hosts: nodes
+  gather_facts: false
+  vars:
+    dcgm_level: 2
+    log_base: "dcgm-diag-r{{ dcgm_level }}-{{ run_ts }}"
+    node_log: "{{ validation_dir }}/{{ log_base }}.txt"
+    log_dir: "{{ playbook_dir }}/../results/{{ log_base }}"
+  tasks:
+    - name: Set the run timestamp
+      ansible.builtin.set_fact:
+        run_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      run_once: true
+
+    - name: Create the validation folder
+      ansible.builtin.file:
+        path: "{{ validation_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Check that dcgmi is installed
+      ansible.builtin.command: which dcgmi
+      register: dcgmi_path
+      changed_when: false
+      failed_when: dcgmi_path.rc != 0
+
+    - name: Check for the nvidia-dcgm service
+      ansible.builtin.command: systemctl cat nvidia-dcgm
+      register: dcgm_unit
+      changed_when: false
+      failed_when: false
+
+    - name: Start nvidia-dcgm (dcgmi needs nv-hostengine)
+      ansible.builtin.systemd:
+        name: nvidia-dcgm
+        state: started
+      become: true
+      when: dcgm_unit.rc == 0
+
+    - name: Run dcgmi diag
+      ansible.builtin.shell: dcgmi diag -r {{ dcgm_level }} > {{ node_log }} 2>&1
+      async: 3600
+      poll: 15
+      register: dcgm_run
+      failed_when: false
+      changed_when: false
+
+    - name: Copy the log to results/
+      ansible.builtin.fetch:
+        src: "{{ node_log }}"
+        dest: "{{ log_dir }}/{{ inventory_hostname }}.txt"
+        flat: true
+
+    - name: Read the failed tests
+      ansible.builtin.set_fact:
+        dcgm_failed: "{{ lookup('file', log_dir ~ '/' ~ inventory_hostname ~ '.txt').splitlines() | select('search', '\\bFail') | list }}"
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "{{ ['dcgmi diag -r ' ~ dcgm_level ~ ': ' ~ ('PASS' if (dcgm_run.rc | default(-1)) == 0 and not dcgm_failed else 'FAIL') ~ ' (exit ' ~ (dcgm_run.rc | default(-1)) ~ ')'] + dcgm_failed
+                 + ['Full log on node: ' ~ node_log,
+                    'Local copy: results/' ~ (log_dir | basename) ~ '/' ~ inventory_hostname ~ '.txt'] }}"
+
+    - name: Update consolidated_output.txt
+      ansible.builtin.include_tasks: tasks/consolidated-row.yml
+      vars:
+        row_test: "dcgm-diag -r {{ dcgm_level }}"
+        row_result: "{{ 'PASS' if (dcgm_run.rc | default(-1)) == 0 and not dcgm_failed else 'FAIL' }}"
+        row_value: "{{ 'all tests passed' if (dcgm_run.rc | default(-1)) == 0 and not dcgm_failed else (dcgm_failed | length) ~ ' failed, exit ' ~ (dcgm_run.rc | default(-1)) }}"
+        row_nodes: this
+        row_log: "{{ log_base }}.txt"
+        summary_hosts: "{{ [inventory_hostname] }}"
+    - name: Fail if a diagnostic failed
+      ansible.builtin.fail:
+        msg: "{{ inventory_hostname }}: dcgmi diag failed (exit {{ (dcgm_run.rc | default(-1)) }}), see {{ log_dir }}/{{ inventory_hostname }}.txt"
+      when: (dcgm_run.rc | default(-1)) != 0 or dcgm_failed | length > 0

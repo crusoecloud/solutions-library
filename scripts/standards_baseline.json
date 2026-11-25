@@ -22,10 +22,6 @@
   "samples/others/cmk-amd-rocm-playpen": [
     "missing-section:prerequisites"
   ],
-  "samples/others/create-vms-and-run-nccl-test": [
-    "missing-section:prerequisites",
-    "missing-section:quick start"
-  ],
   "samples/others/cudf-for-spark-sql": [
     "missing-section:quick start"
   ],

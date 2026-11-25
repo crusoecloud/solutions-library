@@ -1,0 +1,11 @@
+# Imported by every test playbook. Fails early on an empty inventory.
+- name: Check inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Inventory group nodes must not be empty
+      ansible.builtin.assert:
+        that: groups['nodes'] | default([]) | length > 0
+        fail_msg: No hosts in group 'nodes'. Run 'terraform apply' first, and run this from the module root.
+        quiet: true
+

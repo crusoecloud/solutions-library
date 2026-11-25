@@ -1,0 +1,7 @@
+# IMEX reads nodes_config.cfg only at startup, so a new node list needs a restart.
+# Only on change: a restart breaks running multi-node jobs that use IMEX.
+- name: Restart nvidia-imex
+  become: true
+  ansible.builtin.systemd_service:
+    name: nvidia-imex
+    state: restarted

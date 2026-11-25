@@ -1,0 +1,51 @@
+# One-time prep for VMs that Terraform did not create: node-to-node SSH and the MPI hostfile.
+# It does not build RAID0, install packages or change the hostname.
+# Not needed after terraform apply (nodes.yml already does this).
+# Run from the module root: ansible-playbook ansible/test-prep.yml
+- name: Check inventory
+  ansible.builtin.import_playbook: check-inventory.yml
+
+- name: Cluster SSH key
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Create the cluster SSH key if it does not exist
+      ansible.builtin.command:
+        argv: [ssh-keygen, -q, -t, rsa, -b, "4096", -N, "", -C, vm-fabric-validation, -f, "{{ playbook_dir }}/../cluster_ssh_key"]
+        creates: "{{ playbook_dir }}/../cluster_ssh_key"
+
+- name: Prepare nodes for the tests
+  hosts: nodes
+  gather_facts: true
+  gather_subset: [network]
+  become: true
+  roles:
+    - ssh_keys
+  tasks:
+    - name: Create the validation folder
+      ansible.builtin.file:
+        path: "{{ validation_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    # Same order as the inventory: the first node starts the multi-node tests
+    - name: MPI hostfile (private IPs)
+      ansible.builtin.copy:
+        content: "{% for h in ansible_play_hosts_all %}{{ hostvars[h].private_ip | default(hostvars[h].ansible_facts.default_ipv4.address) }} slots={{ hostvars[h].gpu_count }}\n{% endfor %}"
+        dest: "{{ validation_dir }}/hostfile"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Read the hostfile
+      ansible.builtin.command: cat {{ validation_dir }}/hostfile
+      register: hostfile
+      changed_when: false
+      run_once: true
+
+    - name: Show the hostfile
+      ansible.builtin.debug:
+        msg: "{{ hostfile.stdout_lines }}"
+      run_once: true

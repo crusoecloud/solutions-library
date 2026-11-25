@@ -1,0 +1,66 @@
+# Runs before any change. On a node where RAID0 was built (raid0.service exists), a manual
+# change or raid0_enabled=false stops the apply; the user fixes it, the module never undoes it.
+- name: RAID0 drift check
+  hosts: nodes
+  gather_facts: false
+  # Drift on any node stops the whole run: no node is changed and no later play runs
+  any_errors_fatal: true
+  tasks:
+    - name: Read the RAID0 state (read-only)
+      ansible.builtin.shell: |
+        unit=false; [ -e /etc/systemd/system/raid0.service ] && unit=true
+        md=false; [ -b /dev/md/ephemeral ] && md=true
+        src=$(findmnt -n -o SOURCE /raid0 | head -1 || true)
+        md_path=$(readlink -f /dev/md/ephemeral 2>/dev/null || true)
+        printf '{"unit": %s, "md": %s, "src": "%s", "md_path": "%s"}\n' "$unit" "$md" "$src" "$md_path"
+      register: raid0_probe
+      changed_when: false
+
+    - name: Compare with raid0_enabled
+      ansible.builtin.set_fact:
+        raid0_drift: >-
+          {{ ([] if r.md else ['the array /dev/md/ephemeral is not assembled'])
+             + (['/raid0 is not mounted'] if r.src == ''
+                else ([] if r.src == r.md_path else ['/raid0 is mounted from ' ~ r.src ~ ', not from the array'])) }}
+        raid0_present: "{{ r.unit or r.md or r.src != '' }}"
+      vars:
+        r: "{{ raid0_probe.stdout | from_json }}"
+
+    - name: Stop if raid0_enabled=false on a node that has RAID0
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }} already has RAID0 from an earlier apply.
+          raid0_enabled=false does not remove it. Keep raid0_enabled=true, or recreate the VMs
+          (terraform destroy, then apply with raid0_enabled=false).
+      when: not (use_raid0 | bool) and raid0_present | bool
+
+    - name: Stop if RAID0 was changed by hand
+      ansible.builtin.fail:
+        msg: >-
+          RAID0 on {{ inventory_hostname }} was changed by hand: {{ raid0_drift | join('; ') }}.
+          Fix it (for example: sudo systemctl restart raid0.service raid0.mount) or recreate the VM,
+          then apply again.
+      when:
+        - use_raid0 | bool
+        - (raid0_probe.stdout | from_json).unit
+        - raid0_drift | length > 0
+
+- name: Run pre-tasks
+  hosts: all
+  remote_user: ubuntu
+  become: true
+  # A notified handler (netplan, IMEX restart) still runs if a later task fails on that node
+  force_handlers: true
+  roles:
+    - pre_tasks
+    - hostname
+    - ssh_keys
+
+- name: Configure nodes
+  hosts: nodes
+  remote_user: ubuntu
+  become: true
+  # A notified handler (netplan, IMEX restart) still runs if a later task fails on that node
+  force_handlers: true
+  roles:
+    - node

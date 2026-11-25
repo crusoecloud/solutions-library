@@ -1,0 +1,27 @@
+ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+ansible_ssh_timeout: 600
+ansible_ssh_retries: 10
+
+instance_class: "{{ instance_type.split('.')[0] }}"
+instance_size: "{{ instance_type.split('.')[1][:-1] }}"
+gpu_count: "{{ instance_size }}"
+
+# Scripts, hostfile and test logs on each node
+validation_dir: /home/ubuntu/fabric-validation
+# Columns of consolidated_output.txt: TEST RESULT VALUE NODES LAST-RUN LOG
+consolidated_fmt: "%-28s %-7s %-62s %-6s %-20s %s"
+
+# Per-SKU settings, derived from instance_type (for example b300-288gb-sxm-ib.8x).
+# Used by both the Terraform path and VMs that Terraform did not create.
+gpu_gen: "{{ instance_class.split('-')[0] }}"
+b_series_hcas: "mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1,mlx5_10:1,mlx5_11:1,mlx5_12:1"
+nccl_ib_hca: "{{ b_series_hcas if gpu_gen in ['b200', 'b300'] else '^mlx5_0:1' }}"
+ucx_net_devices: "{{ b_series_hcas if gpu_gen in ['b200', 'b300'] else '' }}"
+# GB200/GB300 (NVL72): IMEX enabled, no topology file in /etc/crusoe/nccl_topo
+use_imex: "{{ gpu_gen.startswith('gb') }}"
+nccl_topo_file: "{{ '' if use_imex | bool else '/etc/crusoe/nccl_topo/' ~ instance_class ~ '-cloud-hypervisor.xml' }}"
+
+# Node-to-node SSH key. Terraform or test-prep.yml writes it to the module root.
+cluster_ssh_key_file: "{{ inventory_dir }}/../../cluster_ssh_key"
+cluster_ssh_private_key: "{{ lookup('file', cluster_ssh_key_file, rstrip=False) }}"
+cluster_ssh_public_key: "{{ lookup('file', cluster_ssh_key_file ~ '.pub') }}"

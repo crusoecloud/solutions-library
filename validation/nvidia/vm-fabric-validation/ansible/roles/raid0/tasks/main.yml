@@ -1,0 +1,57 @@
+# Units are restarted only when the script or a unit file changes (handlers), so an apply
+# on running VMs does not unmount /raid0 while it may be in use.
+# "HOSTNAME" is not an mdadm keyword (older versions of this module wrote it); remove it so
+# Ubuntu's default "HOMEHOST <system>" stays in effect, as in all tested boots
+- name: Remove the invalid HOSTNAME line from mdadm.conf
+  ansible.builtin.lineinfile:
+    path: /etc/mdadm/mdadm.conf
+    regexp: '^HOSTNAME\b'
+    state: absent
+  notify: Update initramfs
+
+- name: Copy raid0-enhanced.sh
+  ansible.builtin.copy:
+    src: raid0-enhanced.sh
+    dest: /usr/sbin/raid0.sh
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart raid0 service
+
+- name: Copy raid0.service
+  ansible.builtin.template:
+    src: raid0.service
+    dest: /etc/systemd/system/raid0.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd configs
+    - Restart raid0 service
+
+- name: Copy raid0.mount
+  ansible.builtin.template:
+    src: raid0.mount
+    dest: "/etc/systemd/system/{{ raid0_mount_name }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd configs
+    - Restart raid0 mount
+
+# Run the handlers now, so new or changed units are loaded before they are started
+- name: Apply changed RAID0 units
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure the raid0 service is enabled and has run
+  ansible.builtin.systemd_service:
+    name: raid0.service
+    state: started
+    enabled: true
+
+- name: Ensure /raid0 is enabled and mounted
+  ansible.builtin.systemd_service:
+    name: "{{ raid0_mount_name }}"
+    state: started
+    enabled: true

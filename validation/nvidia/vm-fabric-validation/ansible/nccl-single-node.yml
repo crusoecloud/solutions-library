@@ -1,0 +1,89 @@
+# NCCL test on each node alone (NVLink only), all nodes in parallel. Reports the average
+# bus bandwidth per node; fails only if a node gives no result.
+# Run from the module root: ansible-playbook ansible/nccl-single-node.yml
+# Option: -e collective=all_gather
+- name: Check inventory
+  ansible.builtin.import_playbook: check-inventory.yml
+
+- name: NCCL single-node test
+  hosts: nodes
+  gather_facts: false
+  vars:
+    collective: all_reduce
+    log_base: "nccl-single-node-{{ collective }}-{{ run_ts }}"
+    node_log: "{{ validation_dir }}/{{ log_base }}.txt"
+    log_dir: "{{ playbook_dir }}/../results/{{ log_base }}"
+  tasks:
+    - name: Set the run timestamp
+      ansible.builtin.set_fact:
+        run_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      run_once: true
+
+    - name: Create the validation folder
+      ansible.builtin.file:
+        path: "{{ validation_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render nccltest.sh for this SKU
+      ansible.builtin.template:
+        src: templates/nccltest.sh.j2
+        dest: "{{ validation_dir }}/nccltest.sh"
+        mode: "0755"
+
+    # The same IP as in the cluster SSH config: private_ip, or the default IPv4 address
+    - name: Read the network facts (only when private_ip is not in the inventory)
+      ansible.builtin.setup:
+        gather_subset: [network]
+      when: private_ip is not defined
+
+    - name: Write a hostfile with only this node
+      ansible.builtin.copy:
+        content: "{{ private_ip | default(ansible_facts.default_ipv4.address) }} slots={{ gpu_count }}\n"
+        dest: "{{ validation_dir }}/hostfile_single"
+        mode: "0644"
+
+    - name: Run nccltest.sh on this node only
+      ansible.builtin.shell: "{{ validation_dir }}/nccltest.sh > {{ node_log }} 2>&1"
+      environment:
+        HOSTFILE: "{{ validation_dir }}/hostfile_single"
+        NCCL_COLLECTIVE: "{{ collective }}"
+      async: 3600
+      poll: 15
+      register: nccl_run
+      failed_when: false
+      changed_when: true
+
+    - name: Copy the log to results/
+      ansible.builtin.fetch:
+        src: "{{ node_log }}"
+        dest: "{{ log_dir }}/{{ inventory_hostname }}.txt"
+        flat: true
+
+    - name: Read the average bus bandwidth
+      ansible.builtin.set_fact:
+        avg_busbw: "{{ lookup('file', log_dir ~ '/' ~ inventory_hostname ~ '.txt') | regex_search('#\\s*Avg bus bandwidth\\s*:\\s*([0-9.]+)', '\\1') | default([], true) | first | default('') }}"
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ [collective ~ ' avg bus bandwidth per node (GB/s):']
+                 + (ansible_play_hosts | map('extract', hostvars) | map(attribute='inventory_hostname')
+                    | zip(ansible_play_hosts | map('extract', hostvars, 'avg_busbw') | map('default', 'no result', true))
+                    | map('join', '  ') | list)
+                 + ['Full log on each node: ' ~ node_log,
+                    'Local copies: results/' ~ (log_dir | basename) ~ '/<host>.txt'] }}"
+      run_once: true
+
+    - name: Update consolidated_output.txt
+      ansible.builtin.include_tasks: tasks/consolidated-row.yml
+      vars:
+        row_test: "nccl-single-node {{ collective }}"
+        row_result: "{{ 'OK' if (nccl_run.rc | default(-1)) == 0 and avg_busbw else 'ERROR' }}"
+        row_value: "{{ (avg_busbw ~ ' GB/s') if avg_busbw else 'no result' }}"
+        row_nodes: this
+        row_log: "{{ log_base }}.txt"
+        summary_hosts: "{{ [inventory_hostname] }}"
+    - name: Fail if this node gave no result
+      ansible.builtin.fail:
+        msg: "{{ inventory_hostname }}: nccltest.sh failed (exit {{ (nccl_run.rc | default(-1)) }}) or printed no result, see {{ log_dir }}/{{ inventory_hostname }}.txt"
+      when: (nccl_run.rc | default(-1)) != 0 or avg_busbw == ''

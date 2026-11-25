@@ -1,0 +1,134 @@
+# Same-HCA ib_write_bw (host memory), one client and one HCA at a time. Reports the measured
+# bandwidth; fails only if a pair gives no result.
+# Run from the module root after terraform apply: ansible-playbook ansible/ib-write.yml
+# Option: -e ib_topology=ring (default: each node to the next, the last to the first)
+#                       mesh (each node to every other node; time grows with nodes squared)
+#                       star (the first node to every other node)
+- name: Check inventory
+  ansible.builtin.import_playbook: check-inventory.yml
+
+- name: IB write bandwidth test
+  hosts: nodes
+  gather_facts: false
+  vars:
+    ib_topology: ring
+    ib_dir: "{{ validation_dir }}/ib-write"
+    log_base: "ib-write-{{ ib_topology }}-{{ run_ts }}"
+    node_log: "{{ ib_dir }}/{{ log_base }}.txt"
+    log_dir: "{{ playbook_dir }}/../results/{{ log_base }}"
+    local_log: "{{ log_dir }}/{{ inventory_hostname }}.txt"
+    is_client: "{{ ib_topology != 'star' or inventory_hostname == groups['nodes'][0] }}"
+  tasks:
+    - name: Check the topology
+      ansible.builtin.assert:
+        that: ib_topology in ['ring', 'mesh', 'star']
+        fail_msg: "ib_topology must be ring, mesh or star (got '{{ ib_topology }}')"
+        quiet: true
+      run_once: true
+
+    - name: Set the run timestamp
+      ansible.builtin.set_fact:
+        run_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      run_once: true
+
+    - name: Skip on a single node
+      ansible.builtin.include_tasks: tasks/skip-single-node.yml
+      vars:
+        skip_test: "ib-write {{ ib_topology }}"
+        skip_hint: "ib_write_bw needs a second node as the server."
+
+    - name: Create the ib-write log folder
+      ansible.builtin.file:
+        path: "{{ ib_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy ib-write-test.sh
+      ansible.builtin.copy:
+        src: files/ib-write-test.sh
+        dest: "{{ validation_dir }}/ib-write-test.sh"
+        mode: "0755"
+      when: is_client | bool
+
+    # throttle 1: one client at a time, so pairs never share a node or a link
+    - name: Run ib-write-test.sh
+      ansible.builtin.shell: "{{ validation_dir }}/ib-write-test.sh > {{ node_log }} 2>&1"
+      environment:
+        HOSTFILE: "{{ validation_dir }}/hostfile"
+        IB_TOPOLOGY: "{{ ib_topology }}"
+      throttle: 1
+      async: 7200
+      poll: 15
+      register: ib_run
+      failed_when: false
+      changed_when: true
+      when: is_client | bool
+
+    - name: Copy the log to results/
+      ansible.builtin.fetch:
+        src: "{{ node_log }}"
+        dest: "{{ local_log }}"
+        flat: true
+      when: is_client | bool
+
+    - name: Read the results of this client
+      ansible.builtin.set_fact:
+        ib_summary: "{{ log_text | regex_search('(SUMMARY|ERROR): .*') | default('no summary', true) }}"
+        ib_values: "{{ log_text | regex_findall('(?m)^\\S+\\s+\\S+\\s+([0-9.]+) Gb/s$') | map('float') | list }}"
+        ib_errors: "{{ log_text | regex_findall('(?m)^\\S+\\s+\\S+\\s+ERROR$') | length }}"
+      vars:
+        log_text: "{{ lookup('file', local_log) }}"
+      when: is_client | bool
+
+    - name: Combine the results of all clients
+      ansible.builtin.set_fact:
+        ib_all_values: "{{ ib_clients | map(attribute='ib_values') | flatten | sort }}"
+        ib_all_errors: "{{ ib_clients | map(attribute='ib_errors') | map('int') | sum }}"
+        # A client that failed before it wrote a log has no values, so also compare the count
+        ib_any_failed: >-
+          {{ (ib_clients | map(attribute='ib_run') | map(attribute='rc', default=-1) | select('ne', 0) | list | length > 0)
+             or (ib_clients | length) < (1 if ib_topology == 'star' else ansible_play_hosts_all | length) }}
+        ib_client_lines: "{{ ib_clients | map(attribute='inventory_hostname') | zip(ib_clients | map(attribute='ib_summary')) | map('join', ': ') | list }}"
+      vars:
+        ib_clients: "{{ ansible_play_hosts | map('extract', hostvars) | selectattr('ib_values', 'defined') | list }}"
+      run_once: true
+
+    - name: Combined summary line
+      ansible.builtin.set_fact:
+        ib_combined: >-
+          {{ ib_topology }} {{ ib_all_values | length }}/{{ (ib_all_values | length) + (ib_all_errors | int) }} HCA pairs:
+          {{ ('min %s / median %s / max %s Gb/s' | format(ib_all_values[0], ib_all_values[((ib_all_values | length) + 1) // 2 - 1], ib_all_values[-1]))
+             if ib_all_values else 'no results' }}{{ (', ' ~ ib_all_errors ~ ' ERROR') if (ib_all_errors | int) > 0 else '' }}
+      run_once: true
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "{{ [ib_combined] + ib_client_lines
+                 + ['Full log on each client node: ' ~ node_log,
+                    'Local copies: results/' ~ log_base ~ '/<host>.txt'] }}"
+      run_once: true
+
+    - name: Update consolidated_output.txt
+      ansible.builtin.include_tasks: tasks/consolidated-row.yml
+      vars:
+        row_test: "ib-write {{ ib_topology }}"
+        row_result: "{{ 'ERROR' if (ib_any_failed | bool) or (ib_all_errors | int) > 0 or not ib_all_values else 'OK' }}"
+        row_value: "{{ ib_combined | regex_replace('^\\S+ ', '') | regex_replace(' HCA pairs:', ' pairs:') }}"
+        row_nodes: "{{ groups['nodes'] | length }}"
+        row_log: "ib-write/{{ log_base }}.txt"
+        summary_hosts: "{{ groups['nodes'] }}"
+      when: inventory_hostname == ansible_play_hosts[0]
+
+    - name: Fail if a pair gave no result
+      ansible.builtin.fail:
+        msg: "ib-write-test.sh could not measure every pair (exit {{ (ib_run.rc | default(-1)) }}), see {{ local_log }}"
+      when: is_client | bool and (ib_run.rc | default(-1)) != 0
+
+    # Each client can exit 0 with no target, for example when the hostfile on the nodes has 1 line
+    - name: Fail if no pair was measured
+      ansible.builtin.fail:
+        msg: >-
+          No HCA pair was measured. Check {{ validation_dir }}/hostfile on the nodes: it must list every node
+          (run ansible/test-prep.yml or terraform apply again).
+      when: not ib_all_values
+      run_once: true

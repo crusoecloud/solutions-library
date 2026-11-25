@@ -1,0 +1,53 @@
+#!/bin/bash
+# NCCL performance test over the hosts in HOSTFILE (default: all nodes).
+# Env: HOSTFILE, NCCL_COLLECTIVE (all_reduce, all_gather, reduce_scatter, alltoall, ...),
+#      MIN_BYTES, MAX_BYTES
+set -euo pipefail
+
+HOSTFILE=${HOSTFILE:-{{ validation_dir }}/hostfile}
+COLLECTIVE=${NCCL_COLLECTIVE:-all_reduce}
+MIN_BYTES=${MIN_BYTES:-8G}
+MAX_BYTES=${MAX_BYTES:-32G}
+TEST_BIN=/opt/nccl-tests/build/${COLLECTIVE}_perf
+
+[ -x "$TEST_BIN" ] || { echo "ERROR: $TEST_BIN not found"; exit 2; }
+
+echo -e "\e[32mCrusoe Cluster Validation Test\e[0m"
+
+echo -e "\e[33mChecking kernel messages of all hosts for Xid errors\e[0m"
+
+# Information only: prints NVRM kernel messages per host (node-health.yml is the Xid pass/fail check)
+for host in $(awk '{print $1}' "$HOSTFILE"); do
+  ssh -o BatchMode=yes "$host" "sudo dmesg | grep NVRM || true" || echo "WARNING: ssh to $host failed"
+done
+echo -e "\e[33mNCCL ${COLLECTIVE} performance test, ${MIN_BYTES} to ${MAX_BYTES}\e[0m"
+
+# hpcx-init.sh reads unset variables, so relax -u only while loading it
+set +u
+# shellcheck source=/dev/null
+source /opt/hpcx/hpcx-init.sh
+hpcx_load
+set -u
+
+export NCCL_DEBUG=INFO
+export LD_LIBRARY_PATH=/opt/hpcx/ucx/lib:${LD_LIBRARY_PATH:-}
+
+# Derived from instance_type ({{ instance_type }}) in ansible/inventory/group_vars/all.yml
+export NCCL_IB_HCA={{ nccl_ib_hca }}
+{% if ucx_net_devices %}
+export UCX_NET_DEVICES={{ ucx_net_devices }}
+{% endif %}
+{% if nccl_topo_file %}
+export NCCL_TOPO_FILE={{ nccl_topo_file }}
+{% endif %}
+
+export NCCL_IB_MERGE_VFS=0
+export NCCL_SOCKET_NTHREADS=4
+export NCCL_NSOCKS_PERTHREAD=8
+
+NUM_NODES=$(wc -l < "$HOSTFILE")
+GPU_PER_NODE=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)
+
+/opt/hpcx/ompi/bin/mpirun --hostfile "$HOSTFILE" -np $(( NUM_NODES * GPU_PER_NODE )) -N "$GPU_PER_NODE" \
+         --bind-to none -x LD_LIBRARY_PATH -x UCX_NET_DEVICES -x NCCL_IB_HCA -x NCCL_TOPO_FILE -x NCCL_DEBUG \
+        "$TEST_BIN" -b "$MIN_BYTES" -e "$MAX_BYTES" -f 2 -g 1

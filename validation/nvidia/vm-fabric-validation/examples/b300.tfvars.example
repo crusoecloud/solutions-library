@@ -1,0 +1,24 @@
+# Example: 4x B300 nodes. IDs below are masked samples; replace with your own.
+# Use: cp examples/b300.tfvars.example examples/b300.tfvars, set your IDs, then
+#      terraform apply -var-file=examples/b300.tfvars
+# If terraform.tfvars also exists, Terraform loads both, and the values in this file win.
+
+# common configuration
+location               = "eu-iceland1-a"                        # crusoe locations list
+project_id             = "3f2a9c1e-0000-4000-8000-000000000000" # crusoe projects list
+ssh_public_key_path    = "~/.ssh/id_ed25519.pub"
+ssh_private_key_path   = "~/.ssh/id_ed25519"
+vpc_subnet_id          = "8b7d4e2a-0000-4000-8000-000000000000" # crusoe networking vpc-subnets list
+transport_partition_id = "c41e6f90-0000-4000-8000-000000000000" # crusoe networking transport-partitions list
+
+#number of nodes in your setup
+node_count       = 4
+node_name_prefix = "crusoe-b300"
+
+# Uncomment to build a RAID0 array (XFS) at /raid0 from the local NVMe disks.
+# Scratch only: data is lost on VM stop/start. Once built, it cannot be turned off with false.
+#raid0_enabled = true
+
+# B300 SKU
+image_name = "ubuntu24.04-nvidia-b.b300.1.1"
+node_type  = "b300-288gb-sxm-ib.8x"

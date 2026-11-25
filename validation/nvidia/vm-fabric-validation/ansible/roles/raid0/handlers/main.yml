@@ -1,0 +1,17 @@
+# Handlers run in this order
+- name: Update initramfs
+  ansible.builtin.command: update-initramfs -u
+
+- name: Reload systemd configs
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart raid0 service
+  ansible.builtin.systemd_service:
+    name: raid0.service
+    state: restarted
+
+- name: Restart raid0 mount
+  ansible.builtin.systemd_service:
+    name: "{{ raid0_mount_name }}"
+    state: restarted

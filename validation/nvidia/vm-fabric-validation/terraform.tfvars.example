@@ -1,0 +1,38 @@
+# common configuration
+location               = "eu-iceland1-a"
+project_id             = ""
+ssh_public_key_path    = "~/.ssh/id_ed25519.pub"
+ssh_private_key_path   = "~/.ssh/id_ed25519"
+vpc_subnet_id          = ""
+transport_partition_id = ""
+
+#number of nodes in your setup
+node_count       = 2
+node_name_prefix = "crusoe"
+
+# Uncomment to build a RAID0 array (XFS) at /raid0 from the local NVMe disks.
+# Scratch only: data is lost on VM stop/start. Once built, it cannot be turned off with false.
+#raid0_enabled = true
+
+# Uncomment one SKU block. Image names are the latest as of November 2026;
+# check for newer ones with: crusoe compute images list | grep nvidia-b.<gpu>
+
+# H100 SKU
+#image_name = "ubuntu24.04-nvidia-b.h100.1.0"
+#node_type = "h100-80gb-sxm-ib.8x"
+
+# H200 SKU
+#image_name = "ubuntu24.04-nvidia-b.h200.0.1"
+#node_type = "h200-141gb-sxm-ib.8x"
+
+# B200 SKU
+#image_name = "ubuntu24.04-nvidia-b.b200.2.0"
+#node_type = "b200-180gb-sxm-ib.8x"
+
+# B300 SKU
+#image_name = "ubuntu24.04-nvidia-b.b300.1.1"
+#node_type = "b300-288gb-sxm-ib.8x"
+
+# GB200 SKU
+#image_name = "ubuntu24.04-nvidia-b.gb200.1.0"
+#node_type = "gb200-186gb-nvl-ib.4x"

@@ -1,0 +1,19 @@
+# For VMs that Terraform did not create. Copy to hosts.yml and fill in:
+#   cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
+# All VMs must be the same instance type. The first host starts the multi-node tests.
+# 'terraform apply' in this folder overwrites hosts.yml.
+all:
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+  children:
+    nodes:
+      hosts:
+        gpu-node-0:
+          ansible_host: 203.0.113.10   # public IP
+          private_ip: 10.0.0.10         # VPC IP; if not set, the default IPv4 address is used
+          instance_type: b300-288gb-sxm-ib.8x
+        gpu-node-1:
+          ansible_host: 203.0.113.11
+          private_ip: 10.0.0.11
+          instance_type: b300-288gb-sxm-ib.8x

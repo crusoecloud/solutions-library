@@ -1,0 +1,23 @@
+# Writes the row for one test in {{ validation_dir }}/consolidated_output.txt on each host in
+# summary_hosts. The row for the same test is replaced, so the file shows the latest run.
+# Vars: row_test, row_result, row_value, row_nodes, row_log, summary_hosts, run_ts
+- name: Consolidated output header
+  ansible.builtin.lineinfile:
+    path: "{{ validation_dir }}/consolidated_output.txt"
+    line: "{{ consolidated_fmt | format('TEST', 'RESULT', 'VALUE', 'NODES', 'LAST RUN', 'LOG') }}"
+    regexp: '^TEST\s'
+    insertbefore: BOF
+    create: true
+    mode: "0644"
+  delegate_to: "{{ item }}"
+  loop: "{{ summary_hosts }}"
+
+- name: Consolidated output row
+  ansible.builtin.lineinfile:
+    path: "{{ validation_dir }}/consolidated_output.txt"
+    line: "{{ consolidated_fmt | format(row_test, row_result, row_value, row_nodes, run_time, row_log) }}"
+    regexp: "^{{ row_test | regex_escape }}\\s"
+  vars:
+    run_time: "{{ run_ts[0:4] }}-{{ run_ts[4:6] }}-{{ run_ts[6:8] }} {{ run_ts[9:11] }}:{{ run_ts[11:13] }}:{{ run_ts[13:15] }}"
+  delegate_to: "{{ item }}"
+  loop: "{{ summary_hosts }}"

@@ -1,0 +1,17 @@
+[Unit]
+Description=raid0
+# Runs before local file systems are mounted, so raid0.mount (After=raid0.service) does not form an
+# ordering cycle: a local mount is Before=local-fs.target, which default services start after.
+DefaultDependencies=no
+# udev must be running, so the script's "udevadm settle" waits for device links and md assembly
+After=local-fs-pre.target systemd-udevd.service systemd-udev-trigger.service
+Before=local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /usr/sbin/raid0.sh
+
+[Install]
+WantedBy=multi-user.target

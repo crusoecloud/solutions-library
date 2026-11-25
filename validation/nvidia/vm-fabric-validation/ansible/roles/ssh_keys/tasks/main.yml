@@ -1,0 +1,47 @@
+# Node-to-node SSH for the tests. Everything this role adds is marked "vm-fabric-validation",
+# so it can be found and removed after testing (see README, Bring your own VMs).
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: /home/ubuntu/.ssh
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0700'
+
+# Own file name, so an existing ~/.ssh/id_rsa on a user's VM is never overwritten
+- name: Copy cluster private key to nodes
+  ansible.builtin.copy:
+    content: "{{ cluster_ssh_private_key }}"
+    dest: /home/ubuntu/.ssh/fabric_validation_key
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+  no_log: true  # the content is the private key; -v or --diff would print it
+
+- name: Add cluster public key to authorized_keys
+  ansible.builtin.lineinfile:
+    path: /home/ubuntu/.ssh/authorized_keys
+    regexp: ' vm-fabric-validation$'
+    line: "{{ cluster_ssh_public_key.split()[0:2] | join(' ') }} vm-fabric-validation"
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+    create: yes
+
+# Only the cluster's own private IPs, so SSH from this VM to any other host is unchanged
+- name: Configure SSH client for node-to-node SSH between the cluster nodes
+  ansible.builtin.blockinfile:
+    path: /home/ubuntu/.ssh/config
+    marker: "# {mark} vm-fabric-validation"
+    # First match wins in ssh_config, so a user's "Host *" further down cannot override this block
+    insertbefore: BOF
+    create: yes
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+    block: |
+      Host {% for h in groups['nodes'] %}{{ hostvars[h].private_ip | default(hostvars[h].ansible_facts.default_ipv4.address) }}{{ ' ' if not loop.last else '' }}{% endfor %}
+
+          StrictHostKeyChecking no
+          UserKnownHostsFile=/dev/null
+          IdentityFile ~/.ssh/fabric_validation_key

@@ -1,0 +1,75 @@
+# Per-node health check, all nodes in parallel: GPU count, Xid, ECC, row remap, PCIe width,
+# IB HCAs, fabric manager and IMEX. Run it first: a node that fails here also fails
+# the multi-node tests.
+# Run from the module root: ansible-playbook ansible/node-health.yml
+# Option: -e expected_hcas=8 (default: the GPU count of the SKU)
+- name: Check inventory
+  ansible.builtin.import_playbook: check-inventory.yml
+
+- name: Node health
+  hosts: nodes
+  gather_facts: false
+  vars:
+    expected_hcas: "{{ gpu_count }}"
+    log_base: "node-health-{{ run_ts }}"
+    node_log: "{{ validation_dir }}/{{ log_base }}.txt"
+    log_dir: "{{ playbook_dir }}/../results/{{ log_base }}"
+  tasks:
+    - name: Set the run timestamp
+      ansible.builtin.set_fact:
+        run_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      run_once: true
+
+    - name: Create the validation folder
+      ansible.builtin.file:
+        path: "{{ validation_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy node-health.sh
+      ansible.builtin.copy:
+        src: files/node-health.sh
+        dest: "{{ validation_dir }}/node-health.sh"
+        mode: "0755"
+
+    - name: Run node-health.sh
+      # sudo for dmesg; the redirect runs as ubuntu, so the log stays owned by ubuntu
+      ansible.builtin.shell: >-
+        sudo {{ validation_dir }}/node-health.sh {{ gpu_count }} {{ expected_hcas }} {{ use_imex | default(false) | bool | lower }}
+        > {{ node_log }} 2>&1
+      register: health_run
+      failed_when: false
+      changed_when: false
+
+    - name: Copy the log to results/
+      ansible.builtin.fetch:
+        src: "{{ node_log }}"
+        dest: "{{ log_dir }}/{{ inventory_hostname }}.txt"
+        flat: true
+
+    - name: Read the failed checks
+      ansible.builtin.set_fact:
+        health_summary: "{{ log_lines | select('search', 'SUMMARY:') | first | default('no summary') }}"
+        health_failed: "{{ log_lines | select('search', '\\| (FAIL|WARN)$') | list }}"
+      vars:
+        log_lines: "{{ lookup('file', log_dir ~ '/' ~ inventory_hostname ~ '.txt').splitlines() }}"
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "{{ [health_summary] + health_failed
+                 + ['Full log on node: ' ~ node_log,
+                    'Local copy: results/' ~ (log_dir | basename) ~ '/' ~ inventory_hostname ~ '.txt'] }}"
+
+    - name: Update consolidated_output.txt
+      ansible.builtin.include_tasks: tasks/consolidated-row.yml
+      vars:
+        row_test: node-health
+        row_result: "{{ 'PASS' if health_run.rc == 0 else 'FAIL' }}"
+        row_value: "{{ health_summary | regex_search('\\((.*)\\)', '\\1') | default([''], true) | first }}"
+        row_nodes: this
+        row_log: "{{ log_base }}.txt"
+        summary_hosts: "{{ [inventory_hostname] }}"
+    - name: Fail if a check failed
+      ansible.builtin.fail:
+        msg: "{{ inventory_hostname }} failed a health check (exit {{ health_run.rc }}), see {{ log_dir }}/{{ inventory_hostname }}.txt"
+      when: health_run.rc != 0

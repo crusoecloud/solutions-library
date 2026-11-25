@@ -1,0 +1,24 @@
+# Ends a multi-node test playbook without failing when the inventory has fewer than 2 nodes,
+# so later playbooks in the same command still run. Writes a SKIPPED row in
+# consolidated_output.txt. Vars: skip_test (row name), skip_hint (what to run instead), run_ts
+- name: Skip when the inventory has fewer than 2 nodes
+  when: groups['nodes'] | length < 2
+  block:
+    - name: Skipped
+      ansible.builtin.debug:
+        msg: "SKIPPED: {{ skip_test }} needs 2 or more nodes; the inventory has {{ groups['nodes'] | length }}. {{ skip_hint }}"
+      run_once: true
+
+    - name: Update consolidated_output.txt
+      ansible.builtin.include_tasks: consolidated-row.yml
+      vars:
+        row_test: "{{ skip_test }}"
+        row_result: SKIPPED
+        row_value: "needs 2 or more nodes"
+        row_nodes: "{{ groups['nodes'] | length }}"
+        row_log: "-"
+        summary_hosts: "{{ groups['nodes'] }}"
+      when: inventory_hostname == ansible_play_hosts[0]
+
+    - name: End this playbook
+      ansible.builtin.meta: end_play

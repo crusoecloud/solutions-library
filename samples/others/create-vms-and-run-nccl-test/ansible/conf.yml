@@ -1,5 +1,0 @@
-- hosts: nodes
-  remote_user: ubuntu
-  become: yes
-  roles:
-    - conf

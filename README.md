@@ -48,6 +48,10 @@ A set of ready-to-apply Kubernetes MPIJob manifests that run the `all_reduce_per
 
 A Kubernetes-native health check for InfiniBand fabrics that runs one pod per GPU worker node, performing per-HCA `ib_write_bw` loopback tests plus single- and multi-node NCCL all_reduce, and flags any HCA running below line rate. Use it before a long training run, or to investigate a suspected straggler node, on any SKU (H200, B200, etc.) without manual configuration.
 
+[GPU VM Provisioning and Validation Tests](./validation/nvidia/vm-fabric-validation/)
+
+A Terraform and Ansible solution that provisions and prepares Crusoe Cloud GPU VMs (H100, H200, B200, B300, GB200), plus separate test playbooks you can run again at any time: node health, DCGM diagnostics, single- and multi-node NCCL, and same-HCA `ib_write_bw` (ring, mesh or star). The tests also run on VMs that were not created with this Terraform. Use it to accept a new set of VMs before production workloads.
+
 #### AMD
 
 [AMD MI355X Validation Suite for Crusoe Managed Kubernetes](./validation/amd/cmk-amd-mi355x/)
@@ -144,10 +148,6 @@ See the [crusoe-kserve-example README](./samples/inference/crusoe-kserve-example
 [AMD MI355X Playpen Workload for Crusoe Managed Kubernetes](./samples/others/cmk-amd-rocm-playpen/)
 
 Deploys a StatefulSet of pods on Crusoe AMD MI355X nodes using AMD's ROCm/RCCL workload image, with passwordless SSH and an external LoadBalancer front-end for easy access. Includes scripts to launch a multi-node distributed PyTorch job over RCCL/GPU Direct RDMA and a standalone multi-node RCCL benchmark, making it a quick sandbox for validating AMD GPU and NIC connectivity on a new cluster.
-
-[VM Cluster Creation with Integrated NCCL Test and Kernel Health Check](./samples/others/create-vms-and-run-nccl-test/)
-
-A combined Terraform and Ansible solution that provisions a cluster of Crusoe Cloud GPU VMs and, as part of the same apply, runs an all-reduce NCCL test plus a kernel message check (`dmesg | grep NVRM`) across all hosts. Primarily used for sanity-testing a new cluster of hosts — surfacing Xid/NVRM errors and InfiniBand performance results directly in the Terraform output — before handing it off for production workloads.
 
 [JupyterHub with Crusoe Cloud Authentication](./samples/others/jupyterhub-with-crusoe-auth-helmchart/)
 

@@ -1,0 +1,25 @@
+# Terraform files (.terraform.lock.hcl is committed to pin provider versions).
+# The state holds the cluster private key, so every state file stays local.
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# Local settings with real IDs (any name, for example h200.tfvars); *.tfvars.example is committed
+*.tfvars
+
+# Saved plans hold the cluster private key
+*.tfplan
+tfplan
+
+# Generated SSH keys for cluster
+cluster_ssh_key
+cluster_ssh_key.pub
+
+# Generated hostfiles and Ansible inventory
+hostfile
+imex_nodes.txt
+ansible/inventory/hosts.yml
+
+# The output of the tests
+results/
